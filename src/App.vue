@@ -292,7 +292,86 @@
 
 
 
-    <section class="frontend-preview-panel">
+    <section class="work-grid">
+      <article class="panel">
+        <div class="panel-header">
+          <h2>文件1：店家最新資訊</h2>
+          <button class="ghost-btn" type="button" @click="sourceText = sampleText">放入測試資料</button>
+        </div>
+
+        <textarea
+          v-model="sourceText"
+          class="work-textarea"
+          placeholder="請貼上店家最新資訊。系統會先清掉符號，再抓國籍+小姐名或小姐名+國籍。"
+        ></textarea>
+
+        <div class="button-row">
+          <button class="primary-btn" type="button" @click="convertText">套用模式，產生文件2</button>
+          <button class="ghost-btn" type="button" @click="clearSourceAndResult">清空文件1/2</button>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-header">
+          <h2>文件2：本批固定格式結果</h2>
+          <button class="ghost-btn" type="button" @click="copyText(resultText, '文件2')">複製文件2</button>
+        </div>
+
+        <textarea
+          v-model="resultText"
+          class="work-textarea"
+          readonly
+          placeholder="產生後會顯示在這裡，確認可以後按下方加入文件3..."
+        ></textarea>
+
+        <div class="button-row">
+          <button class="primary-btn" type="button" @click="appendResultToConfirmed">確認可以，加入文件3</button>
+          <button class="ghost-btn" type="button" @click="resultText = ''">清空文件2</button>
+        </div>
+
+        <p class="hint">{{ statusMessage }}</p>
+      </article>
+
+      <article class="panel">
+        <div class="panel-header">
+          <h2>文件3：已確認累積結果</h2>
+          <button class="ghost-btn" type="button" @click="copyText(confirmedText, '文件3')">複製文件3</button>
+        </div>
+
+        <textarea
+          v-model="confirmedText"
+          class="work-textarea"
+          placeholder="文件2確認後加入這裡，可手動微調。"
+          @blur="normalizeDocument3Text(); updateJsonPreview()"
+        ></textarea>
+
+        <div class="button-row">
+          <button class="ghost-btn" type="button" @click="saveConfirmedText">儲存文件3</button>
+          <button class="danger-btn" type="button" @click="clearConfirmedText">清空文件3</button>
+        </div>
+
+        <p class="hint">文件3會自動讀取上次儲存內容。</p>
+      </article>
+
+      <article class="panel json-panel">
+        <div class="panel-header">
+          <h2>文件4：資料庫 JSON 預覽</h2>
+          <button class="ghost-btn" type="button" @click="copyText(jsonResultText, '文件4 JSON')">複製JSON</button>
+        </div>
+
+        <textarea
+          v-model="jsonResultText"
+          class="work-textarea json-textarea"
+          readonly
+          placeholder="文件3有已確認內容後，這裡會同步顯示未來可送 API / 資料庫的 JSON 格式。"
+        ></textarea>
+
+        <p class="hint">這裡由文件3已確認累積結果轉成 JSON；下一階段才會真正送到 API / 資料庫。</p>
+      </article>
+
+    </section>
+
+<section class="frontend-preview-panel">
       <div class="preview-header">
         <div>
           <h2>前台網站預覽</h2>
@@ -543,84 +622,7 @@
     </section>
 
 
-    <section class="work-grid">
-      <article class="panel">
-        <div class="panel-header">
-          <h2>文件1：店家最新資訊</h2>
-          <button class="ghost-btn" type="button" @click="sourceText = sampleText">放入測試資料</button>
-        </div>
-
-        <textarea
-          v-model="sourceText"
-          class="work-textarea"
-          placeholder="請貼上店家最新資訊。系統會先清掉符號，再抓國籍+小姐名或小姐名+國籍。"
-        ></textarea>
-
-        <div class="button-row">
-          <button class="primary-btn" type="button" @click="convertText">套用模式，產生文件2</button>
-          <button class="ghost-btn" type="button" @click="clearSourceAndResult">清空文件1/2</button>
-        </div>
-      </article>
-
-      <article class="panel">
-        <div class="panel-header">
-          <h2>文件2：本批固定格式結果</h2>
-          <button class="ghost-btn" type="button" @click="copyText(resultText, '文件2')">複製文件2</button>
-        </div>
-
-        <textarea
-          v-model="resultText"
-          class="work-textarea"
-          readonly
-          placeholder="產生後會顯示在這裡，確認可以後按下方加入文件3..."
-        ></textarea>
-
-        <div class="button-row">
-          <button class="primary-btn" type="button" @click="appendResultToConfirmed">確認可以，加入文件3</button>
-          <button class="ghost-btn" type="button" @click="resultText = ''">清空文件2</button>
-        </div>
-
-        <p class="hint">{{ statusMessage }}</p>
-      </article>
-
-      <article class="panel">
-        <div class="panel-header">
-          <h2>文件3：已確認累積結果</h2>
-          <button class="ghost-btn" type="button" @click="copyText(confirmedText, '文件3')">複製文件3</button>
-        </div>
-
-        <textarea
-          v-model="confirmedText"
-          class="work-textarea"
-          placeholder="文件2確認後加入這裡，可手動微調。"
-          @blur="normalizeDocument3Text(); updateJsonPreview()"
-        ></textarea>
-
-        <div class="button-row">
-          <button class="ghost-btn" type="button" @click="saveConfirmedText">儲存文件3</button>
-          <button class="danger-btn" type="button" @click="clearConfirmedText">清空文件3</button>
-        </div>
-
-        <p class="hint">文件3會自動讀取上次儲存內容。</p>
-      </article>
-
-      <article class="panel json-panel">
-        <div class="panel-header">
-          <h2>文件4：資料庫 JSON 預覽</h2>
-          <button class="ghost-btn" type="button" @click="copyText(jsonResultText, '文件4 JSON')">複製JSON</button>
-        </div>
-
-        <textarea
-          v-model="jsonResultText"
-          class="work-textarea json-textarea"
-          readonly
-          placeholder="文件3有已確認內容後，這裡會同步顯示未來可送 API / 資料庫的 JSON 格式。"
-        ></textarea>
-
-        <p class="hint">這裡由文件3已確認累積結果轉成 JSON；下一階段才會真正送到 API / 資料庫。</p>
-      </article>
-
-    </section>
+    
   </main>
 </template>
 
@@ -4722,6 +4724,17 @@ select:focus, input:focus, textarea:focus {
   .lady-card {
     min-height: auto !important;
   }
+}
+
+
+/* 第 018-10 批：文件區在上、前台網站預覽在下 */
+.work-grid {
+  margin-top: 18px !important;
+  margin-bottom: 18px !important;
+}
+
+.frontend-preview-panel {
+  margin-top: 18px !important;
 }
 
 </style>
