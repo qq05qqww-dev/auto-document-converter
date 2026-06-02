@@ -1,6 +1,6 @@
 {
   "name": "auto-document-converter",
-  "version": "0.0.18-7-media-right-preview-lightbox",
+  "version": "0.0.18-7-1-invalid-end-tag-fix",
   "private": true,
   "type": "module",
   "scripts": {
