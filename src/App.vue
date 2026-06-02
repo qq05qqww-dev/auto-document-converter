@@ -367,18 +367,20 @@
                   :key="`${file.name}-${file.size}-${file.lastModified}`"
                   class="selected-media-thumb-card"
                 >
-                  <img
-                    v-if="isUploadFileImage(file)"
-                    :src="getUploadFilePreviewUrl(file)"
-                    :alt="file.name"
-                  />
-                  <video
-                    v-else-if="isUploadFileVideo(file)"
-                    :src="getUploadFilePreviewUrl(file)"
-                    muted
-                    playsinline
-                  ></video>
-                  <div v-else class="selected-file-fallback">FILE</div>
+                  <button type="button" class="selected-media-open-btn" @click="openUploadFileViewer(file)">
+                    <img
+                      v-if="isUploadFileImage(file)"
+                      :src="getUploadFilePreviewUrl(file)"
+                      :alt="file.name"
+                    />
+                    <video
+                      v-else-if="isUploadFileVideo(file)"
+                      :src="getUploadFilePreviewUrl(file)"
+                      muted
+                      playsinline
+                    ></video>
+                    <div v-else class="selected-file-fallback">FILE</div>
+                  </button>
 
                   <button type="button" class="thumb-remove-btn" @click="removeMediaUploadFile(index)">×</button>
 
@@ -527,7 +529,12 @@
               <span v-if="mediaViewerLadyName || mediaViewerLadyCountry">【{{ mediaViewerLadyCountry }} {{ mediaViewerLadyName }}】</span>
             </div>
             <div class="media-viewer-actions">
-              <button type="button" class="danger-btn" @click="deleteLadyMedia(mediaViewerItem, { name: mediaViewerLadyName, country: mediaViewerLadyCountry })">刪除這張/這段媒體</button>
+              <button
+                v-if="!mediaViewerItem.isLocalUpload"
+                type="button"
+                class="danger-btn"
+                @click="deleteLadyMedia(mediaViewerItem, { name: mediaViewerLadyName, country: mediaViewerLadyCountry })"
+              >刪除這張/這段媒體</button>
               <button type="button" class="ghost-btn" @click="closeMediaViewer">關閉</button>
             </div>
           </div>
@@ -1187,7 +1194,7 @@ function getLadyMediaCount(lady) {
 }
 
 function getMediaDisplayName(media, lady) {
-  return media?.note || (lady ? `【${lady.country || ''} ${lady.name || ''}】` : '媒體預覽')
+  return media?.note || media?.name || (lady ? `【${lady.country || ''} ${lady.name || ''}】` : '媒體預覽')
 }
 
 function openMediaViewer(media, lady) {
@@ -1195,6 +1202,20 @@ function openMediaViewer(media, lady) {
   mediaViewerItem.value = media
   mediaViewerLadyName.value = lady?.name || ''
   mediaViewerLadyCountry.value = lady?.country || ''
+}
+
+function openUploadFileViewer(file) {
+  if (!file) return
+
+  mediaViewerItem.value = {
+    id: 0,
+    url: getUploadFilePreviewUrl(file),
+    mediaType: isUploadFileVideo(file) ? 'video' : 'image',
+    note: file.name,
+    isLocalUpload: true
+  }
+  mediaViewerLadyName.value = '待上傳檔案'
+  mediaViewerLadyCountry.value = ''
 }
 
 function closeMediaViewer() {
@@ -4419,6 +4440,165 @@ select:focus, input:focus, textarea:focus {
 
   .media-viewer-mask {
     padding: 10px;
+  }
+}
+
+
+/* 第 018-8 批：左側上傳縮小、右側小姐預覽放大、待上傳縮圖可點擊放大 */
+.frontend-media-preview-layout {
+  grid-template-columns: minmax(300px, 560px) minmax(720px, 1fr) !important;
+  gap: 16px !important;
+  align-items: start !important;
+}
+
+.compact-media-upload-box {
+  max-width: 560px !important;
+  padding: 14px !important;
+}
+
+.media-upload-main-stack {
+  gap: 9px !important;
+}
+
+.compact-media-upload-box .media-drop-zone {
+  min-height: 112px !important;
+  padding: 12px !important;
+}
+
+.compact-media-upload-box .media-upload-actions {
+  gap: 8px !important;
+}
+
+.media-upload-selected-panel {
+  max-height: 300px !important;
+  padding: 10px !important;
+}
+
+.selected-media-thumb-grid {
+  grid-template-columns: repeat(3, minmax(78px, 1fr)) !important;
+  gap: 8px !important;
+  max-height: 220px !important;
+  overflow: auto !important;
+}
+
+.selected-media-thumb-card {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: none !important;
+}
+
+.selected-media-open-btn {
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  cursor: zoom-in;
+  display: block;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.selected-media-open-btn img,
+.selected-media-open-btn video,
+.selected-media-open-btn .selected-file-fallback,
+.selected-media-thumb-card img,
+.selected-media-thumb-card video,
+.selected-file-fallback {
+  width: 100% !important;
+  height: 78px !important;
+  aspect-ratio: 1 / 1 !important;
+  object-fit: cover !important;
+  border-radius: 10px !important;
+}
+
+.thumb-file-info strong {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.frontend-preview-side-panel {
+  width: 100% !important;
+  min-width: 0 !important;
+  padding: 14px !important;
+}
+
+.compact-right-lady-grid {
+  grid-template-columns: repeat(auto-fill, minmax(150px, 150px)) !important;
+  justify-content: start !important;
+  align-items: start !important;
+  gap: 12px !important;
+}
+
+.compact-right-lady-card {
+  width: 150px !important;
+  max-width: 150px !important;
+  padding: 8px !important;
+}
+
+.compact-right-lady-card .lady-cover-box {
+  aspect-ratio: 1 / 1 !important;
+  height: auto !important;
+  margin-bottom: 7px !important;
+}
+
+.compact-right-lady-card .lady-cover-media,
+.compact-right-lady-card .lady-cover-trigger img,
+.compact-right-lady-card .lady-cover-trigger video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+}
+
+.compact-right-title strong {
+  font-size: 13px !important;
+  line-height: 1.25 !important;
+}
+
+.compact-right-lady-card .price-pill,
+.compact-right-lady-card .service-pill {
+  font-size: 10.5px !important;
+  padding: 4px 6px !important;
+}
+
+.compact-right-service-list {
+  max-height: 140px;
+  overflow: auto;
+}
+
+@media (max-width: 1320px) {
+  .frontend-media-preview-layout {
+    grid-template-columns: minmax(280px, 520px) minmax(560px, 1fr) !important;
+  }
+
+  .compact-right-lady-grid {
+    grid-template-columns: repeat(auto-fill, minmax(142px, 142px)) !important;
+  }
+
+  .compact-right-lady-card {
+    width: 142px !important;
+    max-width: 142px !important;
+  }
+}
+
+@media (max-width: 980px) {
+  .frontend-media-preview-layout {
+    grid-template-columns: 1fr !important;
+  }
+
+  .compact-media-upload-box {
+    max-width: none !important;
+  }
+
+  .compact-right-lady-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)) !important;
+  }
+
+  .compact-right-lady-card {
+    width: auto !important;
+    max-width: none !important;
   }
 }
 

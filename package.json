@@ -1,6 +1,6 @@
 {
   "name": "auto-document-converter",
-  "version": "0.0.18-7-1-invalid-end-tag-fix",
+  "version": "0.0.18-8-compact-left-expand-right-click-preview",
   "private": true,
   "type": "module",
   "scripts": {
