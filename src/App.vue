@@ -224,104 +224,106 @@
             額外保留關鍵字
           </button>
         </div>
+        <div v-if="!activeAdvancedPanel" class="advanced-empty-panel">
+          請點上方按鈕展開要修改的進階規則。
+        </div>
 
-<div class="manager-card advanced-manager-card">
-          <div class="manager-title" v-if="activeAdvancedPanel === 'country-map'">
+        <div v-if="activeAdvancedPanel === 'country-map'" class="advanced-panel-clean">
+          <div class="rule-card full-width-rule-card">
             <h4>國籍欄位規則</h4>
             <p>把店家的國籍寫法轉成固定國籍。</p>
+            <div class="rule-inline-row">
+              <input v-model="newCountryRuleTo" type="text" placeholder="店家寫法，例如 國家:馬來" />
+              <select v-model="newCountryRuleTo">
+                <option value="">請選擇固定國籍</option>
+                <option value="台灣">台灣</option>
+                <option value="越南">越南</option>
+                <option value="泰妹">泰妹</option>
+                <option value="馬來">馬來</option>
+                <option value="香港">香港</option>
+              </select>
+              <button type="button" class="primary-btn small-btn" @click="addCountryFieldRule">新增</button>
+            </div>
+
+            <div class="rule-chip-list">
+              <span
+                v-for="(rule, index) in countryFieldRuleItems"
+                :key="index"
+                class="rule-chip"
+              >
+                { rule.source || rule.from || rule.pattern || rule.key || rule.left || rule }
+                <template v-if="rule.target || rule.to || rule.value || rule.right">
+                  →
+                  { rule.target || rule.to || rule.value || rule.right }
+                </template>
+                <button type="button" @click="removeCountryFieldRule(index)">×</button>
+              </span>
+            </div>
           </div>
 
-          <div class="manager-inputs two-cols">
-            <input v-model="newCountryRuleFrom" placeholder="店家寫法，例如 國家:馬來" />
-            <select v-model="newCountryRuleTo">
-              <option value="馬來">馬來</option>
-              <option value="越南">越南</option>
-              <option value="台妹">台妹</option>
-              <option value="港澳">港澳</option>
-              <option value="泰妹">泰妹</option>
-              <option value="日本">日本</option>
-              <option value="韓國">韓國</option>
-              <option value="外籍">外籍</option>
-            </select>
-            <button class="primary-btn" type="button" @click="addCountryFieldRule">新增</button>
-          </div>
-
-          <div class="rule-chip-list">
-            <span
-              v-for="(rule, index) in countryFieldRuleItems"
-              :key="`country-${rule.from}-${rule.to}-${index}`"
-              class="rule-chip"
-            >
-              {{ rule.from }} → {{ rule.to }}
-              <button type="button" @click="removeCountryFieldRule(index)">×</button>
-            </span>
+          <div class="advanced-two-col-grid">
+            <label>
+              國籍欄位規則，一行一組，格式：店家寫法=固定國籍
+              <textarea v-model="newCountryRuleFrom"></textarea>
+            </label>
+            <label>
+              身材補字規則，一行一個，例如：真、大、小、巨、自然
+              <textarea v-model="bodyCupPrefixText"></textarea>
+            </label>
+            <label>
+              不要誤判成小姐名，一行一個
+              <textarea v-model="notNameWordsText"></textarea>
+            </label>
+            <div class="readonly-note-box">
+              <strong>說明區（不用輸入）</strong>
+              <p>這裡只放國籍欄位相關規則，不混入其他分頁內容。</p>
+            </div>
           </div>
         </div>
 
-        <div class="rule-grid" v-if="activeAdvancedPanel === 'country-price'">
+        <div v-if="activeAdvancedPanel === 'country-price'" class="advanced-panel-clean">
           <label>
             國籍加價規則，一行一個，格式：國籍=加價
-            <textarea v-model="countryPriceRulesText" class="rule-textarea small"></textarea>
+            <textarea v-model="countryPriceRulesText"></textarea>
           </label>
+        </div>
 
+        <div v-if="activeAdvancedPanel === 'country-alias'" class="advanced-panel-clean">
           <label>
             國籍同義詞，一行一組，格式：來源=固定國籍
-            <textarea v-model="countryAliasText" class="rule-textarea small"></textarea>
+            <textarea v-model="newCountryRuleFrom"></textarea>
           </label>
         </div>
 
-        <div class="rule-grid" v-if="activeAdvancedPanel === 'service-order'">
+        <div v-if="activeAdvancedPanel === 'service-order'" class="advanced-panel-clean">
           <label>
             服務固定排序，一行一個或空格分隔
-            <textarea v-model="serviceOrderText" class="rule-textarea"></textarea>
-          </label>
-
-          <label>
-            同義詞規則，一行一組，格式：店家寫法=固定寫法
-            <textarea v-model="aliasRulesText" class="rule-textarea"></textarea>
+            <textarea v-model="serviceOrderText"></textarea>
           </label>
         </div>
 
-        <div class="rule-grid" v-if="activeAdvancedPanel === 'remove-text'">
+        <div v-if="activeAdvancedPanel === 'service-alias'" class="advanced-panel-clean">
+          <label>
+            服務同義詞規則，一行一組，格式：店家寫法=固定寫法
+            <textarea v-model="aliasRulesText"></textarea>
+          </label>
+        </div>
+
+        <div v-if="activeAdvancedPanel === 'remove-text'" class="advanced-panel-clean">
           <label>
             不想出現的文字，一行一個（套用時會清理文件1）
-            <textarea v-model="removeWordsText" class="rule-textarea small"></textarea>
+            <textarea v-model="removeWordsText"></textarea>
           </label>
+        </div>
 
+        <div v-if="activeAdvancedPanel === 'keep-keyword'" class="advanced-panel-clean">
           <label>
             額外保留關鍵字，一行一個
-            <textarea v-model="extraKeepText" class="rule-textarea small"></textarea>
+            <textarea v-model="newCountryRuleFrom"></textarea>
           </label>
         </div>
 
-        <div class="rule-grid">
-          <label>
-            國籍欄位規則，一行一組，格式：店家寫法=固定國籍
-            <textarea v-model="countryFieldRulesText" class="rule-textarea small"></textarea>
-          </label>
-
-          <label>
-            身材補字規則，一行一個，例如：真、大、小、巨、自然
-            <textarea v-model="bodyCupPrefixText" class="rule-textarea small"></textarea>
-          </label>
-        </div>
-
-        <div class="rule-grid">
-          <label>
-            不要誤判成小姐名，一行一個
-            <textarea v-model="notNameWordsText" class="rule-textarea small"></textarea>
-          </label>
-
-          <label>
-            說明區（不用輸入）
-            <textarea
-              class="rule-textarea small"
-              readonly
-              value="這裡只是說明文字，不能輸入。要新增格式請使用左邊的「國籍欄位規則」、下方的「不要誤判成小姐名」或「服務同義詞」。"
-            ></textarea>
-          </label>
-        </div>
-      </section>
+      
     </section>
 
 
@@ -4843,6 +4845,100 @@ select:focus, input:focus, textarea:focus {
 
   .advanced-inner-tabs .summary-pill {
     width: 100%;
+  }
+}
+
+
+/* 第 018-11-1 批：進階分頁內容清理，不再混出重複區塊 */
+.advanced-empty-panel {
+  padding: 24px;
+  border: 1px dashed rgba(148, 163, 184, 0.45);
+  border-radius: 18px;
+  background: rgba(248, 250, 252, 0.72);
+  color: #64748b;
+  font-weight: 700;
+}
+
+.advanced-panel-clean {
+  display: grid;
+  gap: 14px;
+}
+
+.advanced-panel-clean > label,
+.advanced-panel-clean .rule-card,
+.full-width-rule-card,
+.readonly-note-box {
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.78);
+  padding: 16px;
+}
+
+.advanced-panel-clean textarea {
+  width: 100%;
+  min-height: 220px;
+  margin-top: 8px;
+  resize: vertical;
+}
+
+.rule-inline-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(180px, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.rule-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.rule-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 999px;
+  padding: 7px 10px;
+  background: rgba(248, 250, 252, 0.9);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.rule-chip button {
+  border: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: rgba(239, 68, 68, 0.12);
+  color: #991b1b;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.advanced-two-col-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.readonly-note-box {
+  color: #334155;
+}
+
+.readonly-note-box p {
+  margin: 8px 0 0;
+  color: #64748b;
+  line-height: 1.6;
+}
+
+@media (max-width: 860px) {
+  .rule-inline-row,
+  .advanced-two-col-grid {
+    grid-template-columns: 1fr;
   }
 }
 

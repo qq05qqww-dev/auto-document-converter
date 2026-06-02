@@ -1,6 +1,6 @@
 {
   "name": "auto-document-converter",
-  "version": "0.0.18-11-advanced-inner-tabs",
+  "version": "0.0.18-11-1-advanced-tabs-clean-fix",
   "private": true,
   "type": "module",
   "scripts": {
