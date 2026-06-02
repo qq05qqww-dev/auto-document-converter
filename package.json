@@ -1,6 +1,6 @@
 {
   "name": "auto-document-converter",
-  "version": "0.0.18-3-rule-actions-inside-quick-rules",
+  "version": "0.0.18-4-single-top-control-bar",
   "private": true,
   "type": "module",
   "scripts": {

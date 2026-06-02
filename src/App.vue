@@ -1,11 +1,9 @@
 <template>
   <main class="page-shell">
 
-    <section class="hero-card">
-      <div>
-        <p class="eyebrow">第 018-3 批｜規則操作按鈕移入常用規則中間版</p>
-        <h1>文件1 → 文件2 → 文件3 固定格式轉換工具</h1>
-        <div class="top-setting-buttons">
+    <section class="hero-card compact-control-card">
+      <div class="top-control-header">
+        <div class="top-setting-buttons compact-main-buttons">
           <button class="summary-pill" type="button" @click="showPriceSettings = !showPriceSettings">
             金額設定
           </button>
@@ -22,10 +20,6 @@
             {{ showApiPanel ? '收合API' : 'API串接' }}
           </button>
         </div>
-
-        <p class="hero-text">
-          延續第 009-7 重新版：修正新店家「小魚兒 越南新妹」與「30分鐘 1s/27底」格式無法產生文件2的問題。
-        </p>
       </div>
         <div v-if="showPriceSettings" class="hero-actions setting-content-block">
         <label>
@@ -72,19 +66,7 @@
         </label>
 
         </div>
-      </section>
-    
-
-        <section class="rule-card">
-      <p class="settings-helper">點上方四個按鈕展開設定；文件區保持乾淨。</p>
-      <div class="rule-header">
-        <div>
-          <h2>目前固定規則，可隨時變更</h2>
-          <p>平常使用簡單模式；遇到新店家格式再展開進階設定。</p>
-        </div>
-
-      </div>
-      <div v-if="showFormatSettings" class="rule-grid top-rules setting-content-block">
+      <div v-if="showFormatSettings" class="rule-grid top-rules setting-content-block compact-control-content">
         <label>
           輸出格式說明
           <input v-model="formatHint" />
@@ -100,7 +82,7 @@
         </label>
         </div>
 
-      <section v-if="showQuickRules" class="quick-rule-section setting-content-block">
+      <section v-if="showQuickRules" class="quick-rule-section setting-content-block compact-control-content">
         <div class="quick-rule-header">
           <div>
             <h3>簡單模式｜常用規則</h3>
@@ -178,7 +160,7 @@
         </div>
       </section>
 
-      <section v-if="showAdvancedSettings" class="advanced-section">
+      <section v-if="showAdvancedSettings" class="advanced-section compact-control-content">
         <div class="advanced-title">
           <h3>進階設定</h3>
           <p>一般情況不用改這裡；遇到新店家格式抓不到、身材格式特殊、或詞被誤判成小姐名時再調整。</p>
@@ -284,7 +266,7 @@
     </section>
 
 
-    <section v-if="showApiPanel" class="api-panel api-panel-top setting-content-block">
+    <section v-if="showApiPanel" class="api-panel api-panel-top setting-content-block compact-control-content">
       <div>
         <h2>API 串接測試</h2>
         <p>這裡預設連線到 Render 線上 API，也可以手動切換其他 API 位置。</p>
@@ -3730,6 +3712,77 @@ select:focus, input:focus, textarea:focus {
   .quick-rules-actions {
     justify-content: flex-start;
     max-width: none;
+  }
+}
+
+
+/* 第 018-4 批：上方設定區整合成單一按鈕列 */
+.compact-control-card {
+  padding: 16px 20px !important;
+  margin-bottom: 18px !important;
+}
+
+.top-control-header {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.compact-main-buttons {
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  margin: 0 !important;
+  flex-wrap: wrap;
+}
+
+.compact-main-buttons .summary-pill {
+  min-height: 42px;
+  padding: 10px 18px;
+  font-size: 14px;
+}
+
+.compact-control-card > .hero-actions,
+.compact-control-card > .compact-control-content,
+.compact-control-content {
+  margin-top: 16px !important;
+}
+
+.compact-control-card .top-rules,
+.compact-control-card .quick-rule-section,
+.compact-control-card .advanced-section {
+  border-radius: 20px;
+}
+
+.compact-control-card .quick-rule-header {
+  margin-bottom: 8px;
+}
+
+.compact-control-card .quick-rule-header h3,
+.compact-control-card .advanced-title h3 {
+  font-size: 18px;
+}
+
+.compact-control-card .quick-rule-header p,
+.compact-control-card .advanced-title p {
+  font-size: 13px;
+}
+
+.compact-control-card .advanced-title {
+  margin-bottom: 14px;
+}
+
+@media (max-width: 760px) {
+  .compact-control-card {
+    padding: 14px 12px !important;
+  }
+
+  .compact-main-buttons {
+    justify-content: flex-start;
+  }
+
+  .compact-main-buttons .summary-pill {
+    flex: 1 1 calc(50% - 8px);
   }
 }
 
