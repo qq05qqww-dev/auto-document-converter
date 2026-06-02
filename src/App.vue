@@ -3,7 +3,7 @@
 
     <section class="hero-card">
       <div>
-        <p class="eyebrow">第 018-1 批｜轉換工具前端 Vercel 上線準備版</p>
+        <p class="eyebrow">第 018-3 批｜規則操作按鈕移入常用規則中間版</p>
         <h1>文件1 → 文件2 → 文件3 固定格式轉換工具</h1>
         <div class="top-setting-buttons">
           <button class="summary-pill" type="button" @click="showPriceSettings = !showPriceSettings">
@@ -17,6 +17,9 @@
           </button>
           <button class="summary-pill" type="button" @click="showAdvancedSettings = !showAdvancedSettings">
             進階設定
+          </button>
+          <button class="summary-pill api-toggle-pill" type="button" @click="showApiPanel = !showApiPanel">
+            {{ showApiPanel ? '收合API' : 'API串接' }}
           </button>
         </div>
 
@@ -80,13 +83,6 @@
           <p>平常使用簡單模式；遇到新店家格式再展開進階設定。</p>
         </div>
 
-        <div class="rule-actions">
-          <button class="ghost-btn" type="button" @click="saveRules">儲存規則</button>
-          <button class="ghost-btn" type="button" @click="loadRules">讀取規則</button>
-          <button class="ghost-btn" type="button" @click="exportRules">複製規則備份</button>
-          <button class="ghost-btn" type="button" @click="importRules">貼上規則備份</button>
-          <button class="danger-btn" type="button" @click="resetRules">恢復預設</button>
-        </div>
       </div>
       <div v-if="showFormatSettings" class="rule-grid top-rules setting-content-block">
         <label>
@@ -110,6 +106,14 @@
             <h3>簡單模式｜常用規則</h3>
             <p>平常主要改這裡；新店家特殊格式再展開進階設定。</p>
           </div>
+        </div>
+
+        <div class="rule-actions rule-actions-center quick-rules-actions">
+          <button class="ghost-btn" type="button" @click="saveRules">儲存規則</button>
+          <button class="ghost-btn" type="button" @click="loadRules">讀取規則</button>
+          <button class="ghost-btn" type="button" @click="exportRules">複製規則備份</button>
+          <button class="ghost-btn" type="button" @click="importRules">貼上規則備份</button>
+          <button class="danger-btn" type="button" @click="resetRules">恢復預設</button>
         </div>
 
         <div class="manager-grid">
@@ -280,7 +284,7 @@
     </section>
 
 
-    <section class="api-panel">
+    <section v-if="showApiPanel" class="api-panel api-panel-top setting-content-block">
       <div>
         <h2>API 串接測試</h2>
         <p>這裡預設連線到 Render 線上 API，也可以手動切換其他 API 位置。</p>
@@ -635,6 +639,7 @@ const showAdvancedSettings = ref(false)
 const showPriceSettings = ref(false)
 const showFormatSettings = ref(false)
 const showQuickRules = ref(false)
+const showApiPanel = ref(false)
 const showAliasList = ref(false)
 const showRemoveWordList = ref(false)
 
@@ -3638,4 +3643,94 @@ select:focus, input:focus, textarea:focus {
     flex-direction: column;
   }
 }
+
+/* 第 018-2 批：API 串接收合到頂部、規則按鈕置中 */
+.api-toggle-pill {
+  min-width: 120px;
+}
+
+.rule-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.rule-actions-center {
+  justify-content: center;
+  align-items: center;
+  margin: 16px auto 18px;
+  padding: 12px;
+  border: 1px solid rgba(203, 213, 225, 0.72);
+  border-radius: 18px;
+  background: rgba(248, 250, 252, 0.86);
+}
+
+.rule-actions-center .ghost-btn,
+.rule-actions-center .danger-btn {
+  min-height: 42px;
+  white-space: nowrap;
+}
+
+.api-panel-top {
+  margin: 0 0 20px;
+  grid-template-columns: 1.1fr 1fr auto;
+  animation: softSlideDown 0.18s ease-out;
+}
+
+.api-panel-top .api-actions {
+  justify-content: flex-end;
+}
+
+@keyframes softSlideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 900px) {
+  .rule-actions-center {
+    justify-content: flex-start;
+  }
+
+  .api-panel-top {
+    grid-template-columns: 1fr;
+  }
+
+  .api-panel-top .api-actions {
+    justify-content: flex-start;
+  }
+}
+
+
+/* 第 018-3 批：規則操作按鈕移入常用規則中間 */
+.quick-rules-actions {
+  justify-content: center;
+  align-items: center;
+  margin: 14px auto 18px;
+  padding: 12px;
+  max-width: 760px;
+  border: 1px solid rgba(203, 213, 225, 0.72);
+  border-radius: 18px;
+  background: rgba(248, 250, 252, 0.9);
+}
+
+.quick-rules-actions .ghost-btn,
+.quick-rules-actions .danger-btn {
+  min-height: 42px;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .quick-rules-actions {
+    justify-content: flex-start;
+    max-width: none;
+  }
+}
+
 </style>

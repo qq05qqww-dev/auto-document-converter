@@ -1,6 +1,6 @@
 {
   "name": "auto-document-converter",
-  "version": "0.0.18-1-frontend-vercel-deploy-prepare",
+  "version": "0.0.18-3-rule-actions-inside-quick-rules",
   "private": true,
   "type": "module",
   "scripts": {
