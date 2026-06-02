@@ -1,6 +1,6 @@
 {
   "name": "auto-document-converter",
-  "version": "0.0.18-11-1-advanced-tabs-clean-fix",
+  "version": "0.0.18-11-2-missing-end-tag-fix",
   "private": true,
   "type": "module",
   "scripts": {

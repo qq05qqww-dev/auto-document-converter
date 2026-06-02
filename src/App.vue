@@ -251,10 +251,10 @@
                 :key="index"
                 class="rule-chip"
               >
-                { rule.source || rule.from || rule.pattern || rule.key || rule.left || rule }
+                {{ rule.source || rule.from || rule.pattern || rule.key || rule.left || rule }}
                 <template v-if="rule.target || rule.to || rule.value || rule.right">
                   →
-                  { rule.target || rule.to || rule.value || rule.right }
+                  {{ rule.target || rule.to || rule.value || rule.right }}
                 </template>
                 <button type="button" @click="removeCountryFieldRule(index)">×</button>
               </span>
@@ -684,6 +684,7 @@
 
 
     
+    </section>
   </main>
 </template>
 
