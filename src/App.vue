@@ -313,95 +313,99 @@
 
 
       <div class="media-upload-box compact-media-upload-box">
-        <div>
+        <div class="media-upload-title-row">
           <h3>媒體上傳測試</h3>
           <p>先把圖片 / 影片上傳到 R2，並綁定到 Supabase 的小姐資料。</p>
         </div>
 
-        <label>
-          選擇小姐
-          <select v-model="mediaUploadLadyId">
-            <option value="">請選擇小姐</option>
-            <option v-for="lady in frontendLadies" :key="lady.id" :value="lady.id">
-              【{{ lady.country }} {{ lady.name }}】
-            </option>
-          </select>
-        </label>
+        <div class="media-upload-main-stack">
+          <label class="media-lady-select">
+            選擇小姐
+            <select v-model="mediaUploadLadyId">
+              <option value="">請選擇小姐</option>
+              <option v-for="lady in frontendLadies" :key="lady.id" :value="lady.id">
+                【{{ lady.country }} {{ lady.name }}】
+              </option>
+            </select>
+          </label>
 
-        <label>
-          類型
-          <select v-model="mediaUploadType">
-            <option value="image">圖片</option>
-            <option value="video">影片</option>
-          </select>
-        </label>
+          <div class="media-inline-row">
+            <label>
+              類型
+              <select v-model="mediaUploadType">
+                <option value="image">圖片</option>
+                <option value="video">影片</option>
+              </select>
+            </label>
 
-        <label>
-          說明
-          <input v-model="mediaUploadNote" type="text" placeholder="例如：主照片、生活照、影片" />
-        </label>
-
-        <div
-          class="media-drop-zone"
-          :class="{ 'is-dragging': isMediaDragging }"
-          @dragover.prevent="isMediaDragging = true"
-          @dragleave.prevent="isMediaDragging = false"
-          @drop.prevent="handleMediaDrop"
-        >
-          <strong>拖拉圖片 / 影片到這裡</strong>
-          <span>也可以點下面按鈕一次選多個檔案，會疊加到同一位小姐。</span>
-          <input
-            id="lady-media-file-input"
-            type="file"
-            accept="image/*,video/*"
-            multiple
-            @change="handleMediaFileChange"
-          />
-        </div>
-
-        <div class="media-upload-actions">
-          <button class="ghost-btn" type="button" @click="clearMediaUploadFiles">清空待上傳</button>
-          <button class="primary-btn media-upload-btn" type="button" @click="uploadLadyMedia">
-            上傳 {{ mediaUploadFiles.length || '' }} 個圖片/影片
-          </button>
-        </div>
-
-        <div class="media-upload-selected-panel">
-          <div class="selected-panel-title">
-            <strong>待上傳縮圖</strong>
-            <span>{{ mediaUploadFiles.length }} 個檔案</span>
+            <label>
+              說明
+              <input v-model="mediaUploadNote" type="text" placeholder="例如：主照片、生活照、影片" />
+            </label>
           </div>
 
-          <div v-if="mediaUploadFiles.length" class="selected-media-thumb-grid">
-            <div
-              v-for="(file, index) in mediaUploadFiles"
-              :key="`${file.name}-${file.size}-${file.lastModified}`"
-              class="selected-media-thumb-card"
-            >
-              <img
-                v-if="isUploadFileImage(file)"
-                :src="getUploadFilePreviewUrl(file)"
-                :alt="file.name"
-              />
-              <video
-                v-else-if="isUploadFileVideo(file)"
-                :src="getUploadFilePreviewUrl(file)"
-                muted
-                playsinline
-              ></video>
-              <div v-else class="selected-file-fallback">FILE</div>
+          <div
+            class="media-drop-zone"
+            :class="{ 'is-dragging': isMediaDragging }"
+            @dragover.prevent="isMediaDragging = true"
+            @dragleave.prevent="isMediaDragging = false"
+            @drop.prevent="handleMediaDrop"
+          >
+            <strong>拖拉圖片 / 影片到這裡</strong>
+            <span>也可以點下面按鈕一次選多個檔案，會疊加到同一位小姐。</span>
+            <input
+              id="lady-media-file-input"
+              type="file"
+              accept="image/*,video/*"
+              multiple
+              @change="handleMediaFileChange"
+            />
+          </div>
 
-              <button type="button" class="thumb-remove-btn" @click="removeMediaUploadFile(index)">×</button>
+          <div class="media-upload-actions">
+            <button class="ghost-btn" type="button" @click="clearMediaUploadFiles">清空待上傳</button>
+            <button class="primary-btn media-upload-btn" type="button" @click="uploadLadyMedia">
+              上傳 {{ mediaUploadFiles.length || '' }} 個圖片/影片
+            </button>
+          </div>
 
-              <div class="thumb-file-info">
-                <strong>{{ file.name }}</strong>
-                <span>{{ formatUploadFileSize(file) }}</span>
+          <div class="media-upload-selected-panel">
+            <div class="selected-panel-title">
+              <strong>待上傳縮圖</strong>
+              <span>{{ mediaUploadFiles.length }} 個檔案</span>
+            </div>
+
+            <div v-if="mediaUploadFiles.length" class="selected-media-thumb-grid">
+              <div
+                v-for="(file, index) in mediaUploadFiles"
+                :key="`${file.name}-${file.size}-${file.lastModified}`"
+                class="selected-media-thumb-card"
+              >
+                <img
+                  v-if="isUploadFileImage(file)"
+                  :src="getUploadFilePreviewUrl(file)"
+                  :alt="file.name"
+                />
+                <video
+                  v-else-if="isUploadFileVideo(file)"
+                  :src="getUploadFilePreviewUrl(file)"
+                  muted
+                  playsinline
+                ></video>
+                <div v-else class="selected-file-fallback">FILE</div>
+
+                <button type="button" class="thumb-remove-btn" @click="removeMediaUploadFile(index)">×</button>
+
+                <div class="thumb-file-info">
+                  <strong>{{ file.name }}</strong>
+                  <span>{{ formatUploadFileSize(file) }}</span>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div v-else class="selected-media-empty">
-            尚未選擇檔案，拖拉圖片/影片到左側即可加入。
+            <div v-else class="selected-media-empty">
+              尚未選擇檔案，拖拉圖片/影片到上方即可加入。
+            </div>
           </div>
         </div>
 
@@ -3880,6 +3884,194 @@ select:focus, input:focus, textarea:focus {
 
   .compact-control-card .top-rules {
     grid-template-columns: 1fr;
+  }
+}
+
+
+/* 第 018-6 批：媒體上傳改上下排列、縮圖與前台卡片小型化 */
+.compact-media-upload-box {
+  display: grid !important;
+  grid-template-columns: minmax(280px, 760px) !important;
+  justify-content: start !important;
+  align-items: start !important;
+  gap: 10px !important;
+  padding: 16px !important;
+  max-width: 820px !important;
+}
+
+.media-upload-title-row {
+  grid-column: 1 / -1 !important;
+}
+
+.media-upload-main-stack {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.media-lady-select {
+  width: 100%;
+}
+
+.media-inline-row {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 10px;
+}
+
+.compact-media-upload-box .media-drop-zone {
+  grid-column: auto !important;
+  min-height: 132px !important;
+  padding: 14px !important;
+  align-content: center;
+}
+
+.compact-media-upload-box .media-drop-zone input {
+  width: 100%;
+  max-width: 280px;
+}
+
+.compact-media-upload-box .media-upload-actions {
+  grid-column: auto !important;
+  justify-content: stretch !important;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.media-upload-selected-panel {
+  grid-column: auto !important;
+  grid-row: auto !important;
+  min-height: auto !important;
+  max-height: 310px;
+  padding: 10px !important;
+  overflow: hidden;
+}
+
+.selected-media-thumb-grid {
+  grid-template-columns: repeat(auto-fill, minmax(82px, 82px)) !important;
+  justify-content: start;
+  gap: 8px !important;
+  max-height: 230px !important;
+}
+
+.selected-media-thumb-card {
+  width: 82px !important;
+  min-height: auto !important;
+  border-radius: 12px !important;
+}
+
+.selected-media-thumb-card img,
+.selected-media-thumb-card video,
+.selected-file-fallback {
+  width: 82px !important;
+  height: 82px !important;
+  aspect-ratio: 1 / 1 !important;
+  object-fit: cover;
+}
+
+.thumb-file-info {
+  padding: 5px !important;
+}
+
+.thumb-file-info strong {
+  font-size: 11px !important;
+}
+
+.thumb-file-info span {
+  font-size: 10px !important;
+}
+
+.selected-media-empty {
+  min-height: 88px;
+}
+
+/* 前台資料卡縮小成小卡、圖片正方形 */
+.lady-card-grid {
+  grid-template-columns: repeat(auto-fill, minmax(176px, 176px)) !important;
+  justify-content: start;
+  gap: 14px !important;
+}
+
+.lady-card {
+  width: 176px !important;
+  max-width: 176px !important;
+  padding: 10px !important;
+  border-radius: 18px !important;
+}
+
+.lady-cover-box {
+  aspect-ratio: 1 / 1 !important;
+  margin-bottom: 10px !important;
+  border-radius: 16px !important;
+}
+
+.lady-card-title {
+  font-size: 15px !important;
+  margin-bottom: 8px !important;
+}
+
+.lady-card-title strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lady-body-line {
+  gap: 5px !important;
+  margin-bottom: 8px !important;
+}
+
+.lady-body-line span {
+  padding: 4px 8px !important;
+}
+
+.lady-media-thumbs {
+  grid-template-columns: repeat(4, 32px) !important;
+  gap: 5px !important;
+  margin: 8px 0 !important;
+}
+
+.lady-media-thumb {
+  width: 32px !important;
+  height: 32px !important;
+  border-radius: 8px !important;
+}
+
+.card-section-title {
+  margin-top: 8px !important;
+  margin-bottom: 5px !important;
+}
+
+.lady-price-list,
+.lady-service-list {
+  gap: 5px !important;
+  margin-top: 6px !important;
+}
+
+.price-pill,
+.service-pill {
+  padding: 5px 8px !important;
+  font-size: 13px !important;
+}
+
+@media (max-width: 760px) {
+  .compact-media-upload-box {
+    max-width: none !important;
+  }
+
+  .media-inline-row,
+  .compact-media-upload-box .media-upload-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .lady-card-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)) !important;
+  }
+
+  .lady-card {
+    width: auto !important;
+    max-width: none !important;
   }
 }
 
