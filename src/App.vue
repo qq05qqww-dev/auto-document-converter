@@ -166,8 +166,67 @@
           <p>一般情況不用改這裡；遇到新店家格式抓不到、身材格式特殊、或詞被誤判成小姐名時再調整。</p>
         </div>
 
-        <div class="manager-card advanced-manager-card">
-          <div class="manager-title">
+                <div class="advanced-inner-tabs">
+          <button
+            type="button"
+            class="summary-pill"
+            :class="{ active: activeAdvancedPanel === 'country-map' }"
+            @click="toggleAdvancedPanel('country-map')"
+          >
+            國籍欄位
+          </button>
+          <button
+            type="button"
+            class="summary-pill"
+            :class="{ active: activeAdvancedPanel === 'country-price' }"
+            @click="toggleAdvancedPanel('country-price')"
+          >
+            國籍加價
+          </button>
+          <button
+            type="button"
+            class="summary-pill"
+            :class="{ active: activeAdvancedPanel === 'country-alias' }"
+            @click="toggleAdvancedPanel('country-alias')"
+          >
+            國籍同義詞
+          </button>
+          <button
+            type="button"
+            class="summary-pill"
+            :class="{ active: activeAdvancedPanel === 'service-order' }"
+            @click="toggleAdvancedPanel('service-order')"
+          >
+            服務排序
+          </button>
+          <button
+            type="button"
+            class="summary-pill"
+            :class="{ active: activeAdvancedPanel === 'service-alias' }"
+            @click="toggleAdvancedPanel('service-alias')"
+          >
+            服務同義詞
+          </button>
+          <button
+            type="button"
+            class="summary-pill"
+            :class="{ active: activeAdvancedPanel === 'remove-text' }"
+            @click="toggleAdvancedPanel('remove-text')"
+          >
+            不想出現文字
+          </button>
+          <button
+            type="button"
+            class="summary-pill"
+            :class="{ active: activeAdvancedPanel === 'keep-keyword' }"
+            @click="toggleAdvancedPanel('keep-keyword')"
+          >
+            額外保留關鍵字
+          </button>
+        </div>
+
+<div class="manager-card advanced-manager-card">
+          <div class="manager-title" v-if="activeAdvancedPanel === 'country-map'">
             <h4>國籍欄位規則</h4>
             <p>把店家的國籍寫法轉成固定國籍。</p>
           </div>
@@ -199,7 +258,7 @@
           </div>
         </div>
 
-        <div class="rule-grid">
+        <div class="rule-grid" v-if="activeAdvancedPanel === 'country-price'">
           <label>
             國籍加價規則，一行一個，格式：國籍=加價
             <textarea v-model="countryPriceRulesText" class="rule-textarea small"></textarea>
@@ -211,7 +270,7 @@
           </label>
         </div>
 
-        <div class="rule-grid">
+        <div class="rule-grid" v-if="activeAdvancedPanel === 'service-order'">
           <label>
             服務固定排序，一行一個或空格分隔
             <textarea v-model="serviceOrderText" class="rule-textarea"></textarea>
@@ -223,7 +282,7 @@
           </label>
         </div>
 
-        <div class="rule-grid">
+        <div class="rule-grid" v-if="activeAdvancedPanel === 'remove-text'">
           <label>
             不想出現的文字，一行一個（套用時會清理文件1）
             <textarea v-model="removeWordsText" class="rule-textarea small"></textarea>
@@ -682,6 +741,12 @@ const showFormatSettings = ref(false)
 const showQuickRules = ref(false)
 const showApiPanel = ref(false)
 const activeTopPanel = ref('')
+const activeAdvancedPanel = ref('country-map')
+
+function toggleAdvancedPanel(panel) {
+  activeAdvancedPanel.value = activeAdvancedPanel.value === panel ? '' : panel
+}
+
 
 function toggleTopPanel(panel) {
   activeTopPanel.value = activeTopPanel.value === panel ? '' : panel
@@ -4735,6 +4800,50 @@ select:focus, input:focus, textarea:focus {
 
 .frontend-preview-panel {
   margin-top: 18px !important;
+}
+
+
+/* 第 018-11 批：進階設定內部分頁展開 */
+.advanced-inner-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-start;
+  align-items: center;
+  padding: 10px 0 14px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.advanced-inner-tabs .summary-pill {
+  min-height: 38px;
+  padding: 8px 14px;
+  font-size: 13px;
+}
+
+.advanced-inner-tabs .summary-pill.active {
+  color: #ffffff;
+  background: linear-gradient(135deg, #2563eb, #0891b2);
+  box-shadow: 0 10px 22px rgba(37, 99, 235, 0.22);
+}
+
+.advanced-section.compact-control-content {
+  padding-top: 14px;
+}
+
+.advanced-section.compact-control-content > .advanced-inner-tabs + * {
+  margin-top: 0;
+}
+
+@media (max-width: 760px) {
+  .advanced-inner-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .advanced-inner-tabs .summary-pill {
+    width: 100%;
+  }
 }
 
 </style>
