@@ -4,19 +4,19 @@
     <section class="hero-card compact-control-card">
       <div class="top-control-header">
         <div class="top-setting-buttons compact-main-buttons">
-          <button class="summary-pill" type="button" @click="showPriceSettings = !showPriceSettings">
+          <button class="summary-pill" :class="{ active: activeTopPanel === 'price' }" type="button" @click="toggleTopPanel('price')">
             金額設定
           </button>
-          <button class="summary-pill" type="button" @click="showFormatSettings = !showFormatSettings">
+          <button class="summary-pill" :class="{ active: activeTopPanel === 'format' }" type="button" @click="toggleTopPanel('format')">
             輸出格式
           </button>
-          <button class="summary-pill" type="button" @click="showQuickRules = !showQuickRules">
+          <button class="summary-pill" :class="{ active: activeTopPanel === 'quick' }" type="button" @click="toggleTopPanel('quick')">
             常用規則
           </button>
-          <button class="summary-pill" type="button" @click="showAdvancedSettings = !showAdvancedSettings">
+          <button class="summary-pill" :class="{ active: activeTopPanel === 'advanced' }" type="button" @click="toggleTopPanel('advanced')">
             進階設定
           </button>
-          <button class="summary-pill api-toggle-pill" type="button" @click="showApiPanel = !showApiPanel">
+          <button class="summary-pill api-toggle-pill" :class="{ active: activeTopPanel === 'api' }" type="button" @click="toggleTopPanel('api')">
             {{ showApiPanel ? '收合API' : 'API串接' }}
           </button>
         </div>
@@ -622,6 +622,16 @@ const showPriceSettings = ref(false)
 const showFormatSettings = ref(false)
 const showQuickRules = ref(false)
 const showApiPanel = ref(false)
+const activeTopPanel = ref('')
+
+function toggleTopPanel(panel) {
+  activeTopPanel.value = activeTopPanel.value === panel ? '' : panel
+  showPriceSettings.value = activeTopPanel.value === 'price'
+  showFormatSettings.value = activeTopPanel.value === 'format'
+  showQuickRules.value = activeTopPanel.value === 'quick'
+  showAdvancedSettings.value = activeTopPanel.value === 'advanced'
+  showApiPanel.value = activeTopPanel.value === 'api'
+}
 const showAliasList = ref(false)
 const showRemoveWordList = ref(false)
 
@@ -3783,6 +3793,93 @@ select:focus, input:focus, textarea:focus {
 
   .compact-main-buttons .summary-pill {
     flex: 1 1 calc(50% - 8px);
+  }
+}
+
+
+/* 第 018-5 批：上方控制列固定在上方，單一功能展開 */
+.compact-control-card {
+  display: block !important;
+  min-height: auto !important;
+}
+
+.top-control-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  padding: 6px 0 12px;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(8px);
+}
+
+.compact-main-buttons {
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  gap: 12px !important;
+  width: 100%;
+  margin: 0 auto !important;
+}
+
+.compact-main-buttons .summary-pill.active {
+  color: #ffffff;
+  background: linear-gradient(135deg, #2563eb, #0891b2);
+  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.22);
+}
+
+.compact-control-card > .compact-control-content,
+.compact-control-card > .hero-actions,
+.compact-control-content {
+  width: min(1180px, 100%);
+  margin: 18px auto 0 !important;
+}
+
+.compact-control-card .top-rules {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
+  gap: 20px;
+  align-items: start;
+}
+
+.compact-control-card .format-grid,
+.compact-control-card .format-row,
+.compact-control-card .format-options {
+  justify-content: center !important;
+}
+
+.compact-control-card .format-card,
+.compact-control-card .format-options,
+.compact-control-card .format-preview,
+.compact-control-card .format-setting-row {
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+.api-panel-top {
+  width: min(1180px, 100%);
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+.advanced-section.compact-control-content {
+  max-height: 70vh;
+  overflow: auto;
+}
+
+@media (max-width: 900px) {
+  .top-control-header {
+    position: static;
+  }
+
+  .compact-main-buttons {
+    justify-content: flex-start !important;
+  }
+
+  .compact-control-card .top-rules {
+    grid-template-columns: 1fr;
   }
 }
 
