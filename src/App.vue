@@ -4602,4 +4602,126 @@ select:focus, input:focus, textarea:focus {
   }
 }
 
+
+/* 第 018-9 批：待上傳縮圖正方形、小姐資訊卡高度拉長 */
+.selected-media-thumb-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(82px, 82px)) !important;
+  justify-content: start !important;
+  align-items: start !important;
+  gap: 8px !important;
+}
+
+.selected-media-thumb-card {
+  width: 82px !important;
+  min-width: 82px !important;
+  max-width: 82px !important;
+  min-height: 116px !important;
+  border-radius: 12px !important;
+  overflow: hidden !important;
+}
+
+.selected-media-thumb-card img,
+.selected-media-thumb-card video,
+.selected-file-fallback {
+  width: 82px !important;
+  height: 82px !important;
+  min-height: 82px !important;
+  aspect-ratio: 1 / 1 !important;
+  object-fit: cover !important;
+  border-radius: 10px !important;
+  display: block !important;
+}
+
+.thumb-file-info {
+  height: 34px !important;
+  padding: 4px 5px !important;
+  overflow: hidden !important;
+}
+
+.thumb-file-info strong {
+  display: block !important;
+  max-width: 72px !important;
+  font-size: 10px !important;
+  line-height: 1.15 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.thumb-file-info span {
+  display: block !important;
+  font-size: 9px !important;
+  line-height: 1.15 !important;
+}
+
+/* 小姐資訊卡：不是變寬，是把高度拉長 */
+.compact-right-lady-card,
+.lady-card {
+  min-height: 640px !important;
+  height: auto !important;
+  align-self: stretch !important;
+}
+
+/* 讓右邊卡片內容不要變成小小內部捲軸 */
+.compact-right-lady-card .lady-service-list,
+.lady-card .lady-service-list {
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+/* 若前一批有把服務區做成內部滾動，這批強制取消 */
+.compact-right-lady-card .compact-right-service-list,
+.compact-right-service-list {
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+/* 右邊小姐卡的封面維持正方形，不拉寬 */
+.compact-right-lady-card .lady-cover-box,
+.lady-card .lady-cover-box {
+  aspect-ratio: 1 / 1 !important;
+  height: auto !important;
+}
+
+/* 右側卡片網格維持原寬度邏輯，只把卡片拉長 */
+.compact-right-lady-grid,
+.lady-card-grid {
+  align-items: stretch !important;
+}
+
+/* 桌機上拉長更多，接近使用者紅框高度 */
+@media (min-width: 920px) {
+  .compact-right-lady-card,
+  .lady-card {
+    min-height: 720px !important;
+  }
+}
+
+@media (max-width: 760px) {
+  .selected-media-thumb-grid {
+    grid-template-columns: repeat(auto-fill, minmax(74px, 74px)) !important;
+  }
+
+  .selected-media-thumb-card {
+    width: 74px !important;
+    min-width: 74px !important;
+    max-width: 74px !important;
+    min-height: 108px !important;
+  }
+
+  .selected-media-thumb-card img,
+  .selected-media-thumb-card video,
+  .selected-file-fallback {
+    width: 74px !important;
+    height: 74px !important;
+    min-height: 74px !important;
+  }
+
+  .compact-right-lady-card,
+  .lady-card {
+    min-height: auto !important;
+  }
+}
+
 </style>
