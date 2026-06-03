@@ -1271,18 +1271,14 @@ const currentDocumentPreviewLadies = computed(() => {
   }
 })
 
-const previewLadies = computed(() => {
-  return currentDocumentPreviewLadies.value.length
-    ? currentDocumentPreviewLadies.value
-    : frontendLadies.value
-})
+const previewLadies = computed(() => currentDocumentPreviewLadies.value)
 
 const previewStatusText = computed(() => {
   if (currentDocumentPreviewLadies.value.length) {
     return `目前只顯示本次文件最新 ${currentDocumentPreviewLadies.value.length} 筆小姐；網站後台資料庫仍會累加保存。`
   }
 
-  return frontendStatusText.value
+  return '目前沒有本次文件預覽資料。貼上文件1並產生文件3後才會顯示。'
 })
 
 const frontendCountries = computed(() => {
@@ -1648,8 +1644,8 @@ async function submitDocument4ToDatabase() {
       throw new Error(`安全檢查失敗：匯入後 ${data.afterCount} 筆小於匯入前 ${data.beforeCount} 筆，已阻擋。`)
     }
 
-    apiStatusText.value = data.message || `已送出 ${data.count ?? payload.items.length} 筆到 Supabase PostgreSQL。`
-    await loadFrontendLadies()
+    apiStatusText.value = `${data.message || `已送出 ${data.count ?? payload.items.length} 筆到 Supabase PostgreSQL。`} 已清空文件1 / 文件2 / 文件3 / 文件4，本次預覽已歸零，可以開始建立下一批。`
+    clearDocumentsAfterDatabaseSubmit()
   } catch (error) {
     apiStatusText.value = `送出資料庫失敗：${error.message || error}`
   }
@@ -2847,6 +2843,23 @@ function clearConfirmedText() {
   updateJsonPreview()
   statusMessage.value = '文件3已清空，文件4 JSON 已同步更新。'
 }
+
+
+function clearDocumentsAfterDatabaseSubmit() {
+  sourceText.value = ''
+  resultText.value = ''
+  confirmedText.value = '\n\n'
+  jsonResultText.value = JSON.stringify({
+    generatedAt: new Date().toISOString(),
+    source: 'document3_confirmed',
+    total: 0,
+    items: []
+  }, null, 2)
+  localStorage.setItem(SOURCE_STORAGE_KEY, sourceText.value)
+  localStorage.setItem(RESULT_STORAGE_KEY, resultText.value)
+  localStorage.setItem(CONFIRMED_STORAGE_KEY, confirmedText.value)
+}
+
 
 
 

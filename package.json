@@ -1,6 +1,6 @@
 {
   "name": "auto-document-converter",
-  "version": "0.0.18-16-admin-wide-updated-time",
+  "version": "0.0.18-17-clear-preview-after-db-submit",
   "private": true,
   "type": "module",
   "scripts": {
