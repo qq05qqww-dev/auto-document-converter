@@ -19,8 +19,221 @@
           <button class="summary-pill api-toggle-pill" :class="{ active: activeTopPanel === 'api' }" type="button" @click="toggleTopPanel('api')">
             {{ showApiPanel ? '收合API' : 'API串接' }}
           </button>
+          <button class="summary-pill manager-toggle-pill" :class="{ active: showScopeManager }" type="button" @click="showScopeManager = !showScopeManager">
+            地區機房管理
+          </button>
         </div>
       </div>
+
+      <section class="scope-manager-card" v-if="showScopeManager">
+        <div class="scope-rule-header">
+          <div>
+            <h3>地區 / 定點外送 / 機房管理</h3>
+            <p>主畫面只保留下拉選取；新增、修改、刪除收在「管理清單」裡，避免畫面太亂。</p>
+          </div>
+          <div class="scope-status-pill">已建立：{{ locationCities.length }} 縣市 / {{ totalDistrictCount }} 地區 / {{ totalRoomCount }} 機房</div>
+        </div>
+
+        <div class="scope-manager-selection-shell">
+          <div class="location-select-line scope-manager-select-grid">
+            <label>
+              縣市 / 國籍
+              <select v-model="managerSelectedCity">
+                <option value="">請選縣市</option>
+                <option v-for="city in locationCities" :key="city" :value="city">{{ city }}</option>
+              </select>
+            </label>
+
+            <label>
+              地區
+              <select v-model="managerSelectedDistrict" :disabled="!managerSelectedCity">
+                <option value="">請選地區</option>
+                <option v-for="district in managerDistricts" :key="district" :value="district">{{ district }}</option>
+              </select>
+            </label>
+
+            <label>
+              定點 / 外送
+              <select v-model="managerSelectedType">
+                <option value="">請選定點 / 外送</option>
+                <option v-for="type in locationTypes" :key="type" :value="type">{{ type }}</option>
+              </select>
+            </label>
+
+            <label>
+              機房
+              <select v-model="ruleScopeRoom" :disabled="!managerSelectedCity || !managerSelectedDistrict || !managerSelectedType">
+                <option value="">請選機房</option>
+                <option v-for="room in managerRooms" :key="room" :value="room">{{ room }}</option>
+              </select>
+            </label>
+
+            <button class="primary-btn manager-crud-toggle" type="button" @click="showScopeCrudPanel = !showScopeCrudPanel">
+              管理清單
+            </button>
+          </div>
+
+          <div class="selected-scope-preview scope-manager-preview-bar">
+            目前選擇：
+            <strong>{{ managerSelectedCity || '未選縣市' }}</strong>
+            <span>→</span>
+            <strong>{{ managerSelectedDistrict || '未選地區' }}</strong>
+            <span>→</span>
+            <strong>{{ managerSelectedType || '未選定點/外送' }}</strong>
+            <span>→</span>
+            <strong>{{ ruleScopeRoom || '未選機房/店家' }}</strong>
+          </div>
+        </div>
+
+        <div class="room-rule-action-row scope-manager-action-shell">
+          <div class="room-rule-current">
+            <div>目前規則範圍：<strong>{{ currentRuleScopeLabel }}</strong></div>
+            <span>有效來源：{{ effectiveRuleSourceLabel }}</span>
+          </div>
+          <div class="room-rule-buttons">
+            <button class="primary-btn" type="button" @click="loadCurrentScopeRules">套用目前選擇規則</button>
+            <button class="ghost-btn" type="button" @click="saveCurrentScopeRules">儲存目前選擇規則</button>
+            <button class="ghost-btn" type="button" @click="copyGlobalRulesToCurrentScope">複製公版到目前選擇</button>
+            <button class="danger-btn" type="button" @click="clearCurrentScopeRules">清除目前選擇專屬規則</button>
+          </div>
+        </div>
+
+        <div v-if="showScopeCrudPanel" class="option-modal-mask" @click.self="showScopeCrudPanel = false">
+          <section class="option-modal-card location-manager-modal-card">
+            <button class="option-modal-close" type="button" @click="showScopeCrudPanel = false">×</button>
+
+            <div class="option-modal-head">
+              <h2>地區機房管理設定</h2>
+              <p>管理新增 / 修改會用到的縣市、地區、機房。定點 / 外送固定使用下拉選擇，不另外顯示管理區。</p>
+              <span class="option-sync-pill">
+                <i></i>
+                已讀取本機管理清單
+              </span>
+            </div>
+
+            <div class="location-modal-grid location-modal-grid-room-first">
+<div class="option-manager-panel">
+                <h3>機房管理</h3>
+                <label class="modal-inline-label modal-select-label">
+                  選擇縣市
+                  <select v-model="roomManagerSelectedCity">
+                    <option value="">請先選縣市</option>
+                    <option v-for="city in locationCities" :key="city" :value="city">{{ city }}</option>
+                  </select>
+                </label>
+                <select v-model="roomManagerSelectedDistrict" :disabled="!roomManagerSelectedCity">
+                  <option value="">請先選地區</option>
+                  <option v-for="district in roomManagerDistricts" :key="district" :value="district">{{ district }}</option>
+                </select>
+                <select v-model="roomManagerSelectedType">
+                  <option value="">請選定點 / 外送</option>
+                  <option v-for="type in locationTypes" :key="type" :value="type">{{ type }}</option>
+                </select>
+                <div class="option-inline-input">
+                  <input
+                    v-model="newRoomName"
+                    :disabled="!roomManagerSelectedCity || !roomManagerSelectedDistrict || !roomManagerSelectedType"
+                    placeholder="新增機房，例如：A機房"
+                  />
+                  <button
+                    type="button"
+                    :disabled="!roomManagerSelectedCity || !roomManagerSelectedDistrict || !roomManagerSelectedType"
+                    @click="addLocationRoom"
+                  >新增</button>
+                </div>
+                <div class="option-current-text">目前：{{ ruleScopeRoom || '未選機房' }}</div>
+                <div class="option-action-row">
+                  <button type="button" :disabled="!ruleScopeRoom" @click="renameLocationRoom(ruleScopeRoom)">修改目前機房</button>
+                  <button type="button" class="danger-mini" :disabled="!ruleScopeRoom" @click="removeLocationRoom(ruleScopeRoom)">刪除目前機房</button>
+                </div>
+              </div>
+            
+<div class="option-manager-panel">
+                <h3>縣市管理</h3>
+                <div class="modal-inline-label">
+                  選擇縣市
+                  <div class="modal-button-list city-button-list">
+                    <button
+                      v-for="city in locationCities"
+                      :key="city"
+                      type="button"
+                      class="modal-select-button drag-sort-button"
+                      :class="{ active: managerSelectedCity === city, dragging: dragCityName === city }"
+                      draggable="true"
+                      @click="managerSelectedCity = city"
+                      @dragstart="handleCityDragStart(city)"
+                      @dragover.prevent
+                      @drop.prevent="handleCityDrop(city)"
+                      @dragend="clearDragState"
+                    >
+                      <span class="drag-handle">⋮⋮</span>
+                      {{ city }}
+                    </button>
+                  </div>
+                </div>
+                <div class="option-inline-input">
+                  <input v-model="newCityName" placeholder="新增縣市，例如：竹北" />
+                  <button type="button" @click="addLocationCity">新增</button>
+                </div>
+                <div class="option-current-text">目前：{{ managerSelectedCity || '未選縣市' }}</div>
+                <div class="option-action-row">
+                  <button type="button" :disabled="!managerSelectedCity" @click="renameLocationCity(managerSelectedCity)">修改目前縣市</button>
+                  <button type="button" class="danger-mini" :disabled="!managerSelectedCity" @click="removeLocationCity(managerSelectedCity)">刪除目前縣市</button>
+                </div>
+              </div>
+
+              
+<div class="option-manager-panel">
+                <h3>地區管理</h3>
+                <div class="district-selected-city-note">
+                  目前縣市：<strong>{{ managerSelectedCity || '請先在縣市管理選縣市' }}</strong>
+                </div>
+                <div class="modal-button-list district-button-list" v-if="managerSelectedCity && managerDistricts.length">
+                  <button
+                    v-for="district in managerDistricts"
+                    :key="district"
+                    type="button"
+                    class="modal-select-button drag-sort-button"
+                    :class="{ active: managerSelectedDistrict === district, dragging: dragDistrictName === district }"
+                    draggable="true"
+                    @click="managerSelectedDistrict = district"
+                    @dragstart="handleDistrictDragStart(district)"
+                    @dragover.prevent
+                    @drop.prevent="handleDistrictDrop(district)"
+                    @dragend="clearDragState"
+                  >
+                    <span class="drag-handle">⋮⋮</span>
+                    {{ district }}
+                    <span class="delete-chip" @click.stop="removeLocationDistrict(district)">×</span>
+                  </button>
+                </div>
+                <div class="district-empty-note" v-else>
+                  {{ managerSelectedCity ? '這個縣市目前還沒有地區，可以在下方新增。' : '請先選縣市。' }}
+                </div>
+                <div class="option-inline-input">
+                  <input v-model="newDistrictName" :disabled="!managerSelectedCity" placeholder="新增地區，例如：中壢" />
+                  <button type="button" :disabled="!managerSelectedCity" @click="addLocationDistrict">新增</button>
+                </div>
+                <div class="option-current-text">目前：{{ managerSelectedDistrict || '未選地區' }}</div>
+                <div class="option-action-row">
+                  <button type="button" :disabled="!managerSelectedCity || !managerSelectedDistrict" @click="renameLocationDistrict(managerSelectedDistrict)">修改目前地區</button>
+                  <button type="button" class="danger-mini" :disabled="!managerSelectedCity || !managerSelectedDistrict" @click="removeLocationDistrict(managerSelectedDistrict)">刪除目前地區</button>
+                </div>
+              </div>
+
+              
+
+
+            </div>
+
+            <div class="location-modal-bottom">
+              <button class="restore-btn" type="button" @click="showScopeCrudPanel = false">完成，關閉管理</button>
+            </div>
+          </section>
+        </div>
+
+      </section>
+
         <div v-if="showPriceSettings" class="hero-actions setting-content-block">
         <label>
           加價模式
@@ -333,12 +546,7 @@
         <p>這裡預設連線到 Render 線上 API，也可以手動切換其他 API 位置。</p>
       </div>
 
-      <label>
-        API 位置
-        <input v-model="apiBaseUrl" type="text" placeholder="https://auto-document-converter-api.onrender.com" />
-      </label>
-
-      <div class="api-actions">
+      <div class="api-actions api-actions-top-row">
         <button class="ghost-btn" type="button" @click="saveApiBaseUrl">儲存API位置</button>
         <button class="ghost-btn" type="button" @click="useOnlineApiBaseUrl">套用線上API</button>
         <button class="ghost-btn" type="button" @click="testApiConnection">測試API</button>
@@ -348,7 +556,14 @@
         <button class="ghost-btn frontend-load-btn" type="button" @click="loadFrontendLadies">讀取前台資料</button>
       </div>
 
-      <p class="hint">{{ apiStatusText }}</p>
+      <div class="api-status-box">
+        <p class="hint api-status-text">{{ apiStatusText }}</p>
+      </div>
+
+      <label class="api-url-wide-row">
+        <span>API 位置</span>
+        <input v-model="apiBaseUrl" type="text" placeholder="https://auto-document-converter-api.onrender.com" />
+      </label>
     </section>
 
 
@@ -689,7 +904,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 
 // 第 009-7 批開始固定使用這兩個正式儲存位置。
 // 之後新版不要再改這兩個 Key，避免每次更新檔案後規則消失。
@@ -697,6 +912,9 @@ const RULE_STORAGE_KEY = 'auto-document-converter-rules-current'
 const CONFIRMED_STORAGE_KEY = 'auto-document-converter-confirmed-current'
 const SOURCE_STORAGE_KEY = 'auto-document-converter-source-current'
 const RESULT_STORAGE_KEY = 'auto-document-converter-result-current'
+const RULE_SCOPE_STORAGE_KEY = 'auto-document-converter-scope-rules-current'
+const LOCATION_SCOPE_STORAGE_KEY = 'auto-document-converter-location-room-options-current'
+const CLEAN_START_PANEL_STORAGE_KEY = 'auto-document-converter-clean-start-panel-018-25'
 
 const LEGACY_RULE_STORAGE_KEYS = [
   'auto-document-converter-rules-batch009-6',
@@ -749,6 +967,25 @@ const showQuickRules = ref(false)
 const showApiPanel = ref(false)
 const activeTopPanel = ref('')
 const activeAdvancedPanel = ref('country-map')
+const ruleScopeLevel = ref('global')
+const ruleScopeCity = ref('')
+const ruleScopeDistrict = ref('')
+const ruleScopeType = ref('')
+const ruleScopeRoom = ref('')
+const showScopeManager = ref(false)
+const showScopeCrudPanel = ref(false)
+const newCityName = ref('')
+const newDistrictName = ref('')
+const newLocationTypeName = ref('')
+const newRoomName = ref('')
+const managerSelectedCity = ref('')
+const managerSelectedDistrict = ref('')
+const managerSelectedType = ref('')
+const roomManagerSelectedCity = ref('')
+const roomManagerSelectedDistrict = ref('')
+const roomManagerSelectedType = ref('')
+const dragCityName = ref('')
+const dragDistrictName = ref('')
 
 function toggleAdvancedPanel(panel) {
   activeAdvancedPanel.value = activeAdvancedPanel.value === panel ? '' : panel
@@ -1199,7 +1436,23 @@ const sampleText = `💢超性感搖搖馬💢
 ⭕️買5送3
 ⭕️買兩節3S`
 
+
+function closeAllTopPanelsForCleanStart() {
+  if (localStorage.getItem(CLEAN_START_PANEL_STORAGE_KEY) === 'done') return
+
+  activeTopPanel.value = ''
+  showPriceSettings.value = false
+  showOutputSettings.value = false
+  showCommonRules.value = false
+  showAdvancedSettings.value = false
+  showApiPanel.value = false
+  showScopeManager.value = false
+
+  localStorage.setItem(CLEAN_START_PANEL_STORAGE_KEY, 'done')
+}
+
 onMounted(() => {
+  closeAllTopPanelsForCleanStart()
   loadRules({ silent: true })
   loadConfirmedText({ silent: true })
   normalizeDocument3Text()
@@ -2563,6 +2816,692 @@ function escapeRegExp(text) {
   return String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+
+function cleanScopeText(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ')
+}
+
+const defaultLocationOptions = {
+  cities: [
+    '基隆市', '台北市', '新北市', '桃園市', '新竹市', '新竹縣',
+    '苗栗縣', '台中市', '彰化縣', '南投縣', '雲林縣',
+    '嘉義市', '嘉義縣', '台南市', '高雄市', '屏東縣',
+    '宜蘭縣', '花蓮縣', '台東縣', '澎湖縣', '金門縣', '連江縣'
+  ],
+  districts: {
+    基隆市: ['仁愛區', '信義區', '中正區', '中山區', '安樂區', '暖暖區', '七堵區'],
+    台北市: ['中正區', '大同區', '中山區', '松山區', '大安區', '萬華區', '信義區', '士林區', '北投區', '內湖區', '南港區', '文山區'],
+    新北市: ['板橋區', '三重區', '中和區', '永和區', '新莊區', '新店區', '樹林區', '鶯歌區', '三峽區', '淡水區', '汐止區', '瑞芳區', '土城區', '蘆洲區', '五股區', '泰山區', '林口區', '深坑區', '石碇區', '坪林區', '三芝區', '石門區', '八里區', '平溪區', '雙溪區', '貢寮區', '金山區', '萬里區', '烏來區'],
+    桃園市: ['桃園區', '中壢區', '平鎮區', '八德區', '楊梅區', '蘆竹區', '大溪區', '龍潭區', '龜山區', '大園區', '觀音區', '新屋區', '復興區'],
+    新竹市: ['東區', '北區', '香山區'],
+    新竹縣: ['竹北市', '竹東鎮', '新埔鎮', '關西鎮', '湖口鄉', '新豐鄉', '芎林鄉', '橫山鄉', '北埔鄉', '寶山鄉', '峨眉鄉', '尖石鄉', '五峰鄉'],
+    苗栗縣: ['苗栗市', '頭份市', '苑裡鎮', '通霄鎮', '竹南鎮', '後龍鎮', '卓蘭鎮', '大湖鄉', '公館鄉', '銅鑼鄉', '南庄鄉', '頭屋鄉', '三義鄉', '西湖鄉', '造橋鄉', '三灣鄉', '獅潭鄉', '泰安鄉'],
+    台中市: ['中區', '東區', '南區', '西區', '北區', '北屯區', '西屯區', '南屯區', '太平區', '大里區', '霧峰區', '烏日區', '豐原區', '后里區', '石岡區', '東勢區', '和平區', '新社區', '潭子區', '大雅區', '神岡區', '大肚區', '沙鹿區', '龍井區', '梧棲區', '清水區', '大甲區', '外埔區', '大安區'],
+    彰化縣: ['彰化市', '員林市', '和美鎮', '鹿港鎮', '溪湖鎮', '二林鎮', '田中鎮', '北斗鎮', '花壇鄉', '芬園鄉', '大村鄉', '永靖鄉', '伸港鄉', '線西鄉', '福興鄉', '秀水鄉', '埔心鄉', '埔鹽鄉', '大城鄉', '芳苑鄉', '竹塘鄉', '社頭鄉', '二水鄉', '田尾鄉', '埤頭鄉', '溪州鄉'],
+    南投縣: ['南投市', '埔里鎮', '草屯鎮', '竹山鎮', '集集鎮', '名間鄉', '鹿谷鄉', '中寮鄉', '魚池鄉', '國姓鄉', '水里鄉', '信義鄉', '仁愛鄉'],
+    雲林縣: ['斗六市', '斗南鎮', '虎尾鎮', '西螺鎮', '土庫鎮', '北港鎮', '古坑鄉', '大埤鄉', '莿桐鄉', '林內鄉', '二崙鄉', '崙背鄉', '麥寮鄉', '東勢鄉', '褒忠鄉', '台西鄉', '元長鄉', '四湖鄉', '口湖鄉', '水林鄉'],
+    嘉義市: ['東區', '西區'],
+    嘉義縣: ['太保市', '朴子市', '布袋鎮', '大林鎮', '民雄鄉', '溪口鄉', '新港鄉', '六腳鄉', '東石鄉', '義竹鄉', '鹿草鄉', '水上鄉', '中埔鄉', '竹崎鄉', '梅山鄉', '番路鄉', '大埔鄉', '阿里山鄉'],
+    台南市: ['中西區', '東區', '南區', '北區', '安平區', '安南區', '永康區', '歸仁區', '新化區', '左鎮區', '玉井區', '楠西區', '南化區', '仁德區', '關廟區', '龍崎區', '官田區', '麻豆區', '佳里區', '西港區', '七股區', '將軍區', '學甲區', '北門區', '新營區', '後壁區', '白河區', '東山區', '六甲區', '下營區', '柳營區', '鹽水區', '善化區', '大內區', '山上區', '新市區', '安定區'],
+    高雄市: ['新興區', '前金區', '苓雅區', '鹽埕區', '鼓山區', '旗津區', '前鎮區', '三民區', '楠梓區', '小港區', '左營區', '仁武區', '大社區', '岡山區', '路竹區', '阿蓮區', '田寮區', '燕巢區', '橋頭區', '梓官區', '彌陀區', '永安區', '湖內區', '鳳山區', '大寮區', '林園區', '鳥松區', '大樹區', '旗山區', '美濃區', '六龜區', '內門區', '杉林區', '甲仙區', '桃源區', '那瑪夏區', '茂林區', '茄萣區'],
+    屏東縣: ['屏東市', '潮州鎮', '東港鎮', '恆春鎮', '萬丹鄉', '長治鄉', '麟洛鄉', '九如鄉', '里港鄉', '鹽埔鄉', '高樹鄉', '萬巒鄉', '內埔鄉', '竹田鄉', '新埤鄉', '枋寮鄉', '新園鄉', '崁頂鄉', '林邊鄉', '南州鄉', '佳冬鄉', '琉球鄉', '車城鄉', '滿州鄉', '枋山鄉', '三地門鄉', '霧台鄉', '瑪家鄉', '泰武鄉', '來義鄉', '春日鄉', '獅子鄉', '牡丹鄉'],
+    宜蘭縣: ['宜蘭市', '羅東鎮', '蘇澳鎮', '頭城鎮', '礁溪鄉', '壯圍鄉', '員山鄉', '冬山鄉', '五結鄉', '三星鄉', '大同鄉', '南澳鄉'],
+    花蓮縣: ['花蓮市', '鳳林鎮', '玉里鎮', '新城鄉', '吉安鄉', '壽豐鄉', '光復鄉', '豐濱鄉', '瑞穗鄉', '富里鄉', '秀林鄉', '萬榮鄉', '卓溪鄉'],
+    台東縣: ['台東市', '成功鎮', '關山鎮', '卑南鄉', '鹿野鄉', '池上鄉', '東河鄉', '長濱鄉', '太麻里鄉', '大武鄉', '綠島鄉', '海端鄉', '延平鄉', '金峰鄉', '達仁鄉', '蘭嶼鄉'],
+    澎湖縣: ['馬公市', '湖西鄉', '白沙鄉', '西嶼鄉', '望安鄉', '七美鄉'],
+    金門縣: ['金城鎮', '金湖鎮', '金沙鎮', '金寧鄉', '烈嶼鄉', '烏坵鄉'],
+    連江縣: ['南竿鄉', '北竿鄉', '莒光鄉', '東引鄉']
+  },
+  types: ['定點', '外送'],
+  rooms: {}
+}
+function normalizeLocationOptions(options = {}) {
+  const hiddenCities = Array.isArray(options.hiddenCities) ? options.hiddenCities.map(cleanScopeText).filter(Boolean) : []
+  const hiddenDistricts = options.hiddenDistricts && typeof options.hiddenDistricts === 'object' ? options.hiddenDistricts : {}
+
+  const storedCities = Array.isArray(options.cities) ? options.cities : []
+  const orderedCities = storedCities.length ? storedCities : defaultLocationOptions.cities
+  const cities = [...new Set([...orderedCities, ...defaultLocationOptions.cities].map(cleanScopeText).filter(Boolean))]
+    .filter(city => !hiddenCities.includes(city))
+
+  const storedDistricts = options.districts && typeof options.districts === 'object' ? options.districts : {}
+  const districts = {}
+
+  cities.forEach(city => {
+    const defaultList = defaultLocationOptions.districts?.[city] || []
+    const storedList = storedDistricts?.[city] || []
+    const hiddenList = Array.isArray(hiddenDistricts?.[city]) ? hiddenDistricts[city].map(cleanScopeText).filter(Boolean) : []
+    const orderedDistricts = Array.isArray(storedList) && storedList.length ? storedList : defaultList
+    districts[city] = [...new Set([...orderedDistricts, ...defaultList].map(cleanScopeText).filter(Boolean))]
+      .filter(district => !hiddenList.includes(district))
+  })
+
+  return {
+    cities,
+    districts,
+    hiddenCities,
+    hiddenDistricts,
+    types: defaultLocationOptions.types,
+    rooms: options.rooms && typeof options.rooms === 'object' ? options.rooms : {}
+  }
+}
+function readLocationOptions() {
+  try {
+    return normalizeLocationOptions(JSON.parse(localStorage.getItem(LOCATION_SCOPE_STORAGE_KEY) || '{}'))
+  } catch {
+    return normalizeLocationOptions({})
+  }
+}
+
+function writeLocationOptions(options) {
+  localStorage.setItem(LOCATION_SCOPE_STORAGE_KEY, JSON.stringify(normalizeLocationOptions(options)))
+}
+
+const locationOptions = ref(readLocationOptions())
+
+const locationCities = computed(() => locationOptions.value.cities)
+const locationTypes = computed(() => locationOptions.value.types)
+const scopeDistricts = computed(() => {
+  const city = cleanScopeText(ruleScopeCity.value)
+  return locationOptions.value.districts?.[city] || []
+})
+const scopeRooms = computed(() => {
+  const key = `${cleanScopeText(ruleScopeCity.value)}__${cleanScopeText(ruleScopeDistrict.value)}__${cleanScopeText(ruleScopeType.value)}`
+  return locationOptions.value.rooms?.[key] || []
+})
+const managerDistricts = computed(() => locationOptions.value.districts?.[managerSelectedCity.value] || [])
+const managerRooms = computed(() => {
+  const key = `${cleanScopeText(managerSelectedCity.value)}__${cleanScopeText(managerSelectedDistrict.value)}__${cleanScopeText(managerSelectedType.value)}`
+  return locationOptions.value.rooms?.[key] || []
+})
+const roomManagerDistricts = computed(() => locationOptions.value.districts?.[roomManagerSelectedCity.value] || [])
+const roomManagerRooms = computed(() => {
+  const key = `${cleanScopeText(roomManagerSelectedCity.value)}__${cleanScopeText(roomManagerSelectedDistrict.value)}__${cleanScopeText(roomManagerSelectedType.value)}`
+  return locationOptions.value.rooms?.[key] || []
+})
+const totalDistrictCount = computed(() => Object.values(locationOptions.value.districts || {}).reduce((sum, list) => sum + (Array.isArray(list) ? list.length : 0), 0))
+const totalRoomCount = computed(() => Object.values(locationOptions.value.rooms || {}).reduce((sum, list) => sum + (Array.isArray(list) ? list.length : 0), 0))
+
+function saveLocationOptions() {
+  locationOptions.value = normalizeLocationOptions(locationOptions.value)
+  writeLocationOptions(locationOptions.value)
+}
+
+function moveListItem(list, fromValue, toValue) {
+  const items = Array.isArray(list) ? [...list] : []
+  const fromIndex = items.indexOf(fromValue)
+  const toIndex = items.indexOf(toValue)
+
+  if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return items
+
+  const [moved] = items.splice(fromIndex, 1)
+  items.splice(toIndex, 0, moved)
+  return items
+}
+
+function handleCityDragStart(city) {
+  dragCityName.value = city
+}
+
+function handleCityDrop(targetCity) {
+  const sourceCity = dragCityName.value
+  if (!sourceCity || !targetCity || sourceCity === targetCity) {
+    clearDragState()
+    return
+  }
+
+  locationOptions.value.cities = moveListItem(locationOptions.value.cities, sourceCity, targetCity)
+  saveLocationOptions()
+  clearDragState()
+  statusMessage.value = `已調整縣市順序：${sourceCity}`
+}
+
+function handleDistrictDragStart(district) {
+  dragDistrictName.value = district
+}
+
+function handleDistrictDrop(targetDistrict) {
+  const city = cleanScopeText(managerSelectedCity.value)
+  const sourceDistrict = dragDistrictName.value
+
+  if (!city || !sourceDistrict || !targetDistrict || sourceDistrict === targetDistrict) {
+    clearDragState()
+    return
+  }
+
+  locationOptions.value.districts[city] = moveListItem(locationOptions.value.districts[city], sourceDistrict, targetDistrict)
+  saveLocationOptions()
+  clearDragState()
+  statusMessage.value = `已調整地區順序：${city} / ${sourceDistrict}`
+}
+
+function clearDragState() {
+  dragCityName.value = ''
+  dragDistrictName.value = ''
+}
+
+function addUniqueToList(list, value) {
+  const item = cleanScopeText(value)
+  if (!item) return list
+  return [...new Set([...(Array.isArray(list) ? list : []), item])]
+}
+
+function syncRuleScopeLevelFromSelection() {
+  const city = cleanScopeText(ruleScopeCity.value)
+  const district = cleanScopeText(ruleScopeDistrict.value)
+  const type = cleanScopeText(ruleScopeType.value)
+  const room = cleanScopeText(ruleScopeRoom.value)
+
+  if (city && district && type && room) {
+    ruleScopeLevel.value = 'room'
+    return
+  }
+
+  if (city && district && type) {
+    ruleScopeLevel.value = 'type'
+    return
+  }
+
+  if (city && district) {
+    ruleScopeLevel.value = 'district'
+    return
+  }
+
+  if (city) {
+    ruleScopeLevel.value = 'city'
+    return
+  }
+
+  ruleScopeLevel.value = 'global'
+}
+
+function removeFromList(list, value) {
+  return (Array.isArray(list) ? list : []).filter(item => item !== value)
+}
+
+function addHiddenValue(list, value) {
+  const item = cleanScopeText(value)
+  if (!item) return Array.isArray(list) ? list : []
+  return [...new Set([...(Array.isArray(list) ? list : []), item])]
+}
+
+function removeHiddenValue(list, value) {
+  const item = cleanScopeText(value)
+  return (Array.isArray(list) ? list : []).filter(hidden => hidden !== item)
+}
+
+function addLocationCity() {
+  const city = cleanScopeText(newCityName.value)
+  if (!city) {
+    statusMessage.value = '請輸入縣市名稱。'
+    return
+  }
+  locationOptions.value.hiddenCities = removeHiddenValue(locationOptions.value.hiddenCities, city)
+  locationOptions.value.cities = addUniqueToList(locationOptions.value.cities, city)
+  if (!locationOptions.value.districts[city]) locationOptions.value.districts[city] = []
+  managerSelectedCity.value = city
+  newCityName.value = ''
+  saveLocationOptions()
+  statusMessage.value = `已新增縣市：${city}`
+}
+
+function removeLocationCity(city) {
+  const targetCity = cleanScopeText(city)
+  if (!targetCity) return
+
+  locationOptions.value.hiddenCities = addHiddenValue(locationOptions.value.hiddenCities, targetCity)
+  locationOptions.value.cities = removeFromList(locationOptions.value.cities, targetCity)
+  delete locationOptions.value.districts[targetCity]
+  Object.keys(locationOptions.value.rooms || {}).forEach(key => {
+    if (key.startsWith(`${targetCity}__`)) delete locationOptions.value.rooms[key]
+  })
+  if (locationOptions.value.hiddenDistricts) delete locationOptions.value.hiddenDistricts[targetCity]
+
+  if (managerSelectedCity.value === targetCity) {
+    managerSelectedCity.value = ''
+    managerSelectedDistrict.value = ''
+  }
+  if (roomManagerSelectedCity.value === targetCity) {
+    roomManagerSelectedCity.value = ''
+    roomManagerSelectedDistrict.value = ''
+    ruleScopeRoom.value = ''
+  }
+  if (ruleScopeCity.value === targetCity) {
+    ruleScopeCity.value = ''
+    ruleScopeDistrict.value = ''
+    ruleScopeType.value = ''
+    ruleScopeRoom.value = ''
+  }
+  saveLocationOptions()
+  statusMessage.value = `已隱藏縣市：${targetCity}`
+}
+
+function addLocationDistrict() {
+  const city = cleanScopeText(managerSelectedCity.value)
+  const district = cleanScopeText(newDistrictName.value)
+  if (!city || !district) {
+    statusMessage.value = '請先選縣市並輸入地區。'
+    return
+  }
+  if (!locationOptions.value.hiddenDistricts) locationOptions.value.hiddenDistricts = {}
+  locationOptions.value.hiddenDistricts[city] = removeHiddenValue(locationOptions.value.hiddenDistricts[city], district)
+  locationOptions.value.districts[city] = addUniqueToList(locationOptions.value.districts[city], district)
+  managerSelectedDistrict.value = district
+  newDistrictName.value = ''
+  saveLocationOptions()
+  statusMessage.value = `已新增地區：${city} / ${district}`
+}
+
+function removeLocationDistrict(district) {
+  const city = cleanScopeText(managerSelectedCity.value)
+  const targetDistrict = cleanScopeText(district)
+  if (!city || !targetDistrict) return
+
+  if (!locationOptions.value.hiddenDistricts) locationOptions.value.hiddenDistricts = {}
+  locationOptions.value.hiddenDistricts[city] = addHiddenValue(locationOptions.value.hiddenDistricts[city], targetDistrict)
+  locationOptions.value.districts[city] = removeFromList(locationOptions.value.districts[city], targetDistrict)
+  Object.keys(locationOptions.value.rooms || {}).forEach(key => {
+    if (key.startsWith(`${city}__${targetDistrict}__`)) delete locationOptions.value.rooms[key]
+  })
+  if (managerSelectedDistrict.value === targetDistrict) managerSelectedDistrict.value = ''
+  if (roomManagerSelectedCity.value === city && roomManagerSelectedDistrict.value === targetDistrict) {
+    roomManagerSelectedDistrict.value = ''
+    ruleScopeRoom.value = ''
+  }
+  if (ruleScopeCity.value === city && ruleScopeDistrict.value === targetDistrict) {
+    ruleScopeDistrict.value = ''
+    ruleScopeType.value = ''
+    ruleScopeRoom.value = ''
+  }
+  saveLocationOptions()
+  statusMessage.value = `已隱藏地區：${city} / ${targetDistrict}`
+}
+
+function addLocationType() {
+  const type = cleanScopeText(newLocationTypeName.value)
+  if (!type) {
+    statusMessage.value = '請輸入定點 / 外送類型。'
+    return
+  }
+  locationOptions.value.types = addUniqueToList(locationOptions.value.types, type)
+  managerSelectedType.value = type
+  newLocationTypeName.value = ''
+  saveLocationOptions()
+  statusMessage.value = `已新增類型：${type}`
+}
+
+function removeLocationType(type) {
+  locationOptions.value.types = removeFromList(locationOptions.value.types, type)
+  Object.keys(locationOptions.value.rooms || {}).forEach(key => {
+    if (key.endsWith(`__${type}`)) delete locationOptions.value.rooms[key]
+  })
+  if (managerSelectedType.value === type) managerSelectedType.value = ''
+  if (ruleScopeType.value === type) {
+    ruleScopeType.value = ''
+    ruleScopeRoom.value = ''
+  }
+  saveLocationOptions()
+  statusMessage.value = `已刪除類型：${type}`
+}
+
+function addLocationRoom() {
+  const city = cleanScopeText(roomManagerSelectedCity.value)
+  const district = cleanScopeText(roomManagerSelectedDistrict.value)
+  const type = cleanScopeText(roomManagerSelectedType.value)
+  const room = cleanScopeText(newRoomName.value)
+  if (!city || !district || !type || !room) {
+    statusMessage.value = '請先選縣市、地區、定點/外送，並輸入機房/店家。'
+    return
+  }
+  const key = `${city}__${district}__${type}`
+  locationOptions.value.rooms[key] = addUniqueToList(locationOptions.value.rooms[key], room)
+  newRoomName.value = ''
+  saveLocationOptions()
+  statusMessage.value = `已新增機房/店家：${city} / ${district} / ${type} / ${room}`
+}
+
+function removeLocationRoom(room) {
+  const city = cleanScopeText(roomManagerSelectedCity.value)
+  const district = cleanScopeText(roomManagerSelectedDistrict.value)
+  const type = cleanScopeText(roomManagerSelectedType.value)
+  const key = `${city}__${district}__${type}`
+  locationOptions.value.rooms[key] = removeFromList(locationOptions.value.rooms[key], room)
+  if (ruleScopeCity.value === city && ruleScopeDistrict.value === district && ruleScopeType.value === type && ruleScopeRoom.value === room) {
+    ruleScopeRoom.value = ''
+  }
+  saveLocationOptions()
+  statusMessage.value = `已刪除機房/店家：${room}`
+}
+
+function replaceInList(list, oldValue, newValue) {
+  return (Array.isArray(list) ? list : []).map(item => item === oldValue ? newValue : item)
+}
+
+function askRenameValue(label, oldValue) {
+  const nextValue = cleanScopeText(window.prompt(`請輸入新的${label}名稱`, oldValue))
+  if (!nextValue || nextValue === oldValue) return ''
+  return nextValue
+}
+
+function renameLocationCity(city) {
+  const next = askRenameValue('縣市 / 國籍', city)
+  if (!next) return
+
+  locationOptions.value.cities = replaceInList(locationOptions.value.cities, city, next)
+  locationOptions.value.districts[next] = locationOptions.value.districts[city] || []
+  delete locationOptions.value.districts[city]
+
+  const nextRooms = {}
+  Object.entries(locationOptions.value.rooms || {}).forEach(([key, list]) => {
+    nextRooms[key.startsWith(`${city}__`) ? key.replace(`${city}__`, `${next}__`) : key] = list
+  })
+  locationOptions.value.rooms = nextRooms
+
+  if (managerSelectedCity.value === city) managerSelectedCity.value = next
+  if (ruleScopeCity.value === city) ruleScopeCity.value = next
+
+  saveLocationOptions()
+  statusMessage.value = `已修改縣市 / 國籍：${city} → ${next}`
+}
+
+function renameLocationDistrict(district) {
+  const city = cleanScopeText(managerSelectedCity.value)
+  const next = askRenameValue('地區', district)
+  if (!city || !next) return
+
+  locationOptions.value.districts[city] = replaceInList(locationOptions.value.districts[city], district, next)
+
+  const nextRooms = {}
+  Object.entries(locationOptions.value.rooms || {}).forEach(([key, list]) => {
+    const prefix = `${city}__${district}__`
+    nextRooms[key.startsWith(prefix) ? key.replace(prefix, `${city}__${next}__`) : key] = list
+  })
+  locationOptions.value.rooms = nextRooms
+
+  if (managerSelectedDistrict.value === district) managerSelectedDistrict.value = next
+  if (ruleScopeCity.value === city && ruleScopeDistrict.value === district) ruleScopeDistrict.value = next
+
+  saveLocationOptions()
+  statusMessage.value = `已修改地區：${district} → ${next}`
+}
+
+function renameLocationType(type) {
+  const next = askRenameValue('定點 / 外送', type)
+  if (!next) return
+
+  locationOptions.value.types = replaceInList(locationOptions.value.types, type, next)
+
+  const nextRooms = {}
+  Object.entries(locationOptions.value.rooms || {}).forEach(([key, list]) => {
+    nextRooms[key.endsWith(`__${type}`) ? key.replace(`__${type}`, `__${next}`) : key] = list
+  })
+  locationOptions.value.rooms = nextRooms
+
+  if (managerSelectedType.value === type) managerSelectedType.value = next
+  if (ruleScopeType.value === type) ruleScopeType.value = next
+
+  saveLocationOptions()
+  statusMessage.value = `已修改定點 / 外送：${type} → ${next}`
+}
+
+function renameLocationRoom(room) {
+  const city = cleanScopeText(roomManagerSelectedCity.value)
+  const district = cleanScopeText(roomManagerSelectedDistrict.value)
+  const type = cleanScopeText(roomManagerSelectedType.value)
+  const key = `${city}__${district}__${type}`
+  const next = askRenameValue('機房', room)
+  if (!key || !next) return
+
+  locationOptions.value.rooms[key] = replaceInList(locationOptions.value.rooms[key], room, next)
+
+  if (ruleScopeRoom.value === room) ruleScopeRoom.value = next
+
+  saveLocationOptions()
+  statusMessage.value = `已修改機房：${room} → ${next}`
+}
+
+watch(managerSelectedCity, value => {
+  ruleScopeCity.value = value
+  managerSelectedDistrict.value = ''
+  ruleScopeDistrict.value = ''
+  ruleScopeType.value = managerSelectedType.value
+  ruleScopeRoom.value = ''
+  syncRuleScopeLevelFromSelection()
+})
+
+watch(managerSelectedDistrict, value => {
+  ruleScopeDistrict.value = value
+  ruleScopeType.value = managerSelectedType.value
+  ruleScopeRoom.value = ''
+  syncRuleScopeLevelFromSelection()
+})
+
+watch(managerSelectedType, value => {
+  ruleScopeType.value = value
+  ruleScopeRoom.value = ''
+  syncRuleScopeLevelFromSelection()
+})
+
+watch(ruleScopeRoom, () => {
+  syncRuleScopeLevelFromSelection()
+})
+
+watch(roomManagerSelectedCity, () => {
+  roomManagerSelectedDistrict.value = ''
+  roomManagerSelectedType.value = roomManagerSelectedType.value || ''
+  ruleScopeRoom.value = ''
+})
+
+watch(roomManagerSelectedDistrict, () => {
+  ruleScopeRoom.value = ''
+})
+
+watch(roomManagerSelectedType, () => {
+  ruleScopeRoom.value = ''
+})
+
+
+function normalizeScopeStore(store = {}) {
+  return {
+    global: store.global || null,
+    cities: store.cities && typeof store.cities === 'object' ? store.cities : {},
+    districts: store.districts && typeof store.districts === 'object' ? store.districts : {},
+    types: store.types && typeof store.types === 'object' ? store.types : {},
+    rooms: store.rooms && typeof store.rooms === 'object' ? store.rooms : {}
+  }
+}
+
+function readScopeRuleStore() {
+  try {
+    return normalizeScopeStore(JSON.parse(localStorage.getItem(RULE_SCOPE_STORAGE_KEY) || '{}'))
+  } catch {
+    return normalizeScopeStore({})
+  }
+}
+
+function writeScopeRuleStore(store) {
+  localStorage.setItem(RULE_SCOPE_STORAGE_KEY, JSON.stringify(normalizeScopeStore(store)))
+}
+
+function getScopeBucketAndKey(level = ruleScopeLevel.value) {
+  const city = cleanScopeText(ruleScopeCity.value)
+  const district = cleanScopeText(ruleScopeDistrict.value)
+  const type = cleanScopeText(ruleScopeType.value)
+  const room = cleanScopeText(ruleScopeRoom.value)
+
+  if (level === 'global') return { bucket: 'global', key: 'global' }
+  if (level === 'city') return { bucket: 'cities', key: city }
+  if (level === 'district') return { bucket: 'districts', key: city && district ? `${city}__${district}` : '' }
+  if (level === 'type') return { bucket: 'types', key: city && district && type ? `${city}__${district}__${type}` : '' }
+  if (level === 'room') return { bucket: 'rooms', key: city && district && type && room ? `${city}__${district}__${type}__${room}` : '' }
+  return { bucket: 'global', key: 'global' }
+}
+
+function getRuleDataFromScope(store, level, key) {
+  const normalized = normalizeScopeStore(store)
+  if (level === 'global') return normalized.global
+  if (level === 'city') return normalized.cities?.[key]
+  if (level === 'district') return normalized.districts?.[key]
+  if (level === 'type') return normalized.types?.[key]
+  if (level === 'room') return normalized.rooms?.[key]
+  return null
+}
+
+function setRuleDataToScope(store, level, key, data) {
+  const normalized = normalizeScopeStore(store)
+  if (level === 'global') {
+    normalized.global = data
+    return normalized
+  }
+  if (level === 'city') normalized.cities[key] = data
+  if (level === 'district') normalized.districts[key] = data
+  if (level === 'type') normalized.types[key] = data
+  if (level === 'room') normalized.rooms[key] = data
+  return normalized
+}
+
+function deleteRuleDataFromScope(store, level, key) {
+  const normalized = normalizeScopeStore(store)
+  if (level === 'global') {
+    normalized.global = null
+    return normalized
+  }
+  if (level === 'city') delete normalized.cities[key]
+  if (level === 'district') delete normalized.districts[key]
+  if (level === 'type') delete normalized.types[key]
+  if (level === 'room') delete normalized.rooms[key]
+  return normalized
+}
+
+function validateCurrentRuleScope() {
+  if (ruleScopeLevel.value === 'global') return true
+  if (ruleScopeLevel.value === 'city' && cleanScopeText(ruleScopeCity.value)) return true
+  if (ruleScopeLevel.value === 'district' && cleanScopeText(ruleScopeCity.value) && cleanScopeText(ruleScopeDistrict.value)) return true
+  if (ruleScopeLevel.value === 'type' && cleanScopeText(ruleScopeCity.value) && cleanScopeText(ruleScopeDistrict.value) && cleanScopeText(ruleScopeType.value)) return true
+  if (ruleScopeLevel.value === 'room' && cleanScopeText(ruleScopeCity.value) && cleanScopeText(ruleScopeDistrict.value) && cleanScopeText(ruleScopeType.value) && cleanScopeText(ruleScopeRoom.value)) return true
+
+  statusMessage.value = '請先把目前範圍的縣市 / 地區 / 定點外送 / 機房填完整。'
+  return false
+}
+
+function getGlobalRuleDataFallback() {
+  const store = readScopeRuleStore()
+  if (store.global) return store.global
+
+  const raw = getFirstStorageValue(RULE_STORAGE_KEY, LEGACY_RULE_STORAGE_KEYS)
+  if (!raw) return null
+
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
+function getEffectiveScopedRuleData() {
+  const store = readScopeRuleStore()
+  const city = cleanScopeText(ruleScopeCity.value)
+  const district = cleanScopeText(ruleScopeDistrict.value)
+  const type = cleanScopeText(ruleScopeType.value)
+  const room = cleanScopeText(ruleScopeRoom.value)
+
+  const candidates = []
+  if (city && district && type && room) candidates.push({ level: 'room', key: `${city}__${district}__${type}__${room}`, label: `機房：${city} / ${district} / ${type} / ${room}` })
+  if (city && district && type) candidates.push({ level: 'type', key: `${city}__${district}__${type}`, label: `定點/外送：${city} / ${district} / ${type}` })
+  if (city && district) candidates.push({ level: 'district', key: `${city}__${district}`, label: `地區：${city} / ${district}` })
+  if (city) candidates.push({ level: 'city', key: city, label: `縣市：${city}` })
+  candidates.push({ level: 'global', key: 'global', label: '公版規則' })
+
+  for (const item of candidates) {
+    const data = getRuleDataFromScope(store, item.level, item.key)
+    if (data) return { data, label: item.label }
+  }
+
+  const globalFallback = getGlobalRuleDataFallback()
+  if (globalFallback) return { data: globalFallback, label: '公版規則（舊版儲存）' }
+
+  return { data: null, label: '尚未儲存，使用目前畫面設定' }
+}
+
+const currentRuleScopeLabel = computed(() => {
+  const city = cleanScopeText(ruleScopeCity.value)
+  const district = cleanScopeText(ruleScopeDistrict.value)
+  const type = cleanScopeText(ruleScopeType.value)
+  const room = cleanScopeText(ruleScopeRoom.value)
+
+  if (ruleScopeLevel.value === 'global') return '公版規則'
+  if (ruleScopeLevel.value === 'city') return city ? `縣市：${city}` : '縣市規則（未選縣市）'
+  if (ruleScopeLevel.value === 'district') return city && district ? `地區：${city} / ${district}` : '地區規則（未選完整）'
+  if (ruleScopeLevel.value === 'type') return city && district && type ? `定點/外送：${city} / ${district} / ${type}` : '定點/外送規則（未選完整）'
+  if (ruleScopeLevel.value === 'room') return city && district && type && room ? `機房：${city} / ${district} / ${type} / ${room}` : '機房規則（未選完整）'
+  return '公版規則'
+})
+
+const effectiveRuleSourceLabel = computed(() => getEffectiveScopedRuleData().label)
+
+function saveCurrentScopeRules() {
+  if (!validateCurrentRuleScope()) return false
+  const { key } = getScopeBucketAndKey()
+  if (!key) {
+    statusMessage.value = '請先把目前範圍填完整再儲存。'
+    return false
+  }
+
+  const data = collectRuleData()
+  const store = setRuleDataToScope(readScopeRuleStore(), ruleScopeLevel.value, key, data)
+  writeScopeRuleStore(store)
+
+  if (ruleScopeLevel.value === 'global') {
+    localStorage.setItem(RULE_STORAGE_KEY, JSON.stringify(data))
+  }
+
+  statusMessage.value = `已儲存「${currentRuleScopeLabel.value}」專屬規則。`
+  return true
+}
+
+function loadCurrentScopeRules(options = {}) {
+  if (!validateCurrentRuleScope()) return false
+
+  const resolved = getEffectiveScopedRuleData()
+  if (!resolved.data) {
+    if (!options.silent) statusMessage.value = '目前範圍沒有專屬規則，也沒有公版規則；已保留畫面目前設定。'
+    return false
+  }
+
+  applyRuleData(resolved.data)
+  if (!options.silent) statusMessage.value = `已套用：${resolved.label}`
+  return true
+}
+
+function copyGlobalRulesToCurrentScope() {
+  if (ruleScopeLevel.value === 'global') {
+    statusMessage.value = '目前已經是公版規則，不需要複製。'
+    return
+  }
+  if (!validateCurrentRuleScope()) return
+
+  const globalData = getGlobalRuleDataFallback() || collectRuleData()
+  const { key } = getScopeBucketAndKey()
+  const store = setRuleDataToScope(readScopeRuleStore(), ruleScopeLevel.value, key, globalData)
+  writeScopeRuleStore(store)
+  applyRuleData(globalData)
+  statusMessage.value = `已把公版規則複製到「${currentRuleScopeLabel.value}」。`
+}
+
+function clearCurrentScopeRules() {
+  if (ruleScopeLevel.value === 'global') {
+    statusMessage.value = '公版規則不建議從這裡清除；請用「恢復預設」重設公版。'
+    return
+  }
+  if (!validateCurrentRuleScope()) return
+
+  const { key } = getScopeBucketAndKey()
+  const store = deleteRuleDataFromScope(readScopeRuleStore(), ruleScopeLevel.value, key)
+  writeScopeRuleStore(store)
+  statusMessage.value = `已清除「${currentRuleScopeLabel.value}」專屬規則，之後會往上沿用。`
+}
+
+
 function collectRuleData() {
   return {
     priceMode: priceMode.value,
@@ -2685,31 +3624,11 @@ function removeCountryFieldRule(index) {
 }
 
 function saveRules() {
-  localStorage.setItem(RULE_STORAGE_KEY, JSON.stringify(collectRuleData()))
-  statusMessage.value = '規則已儲存到正式位置；之後更新新版檔案也會自動讀取。'
+  saveCurrentScopeRules()
 }
 
 function loadRules(options = {}) {
-  const raw = getFirstStorageValue(RULE_STORAGE_KEY, LEGACY_RULE_STORAGE_KEYS)
-
-  if (!raw) {
-    if (!options.silent) statusMessage.value = '目前沒有儲存過規則。'
-    return false
-  }
-
-  try {
-    const parsed = JSON.parse(raw)
-    applyRuleData(parsed)
-
-    // 搬到固定正式儲存位置，之後新版都能讀同一份。
-    localStorage.setItem(RULE_STORAGE_KEY, JSON.stringify(collectRuleData()))
-
-    if (!options.silent) statusMessage.value = '已讀取規則，並同步到正式儲存位置。'
-    return true
-  } catch (error) {
-    if (!options.silent) statusMessage.value = '讀取規則失敗，已保留目前設定。'
-    return false
-  }
+  return loadCurrentScopeRules(options)
 }
 
 function getFirstStorageValue(primaryKey, fallbackKeys = []) {
@@ -5237,6 +6156,768 @@ select:focus, input:focus, textarea:focus {
   .admin-form-panel {
     max-width: none;
   }
+}
+
+
+.scope-rule-card {
+  width: 100%;
+  margin: 16px 0 0;
+  padding: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 22px;
+  background: rgba(248, 250, 252, 0.82);
+}
+
+.scope-rule-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.scope-rule-header h3 {
+  margin: 0 0 6px;
+  font-size: 18px;
+}
+
+.scope-rule-header p {
+  margin: 0;
+  color: #64748b;
+  line-height: 1.6;
+}
+
+.scope-status-pill {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 9px 14px;
+  font-size: 13px;
+  font-weight: 900;
+  color: #1d4ed8;
+  background: #dbeafe;
+  border: 1px solid rgba(37, 99, 235, 0.16);
+}
+
+.scope-selector-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.scope-selector-grid label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 800;
+  color: #475569;
+}
+
+.scope-selector-grid input,
+.scope-selector-grid select {
+  width: 100%;
+  min-height: 44px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: #fff;
+  padding: 0 14px;
+  font: inherit;
+}
+
+.scope-selector-grid input:disabled {
+  opacity: 0.58;
+  background: #f1f5f9;
+}
+
+.scope-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.scope-help-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.scope-help-grid span {
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: rgba(219, 234, 254, 0.72);
+  color: #1e3a8a;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+@media (max-width: 980px) {
+  .scope-selector-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .scope-rule-header {
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 640px) {
+  .scope-selector-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .scope-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+}
+
+
+.scope-manager-card {
+  width: 100%;
+  margin: 16px 0 0;
+  padding: 18px;
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  border-radius: 22px;
+  background: rgba(239, 246, 255, 0.82);
+}
+
+.location-manager-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.manager-box {
+  min-height: 180px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 18px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.manager-box h4 {
+  margin: 0 0 10px;
+}
+
+.manager-box select,
+.manager-box input {
+  width: 100%;
+  min-height: 40px;
+  margin-bottom: 8px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.42);
+  padding: 0 12px;
+  font: inherit;
+  background: #fff;
+}
+
+.manager-input-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: start;
+}
+
+.small-btn {
+  min-height: 40px;
+  padding: 0 14px;
+  white-space: nowrap;
+}
+
+.manager-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-height: 160px;
+  overflow: auto;
+}
+
+.manager-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 999px;
+  padding: 7px 10px;
+  background: #fff;
+  color: #0f172a;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.manager-chip.active {
+  color: #fff;
+  border-color: transparent;
+  background: linear-gradient(135deg, #2f7ee6, #2c9ab7);
+}
+
+.manager-chip span {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(239, 68, 68, 0.16);
+  color: #b91c1c;
+}
+
+.manager-chip.active span {
+  background: rgba(255, 255, 255, 0.24);
+  color: #fff;
+}
+
+.manager-toggle-pill {
+  min-width: 132px;
+}
+
+@media (max-width: 1180px) {
+  .location-manager-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .location-manager-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .manager-input-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+.location-select-line {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.location-select-line label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 800;
+  color: #475569;
+}
+
+.location-select-line select {
+  min-height: 44px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.42);
+  background: #fff;
+  padding: 0 14px;
+  font: inherit;
+}
+
+.manager-crud-toggle {
+  min-height: 44px;
+  white-space: nowrap;
+}
+
+.selected-scope-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: rgba(219, 234, 254, 0.68);
+  color: #475569;
+  font-weight: 800;
+}
+
+.selected-scope-preview strong {
+  color: #1e3a8a;
+}
+
+.location-crud-panel {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.manager-tool-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (max-width: 1180px) {
+  .location-select-line,
+  .location-crud-panel {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .manager-crud-toggle {
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .location-select-line,
+  .location-crud-panel {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+.room-rule-action-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 18px;
+  background: rgba(248, 250, 252, 0.88);
+  border: 1px solid rgba(148, 163, 184, 0.28);
+}
+
+.room-rule-current {
+  display: grid;
+  gap: 4px;
+  color: #475569;
+  font-weight: 800;
+}
+
+.room-rule-current strong {
+  color: #1e3a8a;
+}
+
+.room-rule-current span {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.room-rule-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+@media (max-width: 980px) {
+  .room-rule-action-row {
+    grid-template-columns: 1fr;
+  }
+
+  .room-rule-buttons {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 640px) {
+  .room-rule-buttons {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+}
+
+
+.scope-manager-selection-shell {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+}
+
+.scope-manager-select-grid {
+  align-items: end;
+}
+
+.scope-manager-preview-bar {
+  margin-top: 0;
+  min-height: 46px;
+}
+
+.scope-manager-action-shell {
+  margin-top: 12px;
+  padding: 16px 18px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+}
+
+.api-actions-top-row {
+  width: 100%;
+}
+
+.api-status-box {
+  width: 100%;
+  min-height: 72px;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(255, 255, 255, 0.72);
+  padding: 16px 18px;
+  display: flex;
+  align-items: center;
+}
+
+.api-status-text {
+  margin: 0;
+  width: 100%;
+}
+
+.api-url-wide-row {
+  width: 100%;
+  display: grid;
+  gap: 8px;
+}
+
+.api-url-wide-row span {
+  font-weight: 800;
+  color: #334155;
+}
+
+.api-url-wide-row input {
+  width: 100%;
+}
+
+
+.option-modal-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(2, 6, 23, 0.62);
+  backdrop-filter: blur(8px);
+}
+
+.option-modal-card {
+  position: relative;
+  width: min(1180px, 96vw);
+  max-height: 88vh;
+  overflow: auto;
+  border-radius: 26px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.98), rgba(30, 41, 59, 0.98));
+  box-shadow: 0 30px 90px rgba(2, 6, 23, 0.45);
+  color: #e5e7eb;
+}
+
+.option-modal-close {
+  position: absolute;
+  top: 22px;
+  right: 24px;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  font-size: 30px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.option-modal-head {
+  padding: 26px 28px 22px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.option-modal-head h2 {
+  margin: 0 0 8px;
+  font-size: 28px;
+  color: #fff;
+}
+
+.option-modal-head p {
+  margin: 0 0 12px;
+  color: #cbd5e1;
+}
+
+.option-sync-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 999px;
+  padding: 7px 12px;
+  background: rgba(15, 23, 42, 0.7);
+  color: #e2e8f0;
+  font-weight: 800;
+  font-size: 13px;
+}
+
+.option-sync-pill i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 0 5px rgba(34, 197, 94, 0.15);
+}
+
+.location-modal-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  padding: 18px;
+}
+
+.option-manager-panel {
+  min-height: 250px;
+  border-radius: 20px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(30, 41, 59, 0.78);
+  padding: 16px;
+}
+
+.option-manager-panel h3 {
+  margin: 0 0 14px;
+  color: #fff;
+  font-size: 18px;
+}
+
+.option-manager-panel input,
+.option-manager-panel select {
+  width: 100%;
+  min-height: 42px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(15, 23, 42, 0.78);
+  color: #fff;
+  padding: 0 12px;
+  font: inherit;
+  margin-bottom: 10px;
+}
+
+.option-manager-panel input::placeholder {
+  color: #94a3b8;
+}
+
+.option-inline-input {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.option-inline-input button,
+.option-action-row button {
+  min-height: 40px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 14px;
+  background: linear-gradient(135deg, #2f7ee6, #2c9ab7);
+  color: #fff;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.option-inline-input button:disabled,
+.option-action-row button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.option-current-text {
+  margin: 10px 0;
+  color: #bfdbfe;
+  font-weight: 800;
+  line-height: 1.5;
+}
+
+.option-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.option-action-row .danger-mini {
+  background: rgba(244, 63, 94, 0.28);
+  color: #fecdd3;
+  border: 1px solid rgba(251, 113, 133, 0.32);
+}
+
+.location-modal-bottom {
+  display: flex;
+  justify-content: flex-end;
+  padding: 18px 28px 26px;
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.location-modal-bottom .restore-btn {
+  border: 0;
+  border-radius: 999px;
+  padding: 14px 28px;
+  font-weight: 900;
+  color: #fff;
+  background: linear-gradient(135deg, #ec4899, #8b5cf6);
+  box-shadow: 0 18px 35px rgba(139, 92, 246, 0.24);
+}
+
+@media (max-width: 1180px) {
+  .location-modal-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .location-modal-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .option-inline-input {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+.modal-inline-label {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0 8px;
+  color: #cbd5e1;
+  font-weight: 800;
+  font-size: 13px;
+}
+
+.location-modal-grid-room-first .option-manager-panel:first-child {
+  border-color: rgba(59, 130, 246, 0.32);
+  background: rgba(30, 41, 59, 0.9);
+}
+
+
+.modal-select-label {
+  margin-top: 0;
+}
+
+
+.location-modal-grid-room-first {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@media (max-width: 980px) {
+  .location-modal-grid-room-first {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+.modal-button-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-height: 168px;
+  overflow: auto;
+  padding: 4px 2px 8px;
+}
+
+.modal-select-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 999px;
+  padding: 0 12px;
+  background: rgba(15, 23, 42, 0.72);
+  color: #e2e8f0;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.modal-select-button.active {
+  border-color: rgba(56, 189, 248, 0.45);
+  background: linear-gradient(135deg, #2f7ee6, #2c9ab7);
+  color: #fff;
+  box-shadow: 0 10px 22px rgba(56, 189, 248, 0.16);
+}
+
+.modal-select-button span {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(244, 63, 94, 0.24);
+  color: #fecdd3;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.district-selected-city-note {
+  margin: 0 0 10px;
+  color: #cbd5e1;
+  font-weight: 800;
+}
+
+.district-selected-city-note strong {
+  color: #bfdbfe;
+}
+
+.district-empty-note {
+  min-height: 42px;
+  border-radius: 14px;
+  padding: 11px 12px;
+  margin-bottom: 10px;
+  background: rgba(15, 23, 42, 0.5);
+  color: #94a3b8;
+  font-weight: 800;
+}
+
+.city-button-list {
+  margin-bottom: 8px;
+}
+
+.district-button-list {
+  margin-bottom: 12px;
+}
+
+
+.city-button-list,
+.district-button-list {
+  max-height: 210px;
+}
+
+.location-modal-grid-room-first .option-manager-panel {
+  min-height: 330px;
+}
+
+
+.drag-sort-button {
+  cursor: grab;
+  user-select: none;
+}
+
+.drag-sort-button:active {
+  cursor: grabbing;
+}
+
+.drag-sort-button.dragging {
+  opacity: 0.48;
+  transform: scale(0.96);
+}
+
+.drag-handle {
+  width: auto;
+  height: auto;
+  background: transparent !important;
+  color: inherit !important;
+  opacity: 0.65;
+  font-weight: 900;
+  letter-spacing: -3px;
+  pointer-events: none;
+}
+
+.modal-select-button .delete-chip {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(244, 63, 94, 0.24);
+  color: #fecdd3;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
 }
 
 </style>
