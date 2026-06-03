@@ -1,4 +1,5 @@
 <template>
+  <!-- batch018-40-invalid-end-tag-fixed -->
   <main class="page-shell">
 
     <section class="hero-card compact-control-card">
@@ -606,7 +607,6 @@
         </div>
       </section>
     </section>
-    </section>
 
 
 
@@ -957,7 +957,7 @@ const RESULT_STORAGE_KEY = 'auto-document-converter-result-current'
 const RULE_SCOPE_STORAGE_KEY = 'auto-document-converter-scope-rules-current'
 const LOCATION_SCOPE_STORAGE_KEY = 'auto-document-converter-location-room-options-current'
 const CLEAN_START_PANEL_STORAGE_KEY = 'auto-document-converter-clean-start-panel-018-38'
-const ONLINE_READY_VERSION_LABEL = '第 018-39 批：規則備份匯出 / 匯入'
+const ONLINE_READY_VERSION_LABEL = '第 018-40 批：規則備份匯出 / 匯入'
 
 const LEGACY_RULE_STORAGE_KEYS = [
   'auto-document-converter-rules-batch009-6',
@@ -2990,7 +2990,7 @@ function buildLocalSettingsBackup() {
 
   return {
     app: 'auto-document-converter',
-    version: '0.0.18-39-api-panel-layout-clean',
+    version: '0.0.18-40-fix-api-panel-invalid-end-tag',
     exportedAt: new Date().toISOString(),
     itemCount: Object.keys(items).length,
     items
