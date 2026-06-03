@@ -1,7 +1,7 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "0.0.18-40-fix-api-panel-invalid-end-tag",
+  "version": "0.0.18-41-force-clean-initial-view",
   "type": "module",
   "scripts": {
     "dev": "vite",

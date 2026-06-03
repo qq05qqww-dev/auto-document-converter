@@ -956,8 +956,8 @@ const SOURCE_STORAGE_KEY = 'auto-document-converter-source-current'
 const RESULT_STORAGE_KEY = 'auto-document-converter-result-current'
 const RULE_SCOPE_STORAGE_KEY = 'auto-document-converter-scope-rules-current'
 const LOCATION_SCOPE_STORAGE_KEY = 'auto-document-converter-location-room-options-current'
-const CLEAN_START_PANEL_STORAGE_KEY = 'auto-document-converter-clean-start-panel-018-38'
-const ONLINE_READY_VERSION_LABEL = '第 018-40 批：規則備份匯出 / 匯入'
+const CLEAN_START_PANEL_STORAGE_KEY = 'auto-document-converter-clean-start-panel-always-clean-home'
+const ONLINE_READY_VERSION_LABEL = '第 018-41 批：規則備份匯出 / 匯入'
 
 const LEGACY_RULE_STORAGE_KEYS = [
   'auto-document-converter-rules-batch009-6',
@@ -1482,8 +1482,8 @@ const sampleText = `💢超性感搖搖馬💢
 
 
 function closeAllTopPanelsForCleanStart() {
-  if (localStorage.getItem(CLEAN_START_PANEL_STORAGE_KEY) === 'done') return
-
+  // 第 018-41 批：每次進入頁面都強制乾淨。
+  // 不保留上次展開的功能區，避免一進來就看到進階設定 / API / 地區管理。
   activeTopPanel.value = ''
   showPriceSettings.value = false
   showFormatSettings.value = false
@@ -1491,10 +1491,10 @@ function closeAllTopPanelsForCleanStart() {
   showAdvancedSettings.value = false
   showApiPanel.value = false
   showScopeManager.value = false
+  showScopeCrudPanel.value = false
 
-  localStorage.setItem(CLEAN_START_PANEL_STORAGE_KEY, 'done')
-}
-onMounted(() => {
+  localStorage.removeItem(CLEAN_START_PANEL_STORAGE_KEY)
+}onMounted(() => {
   closeAllTopPanelsForCleanStart()
   loadRules({ silent: true })
   loadConfirmedText({ silent: true })
@@ -2990,7 +2990,7 @@ function buildLocalSettingsBackup() {
 
   return {
     app: 'auto-document-converter',
-    version: '0.0.18-40-fix-api-panel-invalid-end-tag',
+    version: '0.0.18-41-force-clean-initial-view',
     exportedAt: new Date().toISOString(),
     itemCount: Object.keys(items).length,
     items
