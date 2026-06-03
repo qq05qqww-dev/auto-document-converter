@@ -540,33 +540,45 @@
     </section>
 
 
-    <section v-if="showApiPanel" class="api-panel api-panel-top setting-content-block compact-control-content">
-      <div>
-        <h2>API 串接測試</h2>
-        <p>這裡預設連線到 Render 線上 API，也可以手動切換其他 API 位置。</p>
-        <p class="online-ready-hint">{{ ONLINE_READY_VERSION_LABEL }}｜準備部署 Vercel 線上版，API 位置建議使用 Render 正式網址。</p>
+    <section v-if="showApiPanel" class="api-panel api-panel-top setting-content-block compact-control-content api-clean-panel">
+      <div class="api-clean-header">
+        <div>
+          <h2>API 串接測試</h2>
+          <p>這裡預設連線到 Render 線上 API，也可以手動切換其他 API 位置。</p>
+          <p class="online-ready-hint">{{ ONLINE_READY_VERSION_LABEL }}｜線上版測試更清楚。</p>
+        </div>
+        <div class="api-status-box">
+          <p class="hint api-status-text">{{ apiStatusText }}</p>
+        </div>
       </div>
 
-      <div class="api-actions api-actions-top-row">
-        <button class="ghost-btn" type="button" @click="saveApiBaseUrl">儲存API位置</button>
-        <button class="ghost-btn" type="button" @click="useOnlineApiBaseUrl">套用線上API</button>
-        <button class="ghost-btn" type="button" @click="testApiConnection">測試API</button>
-        <button class="ghost-btn" type="button" @click="testDatabaseConnection">測試資料庫</button>
-        <button class="primary-btn" type="button" @click="submitDocument4ToApi">送出到本機JSON</button>
-        <button class="primary-btn db-btn" type="button" @click="submitDocument4ToDatabase">送出到資料庫</button>
-        <button class="ghost-btn frontend-load-btn" type="button" @click="loadFrontendLadies">讀取前台資料</button>
-      </div>
-
-      <div class="api-status-box">
-        <p class="hint api-status-text">{{ apiStatusText }}</p>
-      </div>
-
-      <label class="api-url-wide-row">
+      <label class="api-url-wide-row api-clean-url-row">
         <span>API 位置</span>
         <input v-model="apiBaseUrl" type="text" placeholder="https://auto-document-converter-api.onrender.com" />
       </label>
 
-      <section class="backup-settings-card">
+      <div class="api-clean-action-grid">
+        <section class="api-action-card">
+          <h3>API 基本操作</h3>
+          <div class="api-action-buttons">
+            <button class="ghost-btn" type="button" @click="saveApiBaseUrl">儲存API位置</button>
+            <button class="ghost-btn" type="button" @click="useOnlineApiBaseUrl">套用線上API</button>
+            <button class="ghost-btn" type="button" @click="testApiConnection">測試API</button>
+            <button class="ghost-btn" type="button" @click="testDatabaseConnection">測試資料庫</button>
+          </div>
+        </section>
+
+        <section class="api-action-card">
+          <h3>資料送出 / 讀取</h3>
+          <div class="api-action-buttons">
+            <button class="primary-btn" type="button" @click="submitDocument4ToApi">送出到本機JSON</button>
+            <button class="primary-btn db-btn" type="button" @click="submitDocument4ToDatabase">送出到資料庫</button>
+            <button class="ghost-btn frontend-load-btn" type="button" @click="loadFrontendLadies">讀取前台資料</button>
+          </div>
+        </section>
+      </div>
+
+      <section class="backup-settings-card api-clean-backup-card">
         <div>
           <h3>規則設定備份</h3>
           <p>線上版正式串資料庫前，先把本機規則匯出成 JSON 備份。換電腦或清快取後，可以再匯入還原。</p>
@@ -593,6 +605,7 @@
           <span>文件3 / 文件4</span>
         </div>
       </section>
+    </section>
     </section>
 
 
@@ -944,7 +957,7 @@ const RESULT_STORAGE_KEY = 'auto-document-converter-result-current'
 const RULE_SCOPE_STORAGE_KEY = 'auto-document-converter-scope-rules-current'
 const LOCATION_SCOPE_STORAGE_KEY = 'auto-document-converter-location-room-options-current'
 const CLEAN_START_PANEL_STORAGE_KEY = 'auto-document-converter-clean-start-panel-018-38'
-const ONLINE_READY_VERSION_LABEL = '第 018-38 批：規則備份匯出 / 匯入'
+const ONLINE_READY_VERSION_LABEL = '第 018-39 批：規則備份匯出 / 匯入'
 
 const LEGACY_RULE_STORAGE_KEYS = [
   'auto-document-converter-rules-batch009-6',
@@ -2977,7 +2990,7 @@ function buildLocalSettingsBackup() {
 
   return {
     app: 'auto-document-converter',
-    version: '0.0.18-38-fix-clean-start-backup-import',
+    version: '0.0.18-39-api-panel-layout-clean',
     exportedAt: new Date().toISOString(),
     itemCount: Object.keys(items).length,
     items
@@ -7125,6 +7138,94 @@ select:focus, input:focus, textarea:focus {
   color: #1e3a8a;
   font-size: 13px;
   font-weight: 900;
+}
+
+
+.api-clean-panel {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 16px !important;
+  width: min(1180px, calc(100% - 32px)) !important;
+  margin: 24px auto !important;
+  padding: 24px !important;
+  align-items: stretch !important;
+}
+
+.api-clean-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.api-clean-header h2 {
+  margin: 0 0 8px;
+}
+
+.api-clean-header p {
+  margin: 0 0 8px;
+}
+
+.api-clean-panel .api-status-box {
+  width: 100%;
+  min-height: 92px;
+  align-self: stretch;
+  margin: 0;
+}
+
+.api-clean-url-row {
+  width: 100%;
+  margin: 0;
+}
+
+.api-clean-url-row input {
+  min-height: 54px;
+  font-size: 16px;
+}
+
+.api-clean-action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.api-action-card {
+  border-radius: 22px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(248, 250, 252, 0.76);
+  padding: 18px;
+}
+
+.api-action-card h3 {
+  margin: 0 0 12px;
+  font-size: 18px;
+  color: #0f172a;
+}
+
+.api-action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.api-clean-backup-card {
+  margin-top: 0 !important;
+}
+
+.api-clean-backup-card .backup-actions {
+  justify-content: flex-start;
+}
+
+@media (max-width: 900px) {
+  .api-clean-header,
+  .api-clean-action-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .api-clean-panel {
+    width: calc(100% - 16px) !important;
+    padding: 18px !important;
+  }
 }
 
 </style>

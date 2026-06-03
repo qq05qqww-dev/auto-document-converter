@@ -1,7 +1,7 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "0.0.18-38-fix-clean-start-backup-import",
+  "version": "0.0.18-39-api-panel-layout-clean",
   "type": "module",
   "scripts": {
     "dev": "vite",
