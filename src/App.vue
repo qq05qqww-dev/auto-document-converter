@@ -436,7 +436,7 @@
       <div class="preview-header">
         <div>
           <h2>前台網站預覽</h2>
-          <p>這裡會從 Supabase 資料庫讀取資料，模擬未來前台網站顯示。</p>
+          <p>這裡只預覽目前文件3 / 文件4 的最新小姐；資料庫與網站後台仍然累加保存。</p>
         </div>
 
         <div class="preview-tools">
@@ -542,7 +542,7 @@
 
         <div class="frontend-preview-side-panel">
           <div class="preview-side-topbar">
-            <p class="hint frontend-inline-status">{{ frontendStatusText }}</p>
+            <p class="hint frontend-inline-status">{{ previewStatusText }}</p>
           </div>
 
           <div v-if="filteredFrontendLadies.length" class="lady-card-grid compact-right-lady-grid">
@@ -1224,8 +1224,69 @@ function isNumericCleanupWord(word) {
 
 
 
+
+function makePreviewLadyKey(lady) {
+  return `${String(lady?.country || '').trim()}__${String(lady?.name || '').trim()}`.toLowerCase()
+}
+
+const currentDocumentPreviewLadies = computed(() => {
+  const text = String(jsonResultText.value || '').trim()
+  if (!text) return []
+
+  try {
+    const parsed = JSON.parse(text)
+    const items = Array.isArray(parsed?.items) ? parsed.items : []
+    return items.map((item, index) => {
+      const body = item.body || {}
+      const key = makePreviewLadyKey(item)
+      const dbLady = frontendLadies.value.find(lady => makePreviewLadyKey(lady) === key)
+
+      return {
+        id: dbLady?.id || `current-document-${index + 1}`,
+        isCurrentDocumentPreview: true,
+        country: item.country || '',
+        name: item.name || '',
+        height: body.height ?? '',
+        weight: body.weight ?? '',
+        cup: body.cup || '',
+        age: body.age ?? '',
+        rawText: item.rawText || '',
+        media: Array.isArray(dbLady?.media) ? dbLady.media : [],
+        pricePlans: Array.isArray(item.pricePlans)
+          ? item.pricePlans.map((plan, planIndex) => ({
+              id: `current-document-${index + 1}-price-${planIndex + 1}`,
+              priceText: plan.priceText || ''
+            }))
+          : [],
+        services: Array.isArray(item.services)
+          ? item.services.map((service, serviceIndex) => ({
+              id: `current-document-${index + 1}-service-${serviceIndex + 1}`,
+              serviceName: String(service || '').trim()
+            })).filter(service => service.serviceName)
+          : []
+      }
+    })
+  } catch (_error) {
+    return []
+  }
+})
+
+const previewLadies = computed(() => {
+  return currentDocumentPreviewLadies.value.length
+    ? currentDocumentPreviewLadies.value
+    : frontendLadies.value
+})
+
+const previewStatusText = computed(() => {
+  if (currentDocumentPreviewLadies.value.length) {
+    return `目前只顯示本次文件最新 ${currentDocumentPreviewLadies.value.length} 筆小姐；網站後台資料庫仍會累加保存。`
+  }
+
+  return frontendStatusText.value
+})
+
 const frontendCountries = computed(() => {
-  const countries = frontendLadies.value
+  const countries = previewLadies.value
     .map(item => item.country)
     .filter(Boolean)
 
@@ -1233,8 +1294,8 @@ const frontendCountries = computed(() => {
 })
 
 const filteredFrontendLadies = computed(() => {
-  if (countryFilter.value === '全部') return frontendLadies.value
-  return frontendLadies.value.filter(item => item.country === countryFilter.value)
+  if (countryFilter.value === '全部') return previewLadies.value
+  return previewLadies.value.filter(item => item.country === countryFilter.value)
 })
 
 

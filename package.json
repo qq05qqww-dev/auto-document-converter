@@ -1,6 +1,6 @@
 {
   "name": "auto-document-converter",
-  "version": "0.0.18-14-backend-version-guard",
+  "version": "0.0.18-15-preview-current-doc-db-append",
   "private": true,
   "type": "module",
   "scripts": {
