@@ -565,6 +565,34 @@
         <span>API 位置</span>
         <input v-model="apiBaseUrl" type="text" placeholder="https://auto-document-converter-api.onrender.com" />
       </label>
+
+      <section class="backup-settings-card">
+        <div>
+          <h3>規則設定備份</h3>
+          <p>線上版正式串資料庫前，先把本機規則匯出成 JSON 備份。換電腦或清快取後，可以再匯入還原。</p>
+        </div>
+
+        <div class="backup-actions">
+          <button class="primary-btn" type="button" @click="exportLocalSettingsBackup">匯出規則備份 JSON</button>
+          <button class="ghost-btn" type="button" @click="openBackupImportPicker">匯入規則備份 JSON</button>
+          <input
+            ref="backupImportInput"
+            data-backup-import-input="true"
+            type="file"
+            accept="application/json,.json"
+            class="visually-hidden-file-input"
+            @change="importLocalSettingsBackup"
+          />
+        </div>
+
+        <div class="backup-key-list">
+          <span>包含：規則設定</span>
+          <span>縣市 / 地區 / 機房</span>
+          <span>拖拉排序</span>
+          <span>刪除隱藏清單</span>
+          <span>文件3 / 文件4</span>
+        </div>
+      </section>
     </section>
 
 
@@ -915,8 +943,8 @@ const SOURCE_STORAGE_KEY = 'auto-document-converter-source-current'
 const RESULT_STORAGE_KEY = 'auto-document-converter-result-current'
 const RULE_SCOPE_STORAGE_KEY = 'auto-document-converter-scope-rules-current'
 const LOCATION_SCOPE_STORAGE_KEY = 'auto-document-converter-location-room-options-current'
-const CLEAN_START_PANEL_STORAGE_KEY = 'auto-document-converter-clean-start-panel-018-25'
-const ONLINE_READY_VERSION_LABEL = '第 018-35 批：線上版準備整理'
+const CLEAN_START_PANEL_STORAGE_KEY = 'auto-document-converter-clean-start-panel-018-38'
+const ONLINE_READY_VERSION_LABEL = '第 018-38 批：規則備份匯出 / 匯入'
 
 const LEGACY_RULE_STORAGE_KEYS = [
   'auto-document-converter-rules-batch009-6',
@@ -976,6 +1004,7 @@ const ruleScopeType = ref('')
 const ruleScopeRoom = ref('')
 const showScopeManager = ref(false)
 const showScopeCrudPanel = ref(false)
+const backupImportInput = ref(null)
 const newCityName = ref('')
 const newDistrictName = ref('')
 const newLocationTypeName = ref('')
@@ -1444,15 +1473,14 @@ function closeAllTopPanelsForCleanStart() {
 
   activeTopPanel.value = ''
   showPriceSettings.value = false
-  showOutputSettings.value = false
-  showCommonRules.value = false
+  showFormatSettings.value = false
+  showQuickRules.value = false
   showAdvancedSettings.value = false
   showApiPanel.value = false
   showScopeManager.value = false
 
   localStorage.setItem(CLEAN_START_PANEL_STORAGE_KEY, 'done')
 }
-
 onMounted(() => {
   closeAllTopPanelsForCleanStart()
   loadRules({ silent: true })
@@ -2927,6 +2955,115 @@ const totalRoomCount = computed(() => Object.values(locationOptions.value.rooms 
 function saveLocationOptions() {
   locationOptions.value = normalizeLocationOptions(locationOptions.value)
   writeLocationOptions(locationOptions.value)
+}
+
+const BACKUP_STORAGE_KEYS = [
+  RULE_STORAGE_KEY,
+  CONFIRMED_STORAGE_KEY,
+  SOURCE_STORAGE_KEY,
+  RESULT_STORAGE_KEY,
+  RULE_SCOPE_STORAGE_KEY,
+  LOCATION_SCOPE_STORAGE_KEY,
+  'auto-document-converter-api-base-url'
+]
+
+function buildLocalSettingsBackup() {
+  const items = {}
+
+  BACKUP_STORAGE_KEYS.forEach(key => {
+    const value = localStorage.getItem(key)
+    if (value !== null) items[key] = value
+  })
+
+  return {
+    app: 'auto-document-converter',
+    version: '0.0.18-38-fix-clean-start-backup-import',
+    exportedAt: new Date().toISOString(),
+    itemCount: Object.keys(items).length,
+    items
+  }
+}
+
+function downloadTextFile(filename, content, mimeType = 'application/json') {
+  const blob = new Blob([content], { type: `${mimeType};charset=utf-8` })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
+function exportLocalSettingsBackup() {
+  const backup = buildLocalSettingsBackup()
+  const dateText = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
+  const filename = `auto-document-converter-rules-backup-${dateText}.json`
+
+  downloadTextFile(filename, JSON.stringify(backup, null, 2))
+  statusMessage.value = `已匯出規則備份：${backup.itemCount} 筆設定。`
+}
+
+function openBackupImportPicker() {
+  const input = backupImportInput.value || document.querySelector('[data-backup-import-input="true"]')
+
+  if (!input) {
+    statusMessage.value = '匯入失敗：找不到檔案選擇器，請重新整理後再試。'
+    return
+  }
+
+  input.value = ''
+  input.click()
+  statusMessage.value = '請選擇要匯入的規則備份 JSON。'
+}
+
+function importLocalSettingsBackup(event) {
+  const file = event?.target?.files?.[0]
+
+  if (!file) return
+
+  statusMessage.value = `正在匯入備份檔：${file.name}`
+  const reader = new FileReader()
+
+  reader.onload = () => {
+    try {
+      const parsed = JSON.parse(String(reader.result || ''))
+
+      if (parsed?.app !== 'auto-document-converter' || !parsed.items || typeof parsed.items !== 'object') {
+        statusMessage.value = '匯入失敗：這不是轉換工具的規則備份檔。'
+        return
+      }
+
+      let importedCount = 0
+
+      Object.entries(parsed.items).forEach(([key, value]) => {
+        if (BACKUP_STORAGE_KEYS.includes(key) && typeof value === 'string') {
+          localStorage.setItem(key, value)
+          importedCount += 1
+        }
+      })
+
+      locationOptions.value = readLocationOptions()
+      loadRules({ silent: true })
+      loadConfirmedText?.()
+
+      statusMessage.value = `已匯入規則備份：${importedCount} 筆設定。請按 Ctrl + F5 重新整理確認。`
+    } catch (error) {
+      console.error('匯入規則備份失敗', error)
+      statusMessage.value = '匯入失敗：JSON 格式錯誤或檔案損壞。'
+    } finally {
+      if (event?.target) event.target.value = ''
+    }
+  }
+
+  reader.onerror = () => {
+    statusMessage.value = '匯入失敗：讀取檔案時發生錯誤。'
+    if (event?.target) event.target.value = ''
+  }
+
+  reader.readAsText(file, 'utf-8')
 }
 
 function moveListItem(list, fromValue, toValue) {
@@ -6933,6 +7070,61 @@ select:focus, input:focus, textarea:focus {
   color: #1e3a8a !important;
   font-weight: 900;
   font-size: 13px;
+}
+
+
+.backup-settings-card {
+  width: 100%;
+  margin-top: 14px;
+  padding: 18px;
+  border-radius: 22px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(248, 250, 252, 0.76);
+}
+
+.backup-settings-card h3 {
+  margin: 0 0 6px;
+  font-size: 18px;
+}
+
+.backup-settings-card p {
+  margin: 0;
+  color: #64748b;
+  line-height: 1.6;
+}
+
+.backup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+
+.visually-hidden-file-input {
+  position: fixed;
+  left: -9999px;
+  top: -9999px;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.backup-key-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.backup-key-list span {
+  border-radius: 999px;
+  padding: 7px 11px;
+  background: rgba(219, 234, 254, 0.82);
+  color: #1e3a8a;
+  font-size: 13px;
+  font-weight: 900;
 }
 
 </style>

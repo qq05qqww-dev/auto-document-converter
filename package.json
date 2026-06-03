@@ -1,7 +1,7 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "0.0.18-35-online-ready",
+  "version": "0.0.18-38-fix-clean-start-backup-import",
   "type": "module",
   "scripts": {
     "dev": "vite",
