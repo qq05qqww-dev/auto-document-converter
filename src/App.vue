@@ -695,6 +695,8 @@ import { computed, onMounted, ref } from 'vue'
 // 之後新版不要再改這兩個 Key，避免每次更新檔案後規則消失。
 const RULE_STORAGE_KEY = 'auto-document-converter-rules-current'
 const CONFIRMED_STORAGE_KEY = 'auto-document-converter-confirmed-current'
+const SOURCE_STORAGE_KEY = 'auto-document-converter-source-current'
+const RESULT_STORAGE_KEY = 'auto-document-converter-result-current'
 
 const LEGACY_RULE_STORAGE_KEYS = [
   'auto-document-converter-rules-batch009-6',
@@ -1610,6 +1612,16 @@ async function ensureAppendImportBackendReady() {
   return data
 }
 
+function safeSetStorageValue(key, value) {
+  if (!key) return
+  try {
+    localStorage.setItem(key, value)
+  } catch (error) {
+    console.warn('localStorage 儲存失敗，但不影響畫面清空：', error)
+  }
+}
+
+
 async function submitDocument4ToDatabase() {
   saveApiBaseUrl()
 
@@ -1644,8 +1656,8 @@ async function submitDocument4ToDatabase() {
       throw new Error(`安全檢查失敗：匯入後 ${data.afterCount} 筆小於匯入前 ${data.beforeCount} 筆，已阻擋。`)
     }
 
-    apiStatusText.value = `${data.message || `已送出 ${data.count ?? payload.items.length} 筆到 Supabase PostgreSQL。`} 已清空文件1 / 文件2 / 文件3 / 文件4，本次預覽已歸零，可以開始建立下一批。`
     clearDocumentsAfterDatabaseSubmit()
+    apiStatusText.value = `${data.message || `已送出 ${data.count ?? payload.items.length} 筆到 Supabase PostgreSQL。`} 已清空文件1 / 文件2 / 文件3 / 文件4，本次預覽已歸零，可以開始建立下一批。`
   } catch (error) {
     apiStatusText.value = `送出資料庫失敗：${error.message || error}`
   }
@@ -2855,9 +2867,12 @@ function clearDocumentsAfterDatabaseSubmit() {
     total: 0,
     items: []
   }, null, 2)
-  localStorage.setItem(SOURCE_STORAGE_KEY, sourceText.value)
-  localStorage.setItem(RESULT_STORAGE_KEY, resultText.value)
-  localStorage.setItem(CONFIRMED_STORAGE_KEY, confirmedText.value)
+
+  safeSetStorageValue(SOURCE_STORAGE_KEY, sourceText.value)
+  safeSetStorageValue(RESULT_STORAGE_KEY, resultText.value)
+  safeSetStorageValue(CONFIRMED_STORAGE_KEY, confirmedText.value)
+
+  return true
 }
 
 

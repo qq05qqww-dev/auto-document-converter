@@ -1,6 +1,6 @@
 {
   "name": "auto-document-converter",
-  "version": "0.0.18-17-clear-preview-after-db-submit",
+  "version": "0.0.18-18-clear-only-after-success-fix",
   "private": true,
   "type": "module",
   "scripts": {
