@@ -1,7 +1,7 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "0.0.18-41-force-clean-initial-view",
+  "version": "0.0.18-42-ignore-saved-open-panel",
   "type": "module",
   "scripts": {
     "dev": "vite",

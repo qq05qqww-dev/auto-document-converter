@@ -957,7 +957,7 @@ const RESULT_STORAGE_KEY = 'auto-document-converter-result-current'
 const RULE_SCOPE_STORAGE_KEY = 'auto-document-converter-scope-rules-current'
 const LOCATION_SCOPE_STORAGE_KEY = 'auto-document-converter-location-room-options-current'
 const CLEAN_START_PANEL_STORAGE_KEY = 'auto-document-converter-clean-start-panel-always-clean-home'
-const ONLINE_READY_VERSION_LABEL = '第 018-41 批：規則備份匯出 / 匯入'
+const ONLINE_READY_VERSION_LABEL = '第 018-42 批：規則備份匯出 / 匯入'
 
 const LEGACY_RULE_STORAGE_KEYS = [
   'auto-document-converter-rules-batch009-6',
@@ -1482,7 +1482,7 @@ const sampleText = `💢超性感搖搖馬💢
 
 
 function closeAllTopPanelsForCleanStart() {
-  // 第 018-41 批：每次進入頁面都強制乾淨。
+  // 第 018-42 批：每次進入頁面都強制乾淨。
   // 不保留上次展開的功能區，避免一進來就看到進階設定 / API / 地區管理。
   activeTopPanel.value = ''
   showPriceSettings.value = false
@@ -1499,6 +1499,7 @@ function closeAllTopPanelsForCleanStart() {
   loadRules({ silent: true })
   loadConfirmedText({ silent: true })
   normalizeDocument3Text()
+  closeAllTopPanelsForCleanStart()
 })
 
 
@@ -2990,7 +2991,7 @@ function buildLocalSettingsBackup() {
 
   return {
     app: 'auto-document-converter',
-    version: '0.0.18-41-force-clean-initial-view',
+    version: '0.0.18-42-ignore-saved-open-panel',
     exportedAt: new Date().toISOString(),
     itemCount: Object.keys(items).length,
     items
@@ -3672,8 +3673,7 @@ function collectRuleData() {
     extraKeepText: extraKeepText.value,
     countryFieldRulesText: countryFieldRulesText.value,
     bodyCupPrefixText: bodyCupPrefixText.value,
-    notNameWordsText: notNameWordsText.value,
-    showAdvancedSettings: showAdvancedSettings.value
+    notNameWordsText: notNameWordsText.value
   }
 }
 
@@ -3695,10 +3695,16 @@ function applyRuleData(data) {
   countryFieldRulesText.value = data.countryFieldRulesText ?? countryFieldRulesText.value
   bodyCupPrefixText.value = data.bodyCupPrefixText ?? bodyCupPrefixText.value
   notNameWordsText.value = data.notNameWordsText ?? notNameWordsText.value
-  showAdvancedSettings.value = data.showAdvancedSettings ?? false
+  // 第 018-42 批：不要從舊規則備份恢復已展開的進階設定。
+  // 規則內容照常讀取，但首頁永遠保持乾淨，只顯示文件1/2/3/4。
+  activeTopPanel.value = ''
+  showAdvancedSettings.value = false
   showPriceSettings.value = false
   showFormatSettings.value = false
   showQuickRules.value = false
+  showApiPanel.value = false
+  showScopeManager.value = false
+  showScopeCrudPanel.value = false
   showAliasList.value = false
   showRemoveWordList.value = false
 }
