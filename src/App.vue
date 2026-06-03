@@ -721,6 +721,8 @@ const LEGACY_CONFIRMED_STORAGE_KEYS = [
 const sourceText = ref('')
 const resultText = ref('')
 const jsonResultText = ref('')
+const REQUIRED_BACKEND_IMPORT_MODE = 'db_append_upsert_keep_existing_safety_checked'
+const REQUIRED_BACKEND_VERSION = '0.0.18-14-backend-version-guard'
 const DEFAULT_ONLINE_API_BASE_URL = (import.meta.env.VITE_CONVERTER_API_BASE_URL || 'https://auto-document-converter-api.onrender.com').replace(/\/+$/, '')
 const apiBaseUrl = ref(localStorage.getItem('auto-document-converter-api-base-url') || DEFAULT_ONLINE_API_BASE_URL)
 const apiStatusText = ref('尚未測試 API。')
@@ -1516,6 +1518,22 @@ async function testDatabaseConnection() {
   }
 }
 
+
+async function ensureAppendImportBackendReady() {
+  const response = await fetch(`${apiBaseUrl.value}/api/version`)
+  const data = await response.json().catch(() => ({}))
+
+  if (!response.ok) {
+    throw new Error(`後端版本檢查失敗：HTTP ${response.status}`)
+  }
+
+  if (data.importMode !== 'append_upsert_keep_existing' || data.destructiveImportDisabled !== true) {
+    throw new Error('目前連到舊版後端 API，不能送出資料庫，避免舊小姐被整批覆蓋。請確認 Render 已部署第 018-14 批。')
+  }
+
+  return data
+}
+
 async function submitDocument4ToDatabase() {
   saveApiBaseUrl()
 
@@ -1526,6 +1544,9 @@ async function submitDocument4ToDatabase() {
   }
 
   try {
+    const backendVersion = await ensureAppendImportBackendReady()
+    apiStatusText.value = `後端版本確認：${backendVersion.version || backendVersion.batch || 'append 累加版'}，正在送出資料庫...`
+
     const response = await fetch(`${apiBaseUrl.value}/api/ladies/import-db`, {
       method: 'POST',
       headers: {
@@ -1539,7 +1560,16 @@ async function submitDocument4ToDatabase() {
       throw new Error(data.message || `HTTP ${response.status}`)
     }
 
+    if (data.mode !== REQUIRED_BACKEND_IMPORT_MODE) {
+      throw new Error('送出成功但回傳不是累加版後端，請確認 Render 是否仍在舊版本。')
+    }
+
+    if (Number(data.afterCount || 0) < Number(data.beforeCount || 0)) {
+      throw new Error(`安全檢查失敗：匯入後 ${data.afterCount} 筆小於匯入前 ${data.beforeCount} 筆，已阻擋。`)
+    }
+
     apiStatusText.value = data.message || `已送出 ${data.count ?? payload.items.length} 筆到 Supabase PostgreSQL。`
+    await loadFrontendLadies()
   } catch (error) {
     apiStatusText.value = `送出資料庫失敗：${error.message || error}`
   }
@@ -1566,6 +1596,10 @@ async function submitDocument4ToApi() {
     const data = await response.json().catch(() => ({}))
     if (!response.ok) {
       throw new Error(data.message || `HTTP ${response.status}`)
+    }
+
+    if (data.mode && data.mode !== 'local_append_upsert_keep_existing') {
+      throw new Error('本機 JSON 匯入不是累加版，請確認後端版本。')
     }
 
     apiStatusText.value = data.message || `已送出 ${data.count ?? payload.items.length} 筆到本機 API。`

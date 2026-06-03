@@ -1,6 +1,6 @@
 {
   "name": "auto-document-converter",
-  "version": "0.0.18-13-import-all-paths-append-fix",
+  "version": "0.0.18-14-backend-version-guard",
   "private": true,
   "type": "module",
   "scripts": {
