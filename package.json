@@ -1,6 +1,6 @@
 {
   "name": "auto-document-converter",
-  "version": "0.0.18-15-preview-current-doc-db-append",
+  "version": "0.0.18-16-admin-wide-updated-time",
   "private": true,
   "type": "module",
   "scripts": {

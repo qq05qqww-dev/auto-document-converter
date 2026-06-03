@@ -1357,6 +1357,25 @@ function closeMediaViewer() {
   mediaViewerLadyCountry.value = ''
 }
 
+
+function formatAdminUpdatedTime(item) {
+  const raw =
+    item?.updatedAt ||
+    item?.updated_at ||
+    item?.importedAt ||
+    item?.imported_at ||
+    item?.createdAt ||
+    item?.created_at
+
+  if (!raw) return '尚無更新時間'
+
+  const date = new Date(raw)
+  if (Number.isNaN(date.getTime())) return String(raw)
+
+  const pad = value => String(value).padStart(2, '0')
+  return `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
 async function deleteLadyMedia(media, lady) {
   const mediaId = Number(media?.id || 0)
   if (!mediaId) {
@@ -5035,6 +5054,160 @@ select:focus, input:focus, textarea:focus {
   .rule-inline-row,
   .advanced-two-col-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+
+/* 第 018-16 批：後台資料管理寬版 + 更新時間 */
+.admin-section,
+.admin-console,
+.admin-management-section {
+  max-width: min(1540px, calc(100vw - 40px));
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.admin-dashboard-grid,
+.admin-panel-grid,
+.admin-workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.78fr) minmax(820px, 1.85fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.admin-create-panel,
+.admin-form-panel {
+  max-width: 410px;
+}
+
+.admin-list-panel,
+.admin-manage-panel,
+.data-management-panel {
+  min-width: 0;
+}
+
+.admin-table,
+.management-table,
+.data-table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.admin-table td,
+.management-table td,
+.data-table td {
+  vertical-align: top;
+}
+
+.admin-updated-time {
+  display: block;
+  margin-top: 5px;
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.admin-action-row,
+.action-group,
+.table-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.admin-action-row button,
+.action-group button,
+.table-actions button {
+  white-space: nowrap;
+}
+
+.price-chip-list,
+.plan-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+@media (min-width: 1181px) {
+  .admin-table th:nth-child(1),
+  .admin-table td:nth-child(1),
+  .management-table th:nth-child(1),
+  .management-table td:nth-child(1),
+  .data-table th:nth-child(1),
+  .data-table td:nth-child(1) {
+    width: 19%;
+  }
+
+  .admin-table th:nth-child(2),
+  .admin-table td:nth-child(2),
+  .management-table th:nth-child(2),
+  .management-table td:nth-child(2),
+  .data-table th:nth-child(2),
+  .data-table td:nth-child(2) {
+    width: 10%;
+  }
+
+  .admin-table th:nth-child(3),
+  .admin-table td:nth-child(3),
+  .management-table th:nth-child(3),
+  .management-table td:nth-child(3),
+  .data-table th:nth-child(3),
+  .data-table td:nth-child(3) {
+    width: 13%;
+  }
+
+  .admin-table th:nth-child(4),
+  .admin-table td:nth-child(4),
+  .management-table th:nth-child(4),
+  .management-table td:nth-child(4),
+  .data-table th:nth-child(4),
+  .data-table td:nth-child(4) {
+    width: 12%;
+  }
+
+  .admin-table th:nth-child(5),
+  .admin-table td:nth-child(5),
+  .management-table th:nth-child(5),
+  .management-table td:nth-child(5),
+  .data-table th:nth-child(5),
+  .data-table td:nth-child(5) {
+    width: 9%;
+  }
+
+  .admin-table th:nth-child(6),
+  .admin-table td:nth-child(6),
+  .management-table th:nth-child(6),
+  .management-table td:nth-child(6),
+  .data-table th:nth-child(6),
+  .data-table td:nth-child(6) {
+    width: 23%;
+  }
+
+  .admin-table th:nth-child(7),
+  .admin-table td:nth-child(7),
+  .management-table th:nth-child(7),
+  .management-table td:nth-child(7),
+  .data-table th:nth-child(7),
+  .data-table td:nth-child(7) {
+    width: 14%;
+  }
+}
+
+@media (max-width: 1180px) {
+  .admin-dashboard-grid,
+  .admin-panel-grid,
+  .admin-workspace-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-create-panel,
+  .admin-form-panel {
+    max-width: none;
   }
 }
 
