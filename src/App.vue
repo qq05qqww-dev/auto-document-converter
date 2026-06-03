@@ -544,6 +544,7 @@
       <div>
         <h2>API 串接測試</h2>
         <p>這裡預設連線到 Render 線上 API，也可以手動切換其他 API 位置。</p>
+        <p class="online-ready-hint">{{ ONLINE_READY_VERSION_LABEL }}｜準備部署 Vercel 線上版，API 位置建議使用 Render 正式網址。</p>
       </div>
 
       <div class="api-actions api-actions-top-row">
@@ -915,6 +916,7 @@ const RESULT_STORAGE_KEY = 'auto-document-converter-result-current'
 const RULE_SCOPE_STORAGE_KEY = 'auto-document-converter-scope-rules-current'
 const LOCATION_SCOPE_STORAGE_KEY = 'auto-document-converter-location-room-options-current'
 const CLEAN_START_PANEL_STORAGE_KEY = 'auto-document-converter-clean-start-panel-018-25'
+const ONLINE_READY_VERSION_LABEL = '第 018-35 批：線上版準備整理'
 
 const LEGACY_RULE_STORAGE_KEYS = [
   'auto-document-converter-rules-batch009-6',
@@ -6918,6 +6920,19 @@ select:focus, input:focus, textarea:focus {
   font-size: 13px;
   line-height: 1;
   cursor: pointer;
+}
+
+
+.online-ready-hint {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 8px 12px;
+  margin-top: 8px !important;
+  background: rgba(219, 234, 254, 0.72);
+  color: #1e3a8a !important;
+  font-weight: 900;
+  font-size: 13px;
 }
 
 </style>

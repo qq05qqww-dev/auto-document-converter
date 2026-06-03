@@ -1,7 +1,7 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "0.0.18-33-delete-default-city-district-fix",
+  "version": "0.0.18-35-online-ready",
   "type": "module",
   "scripts": {
     "dev": "vite",
