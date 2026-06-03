@@ -1,6 +1,6 @@
 {
   "name": "auto-document-converter",
-  "version": "0.0.18-12-db-import-append-upsert",
+  "version": "0.0.18-13-import-all-paths-append-fix",
   "private": true,
   "type": "module",
   "scripts": {

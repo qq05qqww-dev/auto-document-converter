@@ -1539,7 +1539,7 @@ async function submitDocument4ToDatabase() {
       throw new Error(data.message || `HTTP ${response.status}`)
     }
 
-    apiStatusText.value = `已送出 ${data.count ?? payload.items.length} 筆到 Supabase PostgreSQL。`
+    apiStatusText.value = data.message || `已送出 ${data.count ?? payload.items.length} 筆到 Supabase PostgreSQL。`
   } catch (error) {
     apiStatusText.value = `送出資料庫失敗：${error.message || error}`
   }
@@ -1568,7 +1568,7 @@ async function submitDocument4ToApi() {
       throw new Error(data.message || `HTTP ${response.status}`)
     }
 
-    apiStatusText.value = `已送出 ${data.count ?? payload.items.length} 筆到本機 API。`
+    apiStatusText.value = data.message || `已送出 ${data.count ?? payload.items.length} 筆到本機 API。`
   } catch (error) {
     apiStatusText.value = `送出失敗：${error.message || error}`
   }
