@@ -1,6 +1,6 @@
 {
   "name": "auto-document-converter",
-  "version": "0.0.18-11-2-missing-end-tag-fix",
+  "version": "0.0.18-12-db-import-append-upsert",
   "private": true,
   "type": "module",
   "scripts": {
