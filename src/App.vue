@@ -307,9 +307,6 @@
         <div class="rule-actions rule-actions-center quick-rules-actions">
           <button class="ghost-btn" type="button" @click="saveRules">儲存規則</button>
           <button class="ghost-btn" type="button" @click="loadRules">讀取規則</button>
-          <button class="ghost-btn" type="button" @click="exportRules">複製規則備份</button>
-          <button class="ghost-btn" type="button" @click="importRules">貼上規則備份</button>
-          <button class="danger-btn" type="button" @click="resetRules">恢復預設</button>
         </div>
 
         <div class="manager-grid">
@@ -957,7 +954,8 @@ const RESULT_STORAGE_KEY = 'auto-document-converter-result-current'
 const RULE_SCOPE_STORAGE_KEY = 'auto-document-converter-scope-rules-current'
 const LOCATION_SCOPE_STORAGE_KEY = 'auto-document-converter-location-room-options-current'
 const CLEAN_START_PANEL_STORAGE_KEY = 'auto-document-converter-clean-start-panel-always-clean-home'
-const ONLINE_READY_VERSION_LABEL = '第 018-42 批：規則備份匯出 / 匯入'
+const ONLINE_READY_VERSION_LABEL = '第 018-44 批：隱藏公版危險操作按鈕'
+const PROTECTED_GLOBAL_RULE_NOTICE = '公版規則已固定保護，不會被清除；若遺失會自動補回預設公版。'
 
 const LEGACY_RULE_STORAGE_KEYS = [
   'auto-document-converter-rules-batch009-6',
@@ -1494,7 +1492,10 @@ function closeAllTopPanelsForCleanStart() {
   showScopeCrudPanel.value = false
 
   localStorage.removeItem(CLEAN_START_PANEL_STORAGE_KEY)
-}onMounted(() => {
+}
+
+onMounted(() => {
+  repairProtectedGlobalRules()
   closeAllTopPanelsForCleanStart()
   loadRules({ silent: true })
   loadConfirmedText({ silent: true })
@@ -2991,7 +2992,7 @@ function buildLocalSettingsBackup() {
 
   return {
     app: 'auto-document-converter',
-    version: '0.0.18-42-ignore-saved-open-panel',
+    version: '0.0.18-43-protected-global-rules',
     exportedAt: new Date().toISOString(),
     itemCount: Object.keys(items).length,
     items
@@ -3060,10 +3061,11 @@ function importLocalSettingsBackup(event) {
       })
 
       locationOptions.value = readLocationOptions()
+      repairProtectedGlobalRules()
       loadRules({ silent: true })
       loadConfirmedText?.()
 
-      statusMessage.value = `已匯入規則備份：${importedCount} 筆設定。請按 Ctrl + F5 重新整理確認。`
+      statusMessage.value = `已匯入規則備份：${importedCount} 筆設定。公版規則已固定保護，請按 Ctrl + F5 重新整理確認。`
     } catch (error) {
       console.error('匯入規則備份失敗', error)
       statusMessage.value = '匯入失敗：JSON 格式錯誤或檔案損壞。'
@@ -3466,14 +3468,54 @@ function normalizeScopeStore(store = {}) {
 
 function readScopeRuleStore() {
   try {
-    return normalizeScopeStore(JSON.parse(localStorage.getItem(RULE_SCOPE_STORAGE_KEY) || '{}'))
+    return ensureProtectedGlobalRules(JSON.parse(localStorage.getItem(RULE_SCOPE_STORAGE_KEY) || '{}'))
   } catch {
-    return normalizeScopeStore({})
+    return ensureProtectedGlobalRules({})
   }
 }
 
 function writeScopeRuleStore(store) {
-  localStorage.setItem(RULE_SCOPE_STORAGE_KEY, JSON.stringify(normalizeScopeStore(store)))
+  localStorage.setItem(RULE_SCOPE_STORAGE_KEY, JSON.stringify(ensureProtectedGlobalRules(store)))
+}
+
+function buildDefaultRuleData() {
+  return {
+    priceMode: 'country',
+    globalIncrease: 500,
+    customIncrease: 700,
+    amountPriorityMode: 'higher-price',
+    titleMode: 'country-name',
+    formatHint: '【國籍 名稱】身高 體重 Cup 年齡　短鐘K/30/1S　長鐘K/50/1S',
+    countryPriceRulesText: defaultCountryPriceRules.join('\n'),
+    minutePriceAddRulesText: defaultMinutePriceAddRules.join('\n'),
+    countryAliasText: defaultCountryAliases.join('\n'),
+    amountTransformRules: defaultAmountTransformRules.map(rule => ({ ...rule })),
+    serviceOrderText: defaultServiceOrder.join('\n'),
+    aliasRulesText: defaultAliasRules.join('\n'),
+    removeWordsText: defaultRemoveWords.join('\n'),
+    extraKeepText: defaultExtraKeep.join('\n'),
+    countryFieldRulesText: defaultCountryFieldRules.join('\n'),
+    bodyCupPrefixText: defaultBodyCupPrefixes.join('\n'),
+    notNameWordsText: defaultNotNameWords.join('\n')
+  }
+}
+
+function ensureProtectedGlobalRules(store = {}) {
+  const normalized = normalizeScopeStore(store)
+
+  if (!normalized.global || typeof normalized.global !== 'object') {
+    const legacyGlobal = getGlobalRuleDataFallback?.()
+    normalized.global = legacyGlobal || buildDefaultRuleData()
+  }
+
+  return normalized
+}
+
+function repairProtectedGlobalRules() {
+  const store = readScopeRuleStore()
+  writeScopeRuleStore(store)
+  localStorage.setItem(RULE_STORAGE_KEY, JSON.stringify(store.global || buildDefaultRuleData()))
+  return store
 }
 
 function getScopeBucketAndKey(level = ruleScopeLevel.value) {
@@ -3514,9 +3556,8 @@ function setRuleDataToScope(store, level, key, data) {
 }
 
 function deleteRuleDataFromScope(store, level, key) {
-  const normalized = normalizeScopeStore(store)
+  const normalized = ensureProtectedGlobalRules(store)
   if (level === 'global') {
-    normalized.global = null
     return normalized
   }
   if (level === 'city') delete normalized.cities[key]
@@ -3538,17 +3579,25 @@ function validateCurrentRuleScope() {
 }
 
 function getGlobalRuleDataFallback() {
-  const store = readScopeRuleStore()
-  if (store.global) return store.global
-
   const raw = getFirstStorageValue(RULE_STORAGE_KEY, LEGACY_RULE_STORAGE_KEYS)
-  if (!raw) return null
+
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw)
+      if (parsed && typeof parsed === 'object') return parsed
+    } catch {
+      // 若舊規則損壞，往下補回固定公版。
+    }
+  }
 
   try {
-    return JSON.parse(raw)
+    const directStore = normalizeScopeStore(JSON.parse(localStorage.getItem(RULE_SCOPE_STORAGE_KEY) || '{}'))
+    if (directStore.global && typeof directStore.global === 'object') return directStore.global
   } catch {
-    return null
+    // 儲存區資料損壞時，固定公版會由 ensureProtectedGlobalRules 補回。
   }
+
+  return null
 }
 
 function getEffectiveScopedRuleData() {
@@ -3606,9 +3655,11 @@ function saveCurrentScopeRules() {
 
   if (ruleScopeLevel.value === 'global') {
     localStorage.setItem(RULE_STORAGE_KEY, JSON.stringify(data))
+  } else {
+    repairProtectedGlobalRules()
   }
 
-  statusMessage.value = `已儲存「${currentRuleScopeLabel.value}」專屬規則。`
+  statusMessage.value = `已儲存「${currentRuleScopeLabel.value}」專屬規則。${ruleScopeLevel.value === 'global' ? '公版仍會被固定保留。' : ''}`
   return true
 }
 
@@ -3643,7 +3694,8 @@ function copyGlobalRulesToCurrentScope() {
 
 function clearCurrentScopeRules() {
   if (ruleScopeLevel.value === 'global') {
-    statusMessage.value = '公版規則不建議從這裡清除；請用「恢復預設」重設公版。'
+    repairProtectedGlobalRules()
+    statusMessage.value = PROTECTED_GLOBAL_RULE_NOTICE
     return
   }
   if (!validateCurrentRuleScope()) return
@@ -3802,25 +3854,26 @@ function getFirstStorageValue(primaryKey, fallbackKeys = []) {
 }
 
 function resetRules() {
-  priceMode.value = 'country'
-  globalIncrease.value = 500
-  customIncrease.value = 700
-  amountPriorityMode.value = 'higher-price'
-  titleMode.value = 'country-name'
-  formatHint.value = '【國籍 名稱】身高 體重 Cup 年齡　短鐘K/30/1S　長鐘K/50/1S'
-  countryPriceRulesText.value = defaultCountryPriceRules.join('\n')
-  minutePriceAddRulesText.value = defaultMinutePriceAddRules.join('\n')
-  countryAliasText.value = defaultCountryAliases.join('\n')
-  amountTransformRules.value = defaultAmountTransformRules.map(rule => ({ ...rule }))
+  const defaults = buildDefaultRuleData()
+  priceMode.value = defaults.priceMode
+  globalIncrease.value = defaults.globalIncrease
+  customIncrease.value = defaults.customIncrease
+  amountPriorityMode.value = defaults.amountPriorityMode
+  titleMode.value = defaults.titleMode
+  formatHint.value = defaults.formatHint
+  countryPriceRulesText.value = defaults.countryPriceRulesText
+  minutePriceAddRulesText.value = defaults.minutePriceAddRulesText
+  countryAliasText.value = defaults.countryAliasText
+  amountTransformRules.value = normalizeAmountRules(defaults.amountTransformRules)
   newAmountFrom.value = ''
   newAmountTo.value = ''
-  serviceOrderText.value = defaultServiceOrder.join('\n')
-  aliasRulesText.value = defaultAliasRules.join('\n')
-  removeWordsText.value = defaultRemoveWords.join('\n')
-  extraKeepText.value = defaultExtraKeep.join('\n')
-  countryFieldRulesText.value = defaultCountryFieldRules.join('\n')
-  bodyCupPrefixText.value = defaultBodyCupPrefixes.join('\n')
-  notNameWordsText.value = defaultNotNameWords.join('\n')
+  serviceOrderText.value = defaults.serviceOrderText
+  aliasRulesText.value = defaults.aliasRulesText
+  removeWordsText.value = defaults.removeWordsText
+  extraKeepText.value = defaults.extraKeepText
+  countryFieldRulesText.value = defaults.countryFieldRulesText
+  bodyCupPrefixText.value = defaults.bodyCupPrefixText
+  notNameWordsText.value = defaults.notNameWordsText
   showAdvancedSettings.value = false
   showPriceSettings.value = false
   showFormatSettings.value = false
@@ -3832,7 +3885,10 @@ function resetRules() {
   newRemoveWord.value = ''
   newCountryRuleFrom.value = ''
   newCountryRuleTo.value = '馬來'
-  statusMessage.value = '已恢復預設；要永久覆蓋請再按「儲存規則」。'
+  repairProtectedGlobalRules()
+  statusMessage.value = ruleScopeLevel.value === 'global'
+    ? '已恢復畫面預設；公版規則固定保護中，不會被刪除。要把預設覆蓋成公版，請再按「儲存規則」。'
+    : '已恢復畫面預設；公版規則固定保護中，不會被刪除。'
 }
 
 async function exportRules() {
@@ -3854,7 +3910,8 @@ function importRules() {
     const parsed = JSON.parse(raw)
     applyRuleData(parsed)
     saveRules()
-    statusMessage.value = '已匯入規則備份並儲存。'
+    repairProtectedGlobalRules()
+    statusMessage.value = '已匯入規則備份並儲存；公版規則固定保護中。'
   } catch (error) {
     statusMessage.value = '匯入失敗：貼上的內容不是正確的規則備份。'
   }

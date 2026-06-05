@@ -1,7 +1,7 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "0.0.18-42-ignore-saved-open-panel",
+  "version": "0.0.18-44-hide-global-danger-actions",
   "type": "module",
   "scripts": {
     "dev": "vite",
