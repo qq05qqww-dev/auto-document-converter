@@ -1,6 +1,42 @@
 <template>
-  <!-- batch018-40-invalid-end-tag-fixed -->
-  <main class="page-shell">
+  <!-- batch018-53-1-fix-supabase-env-fallback -->
+  <main v-if="!authReady" class="login-page-shell">
+    <section class="login-card">
+      <div class="login-brand">正式線上登入</div>
+      <h1>正在檢查登入狀態...</h1>
+      <p>請稍候，系統正在連線 Supabase。</p>
+    </section>
+  </main>
+
+  <main v-else-if="!authUser" class="login-page-shell">
+    <section class="login-card">
+      <div class="login-brand">auto-document-converter</div>
+      <h1>員工帳號登入</h1>
+      <p>請使用 Supabase 建立的員工 Email / 密碼登入。登入後，每個員工會讀取自己的工作區與規則。</p>
+
+      <div v-if="!supabaseConfigured" class="login-warning">
+        尚未設定 Supabase 環境變數，請先設定 VITE_SUPABASE_URL 與 VITE_SUPABASE_ANON_KEY。
+      </div>
+
+      <form class="login-form" @submit.prevent="loginWithSupabase">
+        <label>
+          Email 帳號
+          <input v-model="loginEmail" type="email" autocomplete="username" placeholder="員工 Email" />
+        </label>
+        <label>
+          密碼
+          <input v-model="loginPassword" type="password" autocomplete="current-password" placeholder="登入密碼" />
+        </label>
+        <button class="primary-btn login-submit" type="submit" :disabled="isAuthBusy || !supabaseConfigured">
+          {{ isAuthBusy ? '登入中...' : '登入系統' }}
+        </button>
+      </form>
+
+      <p class="login-status" :class="{ error: loginStatusType === 'error', ok: loginStatusType === 'ok' }">{{ loginStatus }}</p>
+    </section>
+  </main>
+
+  <main v-else class="page-shell">
 
     <section class="hero-card compact-control-card">
       <div class="top-control-header">
@@ -26,13 +62,25 @@
         </div>
       </div>
 
+      <section class="staff-profile-card">
+        <div class="staff-profile-copy">
+          <h3>線上員工工作區</h3>
+          <p>目前登入：<strong>{{ currentStaffName }}</strong>｜身份：<strong>{{ currentRoleLabel }}</strong></p>
+          <p>帳號：{{ authUserEmail }}。目前先以正式登入隔離本機工作區，下一批會把縣市、地區、機房與規則正式寫進 Supabase。</p>
+        </div>
+        <div class="staff-profile-actions">
+          <button class="ghost-btn" type="button" @click="reloadCurrentProfile">重新讀取身份</button>
+          <button class="danger-btn" type="button" @click="logoutFromSupabase">登出</button>
+        </div>
+      </section>
+
       <section class="scope-manager-card" v-if="showScopeManager">
         <div class="scope-rule-header">
           <div>
-            <h3>地區 / 定點外送 / 機房管理</h3>
-            <p>主畫面只保留下拉選取；新增、修改、刪除收在「管理清單」裡，避免畫面太亂。</p>
+            <h3>我的地區 / 定點外送 / 機房管理</h3>
+            <p>{{ currentStaffName }} 的個人管理清單；新增、修改、刪除只影響目前登入的員工。</p>
           </div>
-          <div class="scope-status-pill">已建立：{{ locationCities.length }} 縣市 / {{ totalDistrictCount }} 地區 / {{ totalRoomCount }} 機房</div>
+          <div class="scope-status-pill">{{ currentStaffName }} 已建立：{{ locationCities.length }} 縣市 / {{ totalDistrictCount }} 地區 / {{ totalRoomCount }} 機房</div>
         </div>
 
         <div class="scope-manager-selection-shell">
@@ -92,10 +140,8 @@
             <span>有效來源：{{ effectiveRuleSourceLabel }}</span>
           </div>
           <div class="room-rule-buttons">
-            <button class="primary-btn" type="button" @click="loadCurrentScopeRules">套用目前選擇規則</button>
-            <button class="ghost-btn" type="button" @click="saveCurrentScopeRules">儲存目前選擇規則</button>
-            <button class="ghost-btn" type="button" @click="copyGlobalRulesToCurrentScope">複製公版到目前選擇</button>
-            <button class="danger-btn" type="button" @click="clearCurrentScopeRules">清除目前選擇專屬規則</button>
+            <button class="primary-btn" type="button" @click="saveCurrentScopeRules">儲存目前機房規則</button>
+            <button class="ghost-btn" type="button" @click="loadCurrentScopeRules">讀取目前機房規則</button>
           </div>
         </div>
 
@@ -104,11 +150,11 @@
             <button class="option-modal-close" type="button" @click="showScopeCrudPanel = false">×</button>
 
             <div class="option-modal-head">
-              <h2>地區機房管理設定</h2>
-              <p>管理新增 / 修改會用到的縣市、地區、機房。定點 / 外送固定使用下拉選擇，不另外顯示管理區。</p>
+              <h2>{{ currentStaffName }} 的地區機房管理設定</h2>
+              <p>員工可自己新增 / 修改想管理的縣市、地區、機房；資料只存在目前員工個人工作區。</p>
               <span class="option-sync-pill">
                 <i></i>
-                已讀取本機管理清單
+                已讀取 {{ currentStaffName }} 個人清單
               </span>
             </div>
 
@@ -618,6 +664,8 @@
           v-model="sourceText"
           class="work-textarea"
           placeholder="請貼上店家最新資訊。系統會先清掉符號，再抓國籍+小姐名或小姐名+國籍。"
+          @input="normalizeSourceSlashSpaces"
+          @paste="normalizeSourceSlashSpaces"
         ></textarea>
 
         <div class="button-row">
@@ -944,6 +992,7 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
+import { isSupabaseConfigured, supabase } from './supabaseClient'
 
 // 第 009-7 批開始固定使用這兩個正式儲存位置。
 // 之後新版不要再改這兩個 Key，避免每次更新檔案後規則消失。
@@ -954,8 +1003,23 @@ const RESULT_STORAGE_KEY = 'auto-document-converter-result-current'
 const RULE_SCOPE_STORAGE_KEY = 'auto-document-converter-scope-rules-current'
 const LOCATION_SCOPE_STORAGE_KEY = 'auto-document-converter-location-room-options-current'
 const CLEAN_START_PANEL_STORAGE_KEY = 'auto-document-converter-clean-start-panel-always-clean-home'
-const ONLINE_READY_VERSION_LABEL = '第 018-44 批：隱藏公版危險操作按鈕'
+const ONLINE_READY_VERSION_LABEL = '第 018-53-1 批：Supabase 連線備援修正版'
 const PROTECTED_GLOBAL_RULE_NOTICE = '公版規則已固定保護，不會被清除；若遺失會自動補回預設公版。'
+const SOURCE_SLASH_SPACE_NOTICE = '文件1已啟用斜線自動轉空格，貼上後 / 與 ／ 會自動變成空格。'
+const STAFF_PROFILE_STORAGE_KEY = 'auto-document-converter-current-staff-profile'
+const STAFF_DEFAULT_NAME = '未登入使用者'
+
+function normalizeSourceTextSlashes(text = '') {
+  return String(text || '').replace(/[\/／]+/g, ' ')
+}
+
+function normalizeSourceSlashSpaces() {
+  const normalized = normalizeSourceTextSlashes(sourceText.value)
+  if (normalized !== sourceText.value) {
+    sourceText.value = normalized
+    statusMessage.value = SOURCE_SLASH_SPACE_NOTICE
+  }
+}
 
 const LEGACY_RULE_STORAGE_KEYS = [
   'auto-document-converter-rules-batch009-6',
@@ -1001,6 +1065,210 @@ const mediaViewerLadyName = ref('')
 const mediaViewerLadyCountry = ref('')
 const confirmedText = ref('')
 const statusMessage = ref('等待貼上資料。')
+const supabaseConfigured = isSupabaseConfigured
+const authReady = ref(false)
+const authUser = ref(null)
+const authProfile = ref(null)
+const loginEmail = ref('')
+const loginPassword = ref('')
+const loginStatus = ref('請輸入員工 Email 與密碼。')
+const loginStatusType = ref('')
+const isAuthBusy = ref(false)
+const currentStaffName = ref(cleanStaffName(localStorage.getItem(STAFF_PROFILE_STORAGE_KEY) || STAFF_DEFAULT_NAME))
+const staffLoginInput = ref(currentStaffName.value)
+const authUserEmail = computed(() => authUser.value?.email || '尚未登入')
+const currentRoleLabel = computed(() => authProfile.value?.role === 'owner' ? '老闆' : '員工')
+
+function cleanStaffName(value) {
+  const name = String(value || '').trim().replace(/\s+/g, ' ')
+  return name || STAFF_DEFAULT_NAME
+}
+
+function applyAuthenticatedProfile(user, profile = null) {
+  authUser.value = user || null
+  authProfile.value = profile || null
+
+  const nextName = cleanStaffName(profile?.display_name || user?.email || STAFF_DEFAULT_NAME)
+  currentStaffName.value = nextName
+  staffLoginInput.value = nextName
+  localStorage.setItem(STAFF_PROFILE_STORAGE_KEY, nextName)
+}
+
+async function loadAuthProfile(user = authUser.value) {
+  if (!supabaseConfigured || !user?.id) return null
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id,email,display_name,role')
+    .eq('id', user.id)
+    .maybeSingle()
+
+  if (error) {
+    loginStatus.value = `讀取身份失敗：${error.message}`
+    loginStatusType.value = 'error'
+    return null
+  }
+
+  if (data) return data
+
+  const fallbackProfile = {
+    id: user.id,
+    email: user.email,
+    display_name: user.email?.split('@')?.[0] || '員工',
+    role: 'employee'
+  }
+
+  const { data: inserted, error: insertError } = await supabase
+    .from('profiles')
+    .insert(fallbackProfile)
+    .select('id,email,display_name,role')
+    .single()
+
+  if (insertError) {
+    loginStatus.value = `建立身份失敗：${insertError.message}`
+    loginStatusType.value = 'error'
+    return fallbackProfile
+  }
+
+  return inserted
+}
+
+async function refreshAuthState() {
+  if (!supabaseConfigured) {
+    authReady.value = true
+    loginStatus.value = '尚未設定 Supabase 連線資料。'
+    loginStatusType.value = 'error'
+    return
+  }
+
+  const { data, error } = await supabase.auth.getSession()
+  if (error) {
+    loginStatus.value = `登入狀態讀取失敗：${error.message}`
+    loginStatusType.value = 'error'
+    authReady.value = true
+    return
+  }
+
+  const user = data?.session?.user || null
+  if (!user) {
+    applyAuthenticatedProfile(null, null)
+    authReady.value = true
+    return
+  }
+
+  const profile = await loadAuthProfile(user)
+  applyAuthenticatedProfile(user, profile)
+  authReady.value = true
+}
+
+async function loginWithSupabase() {
+  if (!supabaseConfigured) {
+    loginStatus.value = '尚未設定 Supabase 連線資料。'
+    loginStatusType.value = 'error'
+    return
+  }
+
+  const email = String(loginEmail.value || '').trim()
+  const password = String(loginPassword.value || '')
+
+  if (!email || !password) {
+    loginStatus.value = '請輸入 Email 與密碼。'
+    loginStatusType.value = 'error'
+    return
+  }
+
+  isAuthBusy.value = true
+  loginStatus.value = '登入中，請稍候...'
+  loginStatusType.value = ''
+
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+
+  if (error) {
+    isAuthBusy.value = false
+    loginStatus.value = `登入失敗：${error.message}`
+    loginStatusType.value = 'error'
+    return
+  }
+
+  const user = data?.user || data?.session?.user || null
+  const profile = await loadAuthProfile(user)
+  applyAuthenticatedProfile(user, profile)
+
+  loginPassword.value = ''
+  loginStatus.value = '登入成功。'
+  loginStatusType.value = 'ok'
+  isAuthBusy.value = false
+
+  locationOptions.value = readLocationOptions()
+  repairProtectedGlobalRules()
+  loadCurrentScopeRules({ silent: true })
+  closeAllTopPanelsForCleanStart()
+}
+
+async function logoutFromSupabase() {
+  if (!supabaseConfigured) return
+  await supabase.auth.signOut()
+  authUser.value = null
+  authProfile.value = null
+  currentStaffName.value = STAFF_DEFAULT_NAME
+  staffLoginInput.value = STAFF_DEFAULT_NAME
+  loginStatus.value = '已登出，請重新登入。'
+  loginStatusType.value = ''
+}
+
+async function reloadCurrentProfile() {
+  if (!authUser.value) return
+  const profile = await loadAuthProfile(authUser.value)
+  applyAuthenticatedProfile(authUser.value, profile)
+  locationOptions.value = readLocationOptions()
+  loadCurrentScopeRules({ silent: true })
+  statusMessage.value = '已重新讀取目前登入身份。'
+}
+
+function getStaffStorageSuffix() {
+  return encodeURIComponent(cleanStaffName(currentStaffName.value))
+}
+
+function getStaffScopedStorageKey(baseKey) {
+  return `${baseKey}__staff__${getStaffStorageSuffix()}`
+}
+
+function switchStaffProfile() {
+  const nextName = cleanStaffName(staffLoginInput.value)
+  currentStaffName.value = nextName
+  staffLoginInput.value = nextName
+  localStorage.setItem(STAFF_PROFILE_STORAGE_KEY, nextName)
+
+  managerSelectedCity.value = ''
+  managerSelectedDistrict.value = ''
+  managerSelectedType.value = ''
+  roomManagerSelectedCity.value = ''
+  roomManagerSelectedDistrict.value = ''
+  roomManagerSelectedType.value = ''
+  ruleScopeCity.value = ''
+  ruleScopeDistrict.value = ''
+  ruleScopeType.value = ''
+  ruleScopeRoom.value = ''
+  ruleScopeLevel.value = 'global'
+
+  locationOptions.value = readLocationOptions()
+  repairProtectedGlobalRules()
+  loadCurrentScopeRules({ silent: true })
+  closeAllTopPanelsForCleanStart()
+  statusMessage.value = `已切換到「${nextName}」個人工作區。縣市、地區、機房與規則都會跟其他員工分開保存。`
+}
+
+function resetStaffProfile() {
+  staffLoginInput.value = STAFF_DEFAULT_NAME
+  switchStaffProfile()
+}
+
+watch(sourceText, value => {
+  const normalized = normalizeSourceTextSlashes(value)
+  if (normalized !== value) {
+    sourceText.value = normalized
+  }
+})
 const showAdvancedSettings = ref(false)
 const showPriceSettings = ref(false)
 const showFormatSettings = ref(false)
@@ -1480,21 +1748,24 @@ const sampleText = `💢超性感搖搖馬💢
 
 
 function closeAllTopPanelsForCleanStart() {
-  // 第 018-42 批：每次進入頁面都強制乾淨。
-  // 不保留上次展開的功能區，避免一進來就看到進階設定 / API / 地區管理。
+  // 第 018-51 批：每次進入頁面保留乾淨狀態，但固定展開地區機房管理。
+  // 不保留上次展開的金額 / 格式 / 常用 / 進階 / API 面板，避免畫面亂掉。
+  // 地區 / 定點外送 / 機房管理是主要操作入口，預設展開讓使用者一進來就看得到。
   activeTopPanel.value = ''
   showPriceSettings.value = false
   showFormatSettings.value = false
   showQuickRules.value = false
   showAdvancedSettings.value = false
   showApiPanel.value = false
-  showScopeManager.value = false
+  showScopeManager.value = true
   showScopeCrudPanel.value = false
 
   localStorage.removeItem(CLEAN_START_PANEL_STORAGE_KEY)
 }
 
-onMounted(() => {
+onMounted(async () => {
+  await refreshAuthState()
+  if (!authUser.value) return
   repairProtectedGlobalRules()
   closeAllTopPanelsForCleanStart()
   loadRules({ silent: true })
@@ -2123,12 +2394,58 @@ function cleanupSourceText(text) {
     cleaned = cleaned.replace(new RegExp(escapeRegExp(word), 'g'), '')
   })
 
-  return cleaned
+  const normalizedLines = cleaned
     .split('\n')
     .map(line => line.replace(/[ \t]+/g, ' ').trim())
     .join('\n')
     .replace(/\n{4,}/g, '\n\n\n')
     .trim()
+
+  return normalizeLooseNameBodyCountryLines(normalizedLines)
+}
+
+function normalizeLooseNameBodyCountryLines(text) {
+  const lines = String(text || '').split('\n')
+  let currentCountry = ''
+
+  return lines.map(line => {
+    const contextCountry = extractLooseCountryContext(line)
+    if (contextCountry) currentCountry = contextCountry
+
+    const looseHeader = parseLooseNameBodyHeaderLine(line)
+    if (looseHeader && !extractLooseCountryContext(line)) {
+      const country = currentCountry || '馬來'
+      return `${country} ${line}`.replace(/[ \t]+/g, ' ').trim()
+    }
+
+    return line
+  }).join('\n').trim()
+}
+
+function extractLooseCountryContext(line) {
+  const cleaned = normalizeHeaderText(line)
+  if (!cleaned) return ''
+  if (isNotHeaderLine(cleaned) && !/(越南|馬來|馬來西亞|泰國|泰妹|台灣|台妹|港澳|日本|韓國|外籍)/.test(cleaned)) return ''
+
+  const compact = cleaned.replace(/\s+/g, '')
+  const countries = getCountryKeys().sort((a, b) => b.length - a.length)
+  for (const country of countries) {
+    if (compact.includes(country)) return normalizeCountry(country)
+  }
+
+  return ''
+}
+
+function parseLooseNameBodyHeaderLine(line) {
+  const cleaned = normalizeHeaderText(line)
+  if (!cleaned || parseHeaderLine(cleaned)) return null
+
+  const match = cleaned.match(/^([\u4e00-\u9fa5A-Za-z0-9]{1,18})\s+(\d{3})\s+(\d{2})\s+(?:\d{2}\s+)?(?:(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)\s*)?[A-Za-z]\b/i)
+  if (!match) return null
+
+  const name = cleanName(match[1])
+  if (!isValidName(name)) return null
+  return { name }
 }
 
 function splitBlocks(text) {
@@ -2310,7 +2627,7 @@ function pickHeaderName(beforeCountry, afterCountry) {
   const after = removeHeaderNoise(afterCountry)
 
   // 「小魚兒 越南新妹」這種，國籍後面只是新妹/新人等說明，名稱要取國籍前面。
-  if (before && (!after || isCountrySuffixOnly(after))) return before
+  if (before && (!after || isCountrySuffixOnly(after) || isBodySuffixOnly(afterCountry))) return before
   if (after) return after
   return before
 }
@@ -2319,15 +2636,26 @@ function isCountrySuffixOnly(text) {
   return /^(新妹|新茶|新人|嫩妹|妹妹|妹|漂亮|正妹|可愛|甜美|外送妹)$/.test(String(text || '').trim())
 }
 
+function isBodySuffixOnly(text) {
+  const value = normalizeDigits(String(text || ''))
+    .replace(/[^\u4e00-\u9fa5A-Za-z0-9]/g, '')
+    .trim()
+
+  if (!value) return false
+
+  return /^(?:\d{2}(?:歲|y|Y)?)?\d{3}\d{2}(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)?[A-Za-z].*$/i.test(value)
+}
+
 function removeHeaderNoise(text) {
   let value = normalizeDigits(String(text || ''))
 
   // 標題同一行可能長這樣：
   // 越南妹妹 京香 157/44/D
-  // 需要先把身材片段切掉，避免小姐名變成「京香15744D」。
+  // 需要先把身材片段切掉，避免小姐名變成「京香15744D」或「16244E」。
   value = value
     .replace(/\d{2}\s*(?:歲|y|Y)\s*[.．\s]*\d{3}\s*[\/.．]\s*\d{2}\s*[\/.．]?\s*(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)?[A-Za-z].*$/g, '')
     .replace(/\d{3}\s*[\/.．]\s*\d{2}\s*[\/.．]?\s*(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)?[A-Za-z].*$/g, '')
+    .replace(/\d{3}\d{2}(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)?[A-Za-z].*$/g, '')
     .replace(/\d+(?:\.\d+)?\s*\/\s*\d{2,3}\s*\/\s*\d+\s*S?.*$/ig, '')
     .replace(/\d{2,3}\s*(?:分鐘|分).*$/g, '')
 
@@ -2494,7 +2822,13 @@ function parsePrices(text, increase) {
       const minutes = Number(oldMatch[1])
       const base = Number(oldMatch[2])
       if (!minutes || !base) return
-      pushPrice(minutes, 1, base * 1000)
+
+      // batch018-47：
+      // 「20分/1300底」的 1300 是實際金額，不可以再 *1000，
+      // 否則會變成 1300.5K/20/1S。
+      // 只有「20分/1.3底」「30分/2.5底」這種 K 縮寫才轉成 1300 / 2500。
+      const amount = base < 100 ? base * 1000 : base
+      pushPrice(minutes, 1, amount)
       return
     }
 
@@ -2932,14 +3266,14 @@ function normalizeLocationOptions(options = {}) {
 }
 function readLocationOptions() {
   try {
-    return normalizeLocationOptions(JSON.parse(localStorage.getItem(LOCATION_SCOPE_STORAGE_KEY) || '{}'))
+    return normalizeLocationOptions(JSON.parse(localStorage.getItem(getStaffScopedStorageKey(LOCATION_SCOPE_STORAGE_KEY)) || '{}'))
   } catch {
     return normalizeLocationOptions({})
   }
 }
 
 function writeLocationOptions(options) {
-  localStorage.setItem(LOCATION_SCOPE_STORAGE_KEY, JSON.stringify(normalizeLocationOptions(options)))
+  localStorage.setItem(getStaffScopedStorageKey(LOCATION_SCOPE_STORAGE_KEY), JSON.stringify(normalizeLocationOptions(options)))
 }
 
 const locationOptions = ref(readLocationOptions())
@@ -2979,7 +3313,8 @@ const BACKUP_STORAGE_KEYS = [
   RESULT_STORAGE_KEY,
   RULE_SCOPE_STORAGE_KEY,
   LOCATION_SCOPE_STORAGE_KEY,
-  'auto-document-converter-api-base-url'
+  'auto-document-converter-api-base-url',
+  STAFF_PROFILE_STORAGE_KEY
 ]
 
 function buildLocalSettingsBackup() {
@@ -2990,9 +3325,15 @@ function buildLocalSettingsBackup() {
     if (value !== null) items[key] = value
   })
 
+  ;[RULE_STORAGE_KEY, RULE_SCOPE_STORAGE_KEY, LOCATION_SCOPE_STORAGE_KEY].forEach(key => {
+    const staffKey = getStaffScopedStorageKey(key)
+    const value = localStorage.getItem(staffKey)
+    if (value !== null) items[staffKey] = value
+  })
+
   return {
     app: 'auto-document-converter',
-    version: '0.0.18-43-protected-global-rules',
+    version: '0.0.18-53-1-fix-supabase-env-fallback',
     exportedAt: new Date().toISOString(),
     itemCount: Object.keys(items).length,
     items
@@ -3468,14 +3809,14 @@ function normalizeScopeStore(store = {}) {
 
 function readScopeRuleStore() {
   try {
-    return ensureProtectedGlobalRules(JSON.parse(localStorage.getItem(RULE_SCOPE_STORAGE_KEY) || '{}'))
+    return ensureProtectedGlobalRules(JSON.parse(localStorage.getItem(getStaffScopedStorageKey(RULE_SCOPE_STORAGE_KEY)) || '{}'))
   } catch {
     return ensureProtectedGlobalRules({})
   }
 }
 
 function writeScopeRuleStore(store) {
-  localStorage.setItem(RULE_SCOPE_STORAGE_KEY, JSON.stringify(ensureProtectedGlobalRules(store)))
+  localStorage.setItem(getStaffScopedStorageKey(RULE_SCOPE_STORAGE_KEY), JSON.stringify(ensureProtectedGlobalRules(store)))
 }
 
 function buildDefaultRuleData() {
@@ -3514,7 +3855,7 @@ function ensureProtectedGlobalRules(store = {}) {
 function repairProtectedGlobalRules() {
   const store = readScopeRuleStore()
   writeScopeRuleStore(store)
-  localStorage.setItem(RULE_STORAGE_KEY, JSON.stringify(store.global || buildDefaultRuleData()))
+  localStorage.setItem(getStaffScopedStorageKey(RULE_STORAGE_KEY), JSON.stringify(store.global || buildDefaultRuleData()))
   return store
 }
 
@@ -3579,7 +3920,7 @@ function validateCurrentRuleScope() {
 }
 
 function getGlobalRuleDataFallback() {
-  const raw = getFirstStorageValue(RULE_STORAGE_KEY, LEGACY_RULE_STORAGE_KEYS)
+  const raw = getFirstStorageValue(getStaffScopedStorageKey(RULE_STORAGE_KEY), [RULE_STORAGE_KEY, ...LEGACY_RULE_STORAGE_KEYS])
 
   if (raw) {
     try {
@@ -3591,7 +3932,7 @@ function getGlobalRuleDataFallback() {
   }
 
   try {
-    const directStore = normalizeScopeStore(JSON.parse(localStorage.getItem(RULE_SCOPE_STORAGE_KEY) || '{}'))
+    const directStore = normalizeScopeStore(JSON.parse(localStorage.getItem(getStaffScopedStorageKey(RULE_SCOPE_STORAGE_KEY)) || '{}'))
     if (directStore.global && typeof directStore.global === 'object') return directStore.global
   } catch {
     // 儲存區資料損壞時，固定公版會由 ensureProtectedGlobalRules 補回。
@@ -3654,7 +3995,7 @@ function saveCurrentScopeRules() {
   writeScopeRuleStore(store)
 
   if (ruleScopeLevel.value === 'global') {
-    localStorage.setItem(RULE_STORAGE_KEY, JSON.stringify(data))
+    localStorage.setItem(getStaffScopedStorageKey(RULE_STORAGE_KEY), JSON.stringify(data))
   } else {
     repairProtectedGlobalRules()
   }
@@ -4318,7 +4659,8 @@ select:focus, input:focus, textarea:focus {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  max-height: 150px;
+  max-height: 300px;
+  min-height: 210px;
   overflow: auto;
 }
 
@@ -7289,6 +7631,161 @@ select:focus, input:focus, textarea:focus {
     width: calc(100% - 16px) !important;
     padding: 18px !important;
   }
+}
+
+
+
+.staff-profile-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 14px auto 18px;
+  padding: 16px 18px;
+  border: 1px solid rgba(129, 158, 202, 0.24);
+  border-radius: 22px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.92), rgba(235, 245, 255, 0.9));
+  box-shadow: 0 18px 42px rgba(31, 74, 128, 0.08);
+}
+
+.staff-profile-copy h3 {
+  margin: 0 0 6px;
+  color: #142033;
+  font-size: 18px;
+}
+
+.staff-profile-copy p {
+  margin: 0;
+  color: #65758a;
+  line-height: 1.6;
+}
+
+.staff-profile-copy strong {
+  color: #1e5da8;
+}
+
+.staff-profile-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.staff-profile-actions input {
+  width: min(280px, 52vw);
+  min-height: 42px;
+  border-radius: 16px;
+  border: 1px solid #cdd8e7;
+  padding: 0 14px;
+  font-weight: 700;
+  outline: none;
+  background: #ffffff;
+}
+
+@media (max-width: 760px) {
+  .staff-profile-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .staff-profile-actions {
+    justify-content: flex-start;
+  }
+
+  .staff-profile-actions input {
+    width: 100%;
+  }
+}
+
+
+.login-page-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background: radial-gradient(circle at top left, rgba(60, 129, 246, 0.16), transparent 34%), #f6f9fd;
+}
+
+.login-card {
+  width: min(520px, 100%);
+  border: 1px solid rgba(129, 158, 202, 0.32);
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.12);
+  padding: 30px;
+}
+
+.login-brand {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: #eaf3ff;
+  color: #1e5da8;
+  font-weight: 900;
+  margin-bottom: 16px;
+}
+
+.login-card h1 {
+  margin: 0 0 10px;
+  color: #101827;
+  font-size: 28px;
+}
+
+.login-card p {
+  margin: 0 0 18px;
+  color: #64748b;
+  line-height: 1.7;
+}
+
+.login-form {
+  display: grid;
+  gap: 14px;
+}
+
+.login-form label {
+  display: grid;
+  gap: 8px;
+  color: #1f2a3d;
+  font-weight: 900;
+}
+
+.login-form input {
+  min-height: 52px;
+  border-radius: 16px;
+  border: 1px solid #cbd7e6;
+  padding: 0 14px;
+  font-size: 16px;
+  outline: none;
+}
+
+.login-submit {
+  min-height: 52px;
+  justify-content: center;
+}
+
+.login-warning {
+  border-radius: 16px;
+  background: #fff1f2;
+  color: #9f1239;
+  padding: 12px 14px;
+  font-weight: 800;
+  margin: 14px 0;
+}
+
+.login-status {
+  margin-top: 16px !important;
+  font-weight: 800;
+}
+
+.login-status.error {
+  color: #be123c;
+}
+
+.login-status.ok {
+  color: #15803d;
 }
 
 </style>
