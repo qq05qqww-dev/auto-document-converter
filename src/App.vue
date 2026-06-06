@@ -1,5 +1,5 @@
 <template>
-  <!-- batch018-53-1-fix-supabase-env-fallback -->
+  <!-- batch018-55-online-employee-scope-rules -->
   <main v-if="!authReady" class="login-page-shell">
     <section class="login-card">
       <div class="login-brand">正式線上登入</div>
@@ -66,11 +66,53 @@
         <div class="staff-profile-copy">
           <h3>線上員工工作區</h3>
           <p>目前登入：<strong>{{ currentStaffName }}</strong>｜身份：<strong>{{ currentRoleLabel }}</strong></p>
-          <p>帳號：{{ authUserEmail }}。目前先以正式登入隔離本機工作區，下一批會把縣市、地區、機房與規則正式寫進 Supabase。</p>
+          <p>帳號：{{ authUserEmail }}。員工登入後會讀取線上儲存的個人縣市、地區、機房與規則；換電腦登入也會同步。</p>
         </div>
         <div class="staff-profile-actions">
           <button class="ghost-btn" type="button" @click="reloadCurrentProfile">重新讀取身份</button>
           <button class="danger-btn" type="button" @click="logoutFromSupabase">登出</button>
+        </div>
+      </section>
+
+      <section v-if="isOwner" class="owner-employee-card">
+        <div class="owner-employee-header">
+          <div>
+            <h3>老闆員工帳號管理</h3>
+            <p>在這裡建立員工 Email / 密碼。建立後員工可直接登入本系統；不會取得公版刪除權限。</p>
+          </div>
+          <button class="ghost-btn" type="button" @click="loadEmployeeProfiles" :disabled="isEmployeeBusy">重新整理員工</button>
+        </div>
+
+        <form class="owner-employee-form" @submit.prevent="createEmployeeAccount">
+          <label>
+            員工名稱
+            <input v-model="employeeDisplayName" type="text" placeholder="例如：小陳" autocomplete="off" />
+          </label>
+          <label>
+            員工 Email
+            <input v-model="employeeEmail" type="email" placeholder="例如：staff01@gmail.com" autocomplete="off" />
+          </label>
+          <label>
+            登入密碼
+            <input v-model="employeePassword" type="text" placeholder="至少 6 碼，建立後交給員工" autocomplete="off" />
+          </label>
+          <button class="primary-btn" type="submit" :disabled="isEmployeeBusy">
+            {{ isEmployeeBusy ? '建立中...' : '建立員工帳號' }}
+          </button>
+        </form>
+
+        <p class="employee-manage-status" :class="{ error: employeeManageStatusType === 'error', ok: employeeManageStatusType === 'ok' }">{{ employeeManageStatus }}</p>
+
+        <div class="employee-list-card">
+          <div class="employee-list-title">目前員工 / 帳號</div>
+          <div v-if="employeeProfiles.length === 0" class="employee-empty-row">尚未讀取到員工資料，請按「重新整理員工」。</div>
+          <div v-for="profile in employeeProfiles" :key="profile.id" class="employee-row">
+            <div>
+              <strong>{{ profile.display_name || profile.email }}</strong>
+              <span>{{ profile.email }}</span>
+            </div>
+            <em :class="{ owner: profile.role === 'owner' }">{{ profile.role === 'owner' ? '老闆' : '員工' }}</em>
+          </div>
         </div>
       </section>
 
@@ -1003,11 +1045,14 @@ const RESULT_STORAGE_KEY = 'auto-document-converter-result-current'
 const RULE_SCOPE_STORAGE_KEY = 'auto-document-converter-scope-rules-current'
 const LOCATION_SCOPE_STORAGE_KEY = 'auto-document-converter-location-room-options-current'
 const CLEAN_START_PANEL_STORAGE_KEY = 'auto-document-converter-clean-start-panel-always-clean-home'
-const ONLINE_READY_VERSION_LABEL = '第 018-53-1 批：Supabase 連線備援修正版'
+const ONLINE_READY_VERSION_LABEL = '第 018-55 批：正式線上員工機房範圍與規則儲存'
 const PROTECTED_GLOBAL_RULE_NOTICE = '公版規則已固定保護，不會被清除；若遺失會自動補回預設公版。'
 const SOURCE_SLASH_SPACE_NOTICE = '文件1已啟用斜線自動轉空格，貼上後 / 與 ／ 會自動變成空格。'
 const STAFF_PROFILE_STORAGE_KEY = 'auto-document-converter-current-staff-profile'
 const STAFF_DEFAULT_NAME = '未登入使用者'
+const ONLINE_OPTIONS_SCOPE = { city: '__OPTIONS__', district: '__OPTIONS__', mode: '定點', room: '__OPTIONS__' }
+const ONLINE_OPTIONS_KIND = 'employee_location_options_v1'
+
 
 function normalizeSourceTextSlashes(text = '') {
   return String(text || '').replace(/[\/／]+/g, ' ')
@@ -1074,10 +1119,18 @@ const loginPassword = ref('')
 const loginStatus = ref('請輸入員工 Email 與密碼。')
 const loginStatusType = ref('')
 const isAuthBusy = ref(false)
+const employeeDisplayName = ref('')
+const employeeEmail = ref('')
+const employeePassword = ref('')
+const employeeProfiles = ref([])
+const employeeManageStatus = ref('老闆可在此建立員工帳號。')
+const employeeManageStatusType = ref('')
+const isEmployeeBusy = ref(false)
 const currentStaffName = ref(cleanStaffName(localStorage.getItem(STAFF_PROFILE_STORAGE_KEY) || STAFF_DEFAULT_NAME))
 const staffLoginInput = ref(currentStaffName.value)
 const authUserEmail = computed(() => authUser.value?.email || '尚未登入')
-const currentRoleLabel = computed(() => authProfile.value?.role === 'owner' ? '老闆' : '員工')
+const isOwner = computed(() => authProfile.value?.role === 'owner')
+const currentRoleLabel = computed(() => isOwner.value ? '老闆' : '員工')
 
 function cleanStaffName(value) {
   const name = String(value || '').trim().replace(/\s+/g, ' ')
@@ -1092,6 +1145,12 @@ function applyAuthenticatedProfile(user, profile = null) {
   currentStaffName.value = nextName
   staffLoginInput.value = nextName
   localStorage.setItem(STAFF_PROFILE_STORAGE_KEY, nextName)
+
+  if (profile?.role === 'owner') {
+    void loadEmployeeProfiles({ silent: true })
+  } else {
+    employeeProfiles.value = []
+  }
 }
 
 async function loadAuthProfile(user = authUser.value) {
@@ -1158,6 +1217,7 @@ async function refreshAuthState() {
 
   const profile = await loadAuthProfile(user)
   applyAuthenticatedProfile(user, profile)
+  await loadOnlineWorkspace({ silent: true })
   authReady.value = true
 }
 
@@ -1199,10 +1259,102 @@ async function loginWithSupabase() {
   loginStatusType.value = 'ok'
   isAuthBusy.value = false
 
-  locationOptions.value = readLocationOptions()
-  repairProtectedGlobalRules()
-  loadCurrentScopeRules({ silent: true })
+  await loadOnlineWorkspace({ silent: true })
   closeAllTopPanelsForCleanStart()
+}
+
+async function loadEmployeeProfiles(options = {}) {
+  if (!supabaseConfigured || !isOwner.value) {
+    employeeProfiles.value = []
+    return
+  }
+
+  const silent = Boolean(options?.silent)
+  if (!silent) {
+    employeeManageStatus.value = '正在讀取員工清單...'
+    employeeManageStatusType.value = ''
+  }
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id,email,display_name,role,created_at')
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    employeeManageStatus.value = `讀取員工清單失敗：${error.message}`
+    employeeManageStatusType.value = 'error'
+    return
+  }
+
+  employeeProfiles.value = Array.isArray(data) ? data : []
+  if (!silent) {
+    employeeManageStatus.value = `已讀取 ${employeeProfiles.value.length} 個帳號。`
+    employeeManageStatusType.value = 'ok'
+  }
+}
+
+async function createEmployeeAccount() {
+  if (!supabaseConfigured || !isOwner.value) {
+    employeeManageStatus.value = '只有老闆帳號可以建立員工。'
+    employeeManageStatusType.value = 'error'
+    return
+  }
+
+  const displayName = cleanStaffName(employeeDisplayName.value)
+  const email = String(employeeEmail.value || '').trim().toLowerCase()
+  const password = String(employeePassword.value || '').trim()
+
+  if (!email || !password) {
+    employeeManageStatus.value = '請輸入員工 Email 與登入密碼。'
+    employeeManageStatusType.value = 'error'
+    return
+  }
+
+  if (password.length < 6) {
+    employeeManageStatus.value = '員工密碼至少需要 6 碼。'
+    employeeManageStatusType.value = 'error'
+    return
+  }
+
+  isEmployeeBusy.value = true
+  employeeManageStatus.value = '正在建立員工帳號...'
+  employeeManageStatusType.value = ''
+
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+  const accessToken = sessionData?.session?.access_token || ''
+
+  if (sessionError || !accessToken) {
+    isEmployeeBusy.value = false
+    employeeManageStatus.value = `無法取得老闆登入憑證：${sessionError?.message || '請重新登入'}`
+    employeeManageStatusType.value = 'error'
+    return
+  }
+
+  const { data, error } = await supabase.functions.invoke('create-employee', {
+    body: { email, password, displayName },
+    headers: { Authorization: `Bearer ${accessToken}` }
+  })
+
+  isEmployeeBusy.value = false
+
+  if (error) {
+    employeeManageStatus.value = `建立員工失敗：${error.message}`
+    employeeManageStatusType.value = 'error'
+    return
+  }
+
+  if (data?.error) {
+    employeeManageStatus.value = `建立員工失敗：${data.error}`
+    employeeManageStatusType.value = 'error'
+    return
+  }
+
+  employeeManageStatus.value = `已建立員工：${data?.profile?.display_name || displayName || email}`
+  employeeManageStatusType.value = 'ok'
+  employeeDisplayName.value = ''
+  employeeEmail.value = ''
+  employeePassword.value = ''
+  await loadEmployeeProfiles({ silent: true })
 }
 
 async function logoutFromSupabase() {
@@ -1212,6 +1364,9 @@ async function logoutFromSupabase() {
   authProfile.value = null
   currentStaffName.value = STAFF_DEFAULT_NAME
   staffLoginInput.value = STAFF_DEFAULT_NAME
+  employeeProfiles.value = []
+  employeeManageStatus.value = '老闆可在此建立員工帳號。'
+  employeeManageStatusType.value = ''
   loginStatus.value = '已登出，請重新登入。'
   loginStatusType.value = ''
 }
@@ -1220,9 +1375,8 @@ async function reloadCurrentProfile() {
   if (!authUser.value) return
   const profile = await loadAuthProfile(authUser.value)
   applyAuthenticatedProfile(authUser.value, profile)
-  locationOptions.value = readLocationOptions()
-  loadCurrentScopeRules({ silent: true })
-  statusMessage.value = '已重新讀取目前登入身份。'
+  await loadOnlineWorkspace({ silent: true })
+  statusMessage.value = '已重新讀取目前登入身份與線上個人工作區。'
 }
 
 function getStaffStorageSuffix() {
@@ -1233,7 +1387,7 @@ function getStaffScopedStorageKey(baseKey) {
   return `${baseKey}__staff__${getStaffStorageSuffix()}`
 }
 
-function switchStaffProfile() {
+async function switchStaffProfile() {
   const nextName = cleanStaffName(staffLoginInput.value)
   currentStaffName.value = nextName
   staffLoginInput.value = nextName
@@ -1251,9 +1405,7 @@ function switchStaffProfile() {
   ruleScopeRoom.value = ''
   ruleScopeLevel.value = 'global'
 
-  locationOptions.value = readLocationOptions()
-  repairProtectedGlobalRules()
-  loadCurrentScopeRules({ silent: true })
+  await loadOnlineWorkspace({ silent: true })
   closeAllTopPanelsForCleanStart()
   statusMessage.value = `已切換到「${nextName}」個人工作區。縣市、地區、機房與規則都會跟其他員工分開保存。`
 }
@@ -3239,15 +3391,15 @@ function normalizeLocationOptions(options = {}) {
   const hiddenDistricts = options.hiddenDistricts && typeof options.hiddenDistricts === 'object' ? options.hiddenDistricts : {}
 
   const storedCities = Array.isArray(options.cities) ? options.cities : []
-  const orderedCities = storedCities.length ? storedCities : defaultLocationOptions.cities
-  const cities = [...new Set([...orderedCities, ...defaultLocationOptions.cities].map(cleanScopeText).filter(Boolean))]
+  const orderedCities = storedCities.length ? storedCities : []
+  const cities = [...new Set(orderedCities.map(cleanScopeText).filter(Boolean))]
     .filter(city => !hiddenCities.includes(city))
 
   const storedDistricts = options.districts && typeof options.districts === 'object' ? options.districts : {}
   const districts = {}
 
   cities.forEach(city => {
-    const defaultList = defaultLocationOptions.districts?.[city] || []
+    const defaultList = []
     const storedList = storedDistricts?.[city] || []
     const hiddenList = Array.isArray(hiddenDistricts?.[city]) ? hiddenDistricts[city].map(cleanScopeText).filter(Boolean) : []
     const orderedDistricts = Array.isArray(storedList) && storedList.length ? storedList : defaultList
@@ -3301,9 +3453,88 @@ const roomManagerRooms = computed(() => {
 const totalDistrictCount = computed(() => Object.values(locationOptions.value.districts || {}).reduce((sum, list) => sum + (Array.isArray(list) ? list.length : 0), 0))
 const totalRoomCount = computed(() => Object.values(locationOptions.value.rooms || {}).reduce((sum, list) => sum + (Array.isArray(list) ? list.length : 0), 0))
 
-function saveLocationOptions() {
-  locationOptions.value = normalizeLocationOptions(locationOptions.value)
+function saveLocationOptions(options = locationOptions.value) {
+  locationOptions.value = normalizeLocationOptions(options)
   writeLocationOptions(locationOptions.value)
+  void saveLocationOptionsOnline(locationOptions.value, { silent: true })
+}
+
+function isOnlineWorkspaceReady() {
+  return Boolean(supabaseConfigured && authUser.value?.id)
+}
+
+function buildOnlineOptionsPayload(options = locationOptions.value) {
+  return {
+    kind: ONLINE_OPTIONS_KIND,
+    savedAt: new Date().toISOString(),
+    options: normalizeLocationOptions(options)
+  }
+}
+
+async function saveLocationOptionsOnline(options = locationOptions.value, opts = {}) {
+  if (!isOnlineWorkspaceReady()) return false
+
+  const payload = buildOnlineOptionsPayload(options)
+  const { error } = await supabase
+    .from('employee_rules')
+    .upsert({
+      user_id: authUser.value.id,
+      city: ONLINE_OPTIONS_SCOPE.city,
+      district: ONLINE_OPTIONS_SCOPE.district,
+      mode: ONLINE_OPTIONS_SCOPE.mode,
+      room: ONLINE_OPTIONS_SCOPE.room,
+      rules: payload
+    }, { onConflict: 'user_id,city,district,mode,room' })
+
+  if (error) {
+    if (!opts.silent) statusMessage.value = `線上儲存管理清單失敗：${error.message}`
+    return false
+  }
+
+  if (!opts.silent) statusMessage.value = '已把目前縣市 / 地區 / 機房清單儲存到線上。'
+  return true
+}
+
+async function loadLocationOptionsOnline(opts = {}) {
+  if (!isOnlineWorkspaceReady()) {
+    locationOptions.value = readLocationOptions()
+    return false
+  }
+
+  const { data, error } = await supabase
+    .from('employee_rules')
+    .select('rules')
+    .eq('user_id', authUser.value.id)
+    .eq('city', ONLINE_OPTIONS_SCOPE.city)
+    .eq('district', ONLINE_OPTIONS_SCOPE.district)
+    .eq('mode', ONLINE_OPTIONS_SCOPE.mode)
+    .eq('room', ONLINE_OPTIONS_SCOPE.room)
+    .maybeSingle()
+
+  if (error) {
+    locationOptions.value = readLocationOptions()
+    if (!opts.silent) statusMessage.value = `讀取線上管理清單失敗：${error.message}`
+    return false
+  }
+
+  const onlineOptions = data?.rules?.options
+  if (onlineOptions && typeof onlineOptions === 'object') {
+    locationOptions.value = normalizeLocationOptions(onlineOptions)
+    writeLocationOptions(locationOptions.value)
+    if (!opts.silent) statusMessage.value = '已讀取線上個人縣市 / 地區 / 機房清單。'
+    return true
+  }
+
+  locationOptions.value = readLocationOptions()
+  if (!opts.silent) statusMessage.value = '線上尚未建立個人管理清單，已使用本機目前清單。'
+  return false
+}
+
+async function loadOnlineWorkspace(opts = {}) {
+  await loadLocationOptionsOnline({ silent: true })
+  repairProtectedGlobalRules()
+  await loadCurrentScopeRules({ silent: true, preferOnline: true })
+  if (!opts.silent) statusMessage.value = '已同步線上個人工作區。'
 }
 
 const BACKUP_STORAGE_KEYS = [
@@ -3333,7 +3564,7 @@ function buildLocalSettingsBackup() {
 
   return {
     app: 'auto-document-converter',
-    version: '0.0.18-53-1-fix-supabase-env-fallback',
+    version: '0.0.18-55-online-employee-scope-rules',
     exportedAt: new Date().toISOString(),
     itemCount: Object.keys(items).length,
     items
@@ -3982,7 +4213,7 @@ const currentRuleScopeLabel = computed(() => {
 
 const effectiveRuleSourceLabel = computed(() => getEffectiveScopedRuleData().label)
 
-function saveCurrentScopeRules() {
+async function saveCurrentScopeRules() {
   if (!validateCurrentRuleScope()) return false
   const { key } = getScopeBucketAndKey()
   if (!key) {
@@ -3996,16 +4227,90 @@ function saveCurrentScopeRules() {
 
   if (ruleScopeLevel.value === 'global') {
     localStorage.setItem(getStaffScopedStorageKey(RULE_STORAGE_KEY), JSON.stringify(data))
-  } else {
-    repairProtectedGlobalRules()
+    statusMessage.value = '已儲存本機公版規則；線上員工規則請選到機房後儲存。'
+    return true
   }
 
-  statusMessage.value = `已儲存「${currentRuleScopeLabel.value}」專屬規則。${ruleScopeLevel.value === 'global' ? '公版仍會被固定保留。' : ''}`
+  repairProtectedGlobalRules()
+
+  const city = cleanScopeText(ruleScopeCity.value)
+  const district = cleanScopeText(ruleScopeDistrict.value)
+  const type = cleanScopeText(ruleScopeType.value)
+  const room = cleanScopeText(ruleScopeRoom.value)
+
+  if (ruleScopeLevel !== 'room' && ruleScopeLevel.value !== 'room') {
+    statusMessage.value = `已儲存「${currentRuleScopeLabel.value}」本機專屬規則。線上同步以完整機房為主。`
+    return true
+  }
+
+  if (!isOnlineWorkspaceReady()) {
+    statusMessage.value = `已儲存「${currentRuleScopeLabel.value}」本機規則；尚未登入線上帳號，無法同步。`
+    return true
+  }
+
+  const { error } = await supabase
+    .from('employee_rules')
+    .upsert({
+      user_id: authUser.value.id,
+      city,
+      district,
+      mode: type,
+      room,
+      rules: data
+    }, { onConflict: 'user_id,city,district,mode,room' })
+
+  if (error) {
+    statusMessage.value = `本機已儲存，但線上儲存機房規則失敗：${error.message}`
+    return false
+  }
+
+  statusMessage.value = `已線上儲存「${currentRuleScopeLabel.value}」規則，換電腦登入也會讀得到。`
   return true
 }
 
-function loadCurrentScopeRules(options = {}) {
+async function getOnlineRuleForCurrentRoom() {
+  if (!isOnlineWorkspaceReady()) return null
+
+  const city = cleanScopeText(ruleScopeCity.value)
+  const district = cleanScopeText(ruleScopeDistrict.value)
+  const type = cleanScopeText(ruleScopeType.value)
+  const room = cleanScopeText(ruleScopeRoom.value)
+
+  if (!city || !district || !type || !room) return null
+
+  const { data, error } = await supabase
+    .from('employee_rules')
+    .select('rules')
+    .eq('user_id', authUser.value.id)
+    .eq('city', city)
+    .eq('district', district)
+    .eq('mode', type)
+    .eq('room', room)
+    .maybeSingle()
+
+  if (error) throw error
+  return data?.rules || null
+}
+
+async function loadCurrentScopeRules(options = {}) {
   if (!validateCurrentRuleScope()) return false
+
+  if (ruleScopeLevel.value === 'room' && isOnlineWorkspaceReady()) {
+    try {
+      const onlineRule = await getOnlineRuleForCurrentRoom()
+      if (onlineRule && typeof onlineRule === 'object') {
+        applyRuleData(onlineRule)
+        const { key } = getScopeBucketAndKey()
+        const store = setRuleDataToScope(readScopeRuleStore(), 'room', key, onlineRule)
+        writeScopeRuleStore(store)
+        if (!options.silent) statusMessage.value = `已從線上讀取：${currentRuleScopeLabel.value}`
+        return true
+      }
+    } catch (error) {
+      if (!options.silent) statusMessage.value = `線上讀取機房規則失敗：${error.message || error}`
+      return false
+    }
+  }
 
   const resolved = getEffectiveScopedRuleData()
   if (!resolved.data) {
@@ -7633,6 +7938,144 @@ select:focus, input:focus, textarea:focus {
   }
 }
 
+
+.owner-employee-card {
+  margin: 0 auto 18px;
+  padding: 18px;
+  border-radius: 24px;
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(239, 246, 255, 0.9));
+  box-shadow: 0 18px 44px rgba(31, 74, 128, 0.08);
+}
+
+.owner-employee-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.owner-employee-header h3 {
+  margin: 0 0 6px;
+  color: #142033;
+  font-size: 18px;
+}
+
+.owner-employee-header p {
+  margin: 0;
+  color: #64748b;
+  line-height: 1.6;
+}
+
+.owner-employee-form {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.8fr) minmax(220px, 1fr) minmax(180px, 0.8fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.owner-employee-form label {
+  display: grid;
+  gap: 7px;
+  color: #1f2a3d;
+  font-weight: 900;
+}
+
+.owner-employee-form input {
+  min-height: 46px;
+  border-radius: 16px;
+  border: 1px solid #cbd7e6;
+  padding: 0 14px;
+  font-size: 15px;
+  outline: none;
+  background: #fff;
+}
+
+.employee-manage-status {
+  margin: 12px 0 0;
+  color: #64748b;
+  font-weight: 900;
+}
+
+.employee-manage-status.error {
+  color: #be123c;
+}
+
+.employee-manage-status.ok {
+  color: #15803d;
+}
+
+.employee-list-card {
+  margin-top: 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(255, 255, 255, 0.72);
+  overflow: hidden;
+}
+
+.employee-list-title,
+.employee-empty-row,
+.employee-row {
+  padding: 12px 14px;
+}
+
+.employee-list-title {
+  font-weight: 950;
+  color: #1e3a8a;
+  background: rgba(219, 234, 254, 0.72);
+}
+
+.employee-empty-row {
+  color: #64748b;
+  font-weight: 800;
+}
+
+.employee-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.employee-row div {
+  display: grid;
+  gap: 3px;
+}
+
+.employee-row strong {
+  color: #0f172a;
+}
+
+.employee-row span {
+  color: #64748b;
+  font-weight: 800;
+}
+
+.employee-row em {
+  font-style: normal;
+  font-weight: 950;
+  color: #1d4ed8;
+  background: #dbeafe;
+  border-radius: 999px;
+  padding: 6px 10px;
+}
+
+.employee-row em.owner {
+  color: #9f1239;
+  background: #ffe4e6;
+}
+
+@media (max-width: 980px) {
+  .owner-employee-form {
+    grid-template-columns: 1fr;
+  }
+
+  .owner-employee-header {
+    flex-direction: column;
+  }
+}
 
 
 .staff-profile-card {
