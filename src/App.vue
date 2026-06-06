@@ -1,5 +1,5 @@
 <template>
-  <!-- batch018-57-owner-delete-employee -->
+  <!-- batch018-58-fix-employee-edit-profile-sync -->
   <main v-if="!authReady" class="login-page-shell">
     <section class="login-card">
       <div class="login-brand">正式線上登入</div>
@@ -1450,6 +1450,36 @@ async function createEmployeeAccount() {
   await loadEmployeeProfiles({ silent: true })
 }
 
+async function syncEmployeeProfileForOwner({ userId, email, displayName }) {
+  if (!supabaseConfigured || !isOwner.value || !userId) return { ok: false, skipped: true }
+
+  const cleanEmail = String(email || '').trim().toLowerCase()
+  const cleanDisplayName = cleanStaffName(displayName) || cleanEmail.split('@')[0] || 'employee'
+
+  if (!cleanEmail) return { ok: false, skipped: true }
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .update({
+      email: cleanEmail,
+      display_name: cleanDisplayName,
+      role: 'employee'
+    })
+    .eq('id', userId)
+    .select('id,email,display_name,role,created_at')
+    .maybeSingle()
+
+  if (error) {
+    throw new Error(`員工登入帳號已修改，但列表資料同步失敗：${error.message}`)
+  }
+
+  if (!data) {
+    return { ok: false, skipped: false, reason: 'profile_not_found' }
+  }
+
+  return { ok: true, profile: data }
+}
+
 async function updateEmployeeAccount(profile) {
   if (!supabaseConfigured || !isOwner.value) {
     employeeManageStatus.value = '只有老闆帳號可以修改員工。'
@@ -1484,17 +1514,27 @@ async function updateEmployeeAccount(profile) {
   employeeManageStatusType.value = ''
 
   try {
+    const normalizedDisplayName = displayName || email.split('@')[0] || 'employee'
     const data = await callCreateEmployeeFunction({
       action: 'update',
       userId: profile.id,
       email,
-      displayName: displayName || email.split('@')[0] || 'employee',
+      displayName: normalizedDisplayName,
       password: password || undefined
     })
 
+    const syncResult = await syncEmployeeProfileForOwner({
+      userId: data?.employee?.id || data?.profile?.id || profile.id,
+      email,
+      displayName: normalizedDisplayName
+    })
+
     employeeManageStatus.value = password
-      ? `已修改員工資料與密碼：${data?.profile?.display_name || displayName || email}`
-      : `已修改員工資料：${data?.profile?.display_name || displayName || email}`
+      ? `已修改員工資料與密碼：${syncResult?.profile?.display_name || data?.profile?.display_name || normalizedDisplayName || email}`
+      : `已修改員工資料：${syncResult?.profile?.display_name || data?.profile?.display_name || normalizedDisplayName || email}`
+    if (syncResult?.reason === 'profile_not_found') {
+      employeeManageStatus.value += '；提醒：profiles 尚未找到此員工資料，請先按重新整理員工或確認 Supabase profiles 已補齊。'
+    }
     employeeManageStatusType.value = 'ok'
     resetEmployeeEditForm()
     await loadEmployeeProfiles({ silent: true })
@@ -3757,7 +3797,7 @@ function buildLocalSettingsBackup() {
 
   return {
     app: 'auto-document-converter',
-    version: '0.0.18-57-owner-delete-employee',
+    version: '0.0.18-58-fix-employee-edit-profile-sync',
     exportedAt: new Date().toISOString(),
     itemCount: Object.keys(items).length,
     items
