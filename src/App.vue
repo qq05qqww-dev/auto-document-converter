@@ -1,5 +1,5 @@
 <template>
-  <!-- batch018-58-fix-employee-edit-profile-sync -->
+  <!-- batch018-60-public-location-base-personal-hide -->
   <main v-if="!authReady" class="login-page-shell">
     <section class="login-card">
       <div class="login-brand">正式線上登入</div>
@@ -40,6 +40,18 @@
 
     <section class="hero-card compact-control-card">
       <div class="top-control-header">
+        <section class="staff-profile-card top-staff-profile-card">
+          <div class="staff-profile-copy">
+            <h3>線上員工工作區</h3>
+            <p>目前登入：<strong>{{ currentStaffName }}</strong>｜身份：<strong>{{ currentRoleLabel }}</strong></p>
+            <p>帳號：{{ authUserEmail }}</p>
+          </div>
+          <div class="staff-profile-actions compact-staff-actions">
+            <button class="ghost-btn" type="button" @click="reloadCurrentProfile">重新讀取身份</button>
+            <button class="danger-btn" type="button" @click="logoutFromSupabase">登出</button>
+          </div>
+        </section>
+
         <div class="top-setting-buttons compact-main-buttons">
           <button class="summary-pill" :class="{ active: activeTopPanel === 'price' }" type="button" @click="toggleTopPanel('price')">
             金額設定
@@ -59,22 +71,13 @@
           <button class="summary-pill manager-toggle-pill" :class="{ active: showScopeManager }" type="button" @click="showScopeManager = !showScopeManager">
             地區機房管理
           </button>
+          <button v-if="isOwner" class="summary-pill account-manager-toggle-pill" :class="{ active: showEmployeeManager }" type="button" @click="toggleEmployeeManager">
+            帳號管理
+          </button>
         </div>
       </div>
 
-      <section class="staff-profile-card">
-        <div class="staff-profile-copy">
-          <h3>線上員工工作區</h3>
-          <p>目前登入：<strong>{{ currentStaffName }}</strong>｜身份：<strong>{{ currentRoleLabel }}</strong></p>
-          <p>帳號：{{ authUserEmail }}。員工登入後會讀取線上儲存的個人縣市、地區、機房與規則；換電腦登入也會同步。</p>
-        </div>
-        <div class="staff-profile-actions">
-          <button class="ghost-btn" type="button" @click="reloadCurrentProfile">重新讀取身份</button>
-          <button class="danger-btn" type="button" @click="logoutFromSupabase">登出</button>
-        </div>
-      </section>
-
-      <section v-if="isOwner" class="owner-employee-card">
+      <section v-if="isOwner && showEmployeeManager" class="owner-employee-card">
         <div class="owner-employee-header">
           <div>
             <h3>老闆員工帳號管理</h3>
@@ -239,7 +242,7 @@
 
             <div class="option-modal-head">
               <h2>{{ currentStaffName }} 的地區機房管理設定</h2>
-              <p>員工可自己新增 / 修改想管理的縣市、地區、機房；資料只存在目前員工個人工作區。</p>
+              <p>公版縣市 / 地區會預設顯示；員工可自己新增、修改或刪除不想管理的區域，資料只影響目前員工個人工作區。</p>
               <span class="option-sync-pill">
                 <i></i>
                 已讀取 {{ currentStaffName }} 個人清單
@@ -1667,6 +1670,7 @@ const ruleScopeDistrict = ref('')
 const ruleScopeType = ref('')
 const ruleScopeRoom = ref('')
 const showScopeManager = ref(false)
+const showEmployeeManager = ref(false)
 const showScopeCrudPanel = ref(false)
 const backupImportInput = ref(null)
 const newCityName = ref('')
@@ -1694,6 +1698,13 @@ function toggleTopPanel(panel) {
   showQuickRules.value = activeTopPanel.value === 'quick'
   showAdvancedSettings.value = activeTopPanel.value === 'advanced'
   showApiPanel.value = activeTopPanel.value === 'api'
+}
+
+function toggleEmployeeManager() {
+  showEmployeeManager.value = !showEmployeeManager.value
+  if (showEmployeeManager.value && isOwner.value) {
+    loadEmployeeProfiles()
+  }
 }
 const showAliasList = ref(false)
 const showRemoveWordList = ref(false)
@@ -3624,7 +3635,11 @@ function normalizeLocationOptions(options = {}) {
   const hiddenDistricts = options.hiddenDistricts && typeof options.hiddenDistricts === 'object' ? options.hiddenDistricts : {}
 
   const storedCities = Array.isArray(options.cities) ? options.cities : []
-  const orderedCities = storedCities.length ? storedCities : []
+  // 第 018-60 批：公版縣市預設全部顯示。
+  // 員工可用刪除把不想管理的縣市加入 hiddenCities；也可新增自己的縣市。
+  const orderedCities = storedCities.length
+    ? [...storedCities, ...defaultLocationOptions.cities]
+    : [...defaultLocationOptions.cities]
   const cities = [...new Set(orderedCities.map(cleanScopeText).filter(Boolean))]
     .filter(city => !hiddenCities.includes(city))
 
@@ -3632,11 +3647,12 @@ function normalizeLocationOptions(options = {}) {
   const districts = {}
 
   cities.forEach(city => {
-    const defaultList = []
+    // 第 018-60 批：公版地區預設全部顯示；員工刪除只會隱藏在自己的清單。
+    const defaultList = Array.isArray(defaultLocationOptions.districts?.[city]) ? defaultLocationOptions.districts[city] : []
     const storedList = storedDistricts?.[city] || []
     const hiddenList = Array.isArray(hiddenDistricts?.[city]) ? hiddenDistricts[city].map(cleanScopeText).filter(Boolean) : []
-    const orderedDistricts = Array.isArray(storedList) && storedList.length ? storedList : defaultList
-    districts[city] = [...new Set([...orderedDistricts, ...defaultList].map(cleanScopeText).filter(Boolean))]
+    const orderedDistricts = Array.isArray(storedList) && storedList.length ? [...storedList, ...defaultList] : defaultList
+    districts[city] = [...new Set(orderedDistricts.map(cleanScopeText).filter(Boolean))]
       .filter(district => !hiddenList.includes(district))
   })
 
@@ -3797,7 +3813,7 @@ function buildLocalSettingsBackup() {
 
   return {
     app: 'auto-document-converter',
-    version: '0.0.18-58-fix-employee-edit-profile-sync',
+    version: '0.0.18-60-public-location-base-personal-hide',
     exportedAt: new Date().toISOString(),
     itemCount: Object.keys(items).length,
     items
@@ -8521,5 +8537,79 @@ select:focus, input:focus, textarea:focus {
   .employee-row-actions {
     justify-content: flex-start;
     flex-wrap: wrap;
+  }
+}
+
+/* batch018-60：公版縣市地區預設顯示，員工刪除只隱藏個人清單 */
+.top-control-header {
+  justify-content: center !important;
+  align-items: flex-start !important;
+  gap: 16px !important;
+  flex-wrap: wrap !important;
+}
+
+.top-staff-profile-card {
+  flex: 0 1 360px;
+  margin: 0 !important;
+  padding: 10px 14px !important;
+  min-height: 52px;
+  align-self: stretch;
+}
+
+.top-staff-profile-card .staff-profile-copy h3 {
+  font-size: 15px;
+  margin-bottom: 2px;
+}
+
+.top-staff-profile-card .staff-profile-copy p {
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.top-staff-profile-card .staff-profile-copy p:last-child {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 310px;
+}
+
+.compact-staff-actions {
+  gap: 6px;
+}
+
+.compact-staff-actions .ghost-btn,
+.compact-staff-actions .danger-btn {
+  min-height: 34px;
+  padding: 7px 10px;
+  font-size: 12px;
+}
+
+.account-manager-toggle-pill.active {
+  color: #ffffff;
+  background: linear-gradient(135deg, #7c3aed, #0891b2);
+  box-shadow: 0 12px 24px rgba(124, 58, 237, 0.22);
+}
+
+@media (max-width: 1100px) {
+  .top-control-header {
+    justify-content: flex-start !important;
+  }
+
+  .top-staff-profile-card {
+    flex: 1 1 100%;
+  }
+
+  .top-staff-profile-card .staff-profile-copy p:last-child {
+    max-width: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .top-staff-profile-card {
+    width: 100%;
+  }
+
+  .top-staff-profile-card .staff-profile-copy p:last-child {
+    white-space: normal;
   }
 }

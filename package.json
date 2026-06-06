@@ -1,7 +1,7 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "0.0.18-58-fix-employee-edit-profile-sync",
+  "version": "0.0.18-60-public-location-base-personal-hide",
   "type": "module",
   "scripts": {
     "dev": "vite",
