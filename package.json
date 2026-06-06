@@ -1,7 +1,7 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "0.0.18-70-1-media-upload-status-no-db-lock",
+  "version": "0.0.18-72-source-bottom-two-blank-lines",
   "type": "module",
   "scripts": {
     "dev": "vite",

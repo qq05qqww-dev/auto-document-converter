@@ -704,9 +704,11 @@
         </section>
 
         <section class="api-action-card">
-          <h3>本機測試</h3>
+          <h3>資料送出 / 讀取</h3>
           <div class="api-action-buttons">
             <button class="primary-btn" type="button" @click="submitDocument4ToApi">送出到本機JSON</button>
+            <button class="primary-btn db-btn" type="button" @click="submitDocument4ToDatabase">送出到資料庫</button>
+            <button class="ghost-btn frontend-load-btn" type="button" @click="loadFrontendLadies">讀取前台資料</button>
           </div>
         </section>
       </div>
@@ -830,9 +832,15 @@
           <p>這裡只預覽目前文件3 / 文件4 的最新小姐；資料庫與網站後台仍然累加保存。</p>
         </div>
 
-        <div class="preview-tools preview-db-tools">
-          <button class="primary-btn db-btn" type="button" @click="submitDocument4ToDatabase">送出資料庫</button>
+        <div class="preview-tools">
           <button class="primary-btn frontend-load-btn" type="button" @click="loadFrontendLadies">重新讀取前台資料</button>
+
+          <label>
+            國籍篩選
+            <select v-model="countryFilter">
+              <option v-for="country in frontendCountries" :key="country" :value="country">{{ country }}</option>
+            </select>
+          </label>
         </div>
       </div>
 
@@ -841,7 +849,7 @@
         <div class="media-upload-box compact-media-upload-box">
           <div class="media-upload-title-row">
             <h3>媒體上傳測試</h3>
-            <p>下拉只顯示本次文件3 / 文件4 內的小姐；未送出資料庫也可以先選，系統會自動建立資料後再上傳。</p>
+            <p>先把圖片 / 影片上傳到 R2，並綁定到 Supabase 的小姐資料。</p>
           </div>
 
           <div class="media-upload-main-stack">
@@ -849,12 +857,8 @@
               選擇小姐
               <select v-model="mediaUploadLadyId">
                 <option value="">請選擇小姐</option>
-                <option
-                  v-for="lady in mediaUploadSelectableLadies"
-                  :key="lady.uploadKey"
-                  :value="lady.id"
-                >
-                  {{ lady.uploadStatusLabel }}｜【{{ lady.country }} {{ lady.name }}】
+                <option v-for="lady in frontendLadies" :key="lady.id" :value="lady.id">
+                  【{{ lady.country }} {{ lady.name }}】
                 </option>
               </select>
             </label>
@@ -1078,7 +1082,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { isSupabaseConfigured, supabase } from './supabaseClient'
 
 // 第 009-7 批開始固定使用這兩個正式儲存位置。
@@ -1090,7 +1094,7 @@ const RESULT_STORAGE_KEY = 'auto-document-converter-result-current'
 const RULE_SCOPE_STORAGE_KEY = 'auto-document-converter-scope-rules-current'
 const LOCATION_SCOPE_STORAGE_KEY = 'auto-document-converter-location-room-options-current'
 const CLEAN_START_PANEL_STORAGE_KEY = 'auto-document-converter-clean-start-panel-always-clean-home'
-const ONLINE_READY_VERSION_LABEL = '第 018-68 批：資料庫操作移到前台預覽工具列'
+const ONLINE_READY_VERSION_LABEL = '第 018-55 批：正式線上員工機房範圍與規則儲存'
 const PROTECTED_GLOBAL_RULE_NOTICE = '公版規則已固定保護，不會被清除；若遺失會自動補回預設公版。'
 const SOURCE_SLASH_SPACE_NOTICE = '文件1已啟用斜線自動轉空格，貼上後 / 與 ／ 會自動變成空格。'
 const STAFF_PROFILE_STORAGE_KEY = 'auto-document-converter-current-staff-profile'
@@ -2257,46 +2261,6 @@ const filteredFrontendLadies = computed(() => {
   return previewLadies.value.filter(item => item.country === countryFilter.value)
 })
 
-function getUploadedMediaCount(lady) {
-  return Array.isArray(lady?.media) ? lady.media.length : 0
-}
-
-const mediaUploadSelectableLadies = computed(() => {
-  const rows = currentDocumentPreviewLadies.value.map((lady, index) => {
-    const savedLady = frontendLadies.value.find(saved => sameLadyIdentity(saved, lady))
-    const effectiveLady = savedLady?.id ? { ...lady, ...savedLady } : lady
-    const id = String(effectiveLady.id || lady.id || '')
-    const canUploadMedia = Boolean(id && !id.startsWith('current-document-'))
-    const uploadedCount = getUploadedMediaCount(savedLady) || getUploadedMediaCount(lady)
-
-    return {
-      ...lady,
-      ...effectiveLady,
-      id: id || `current-document-${index + 1}`,
-      uploadKey: `${makePreviewLadyKey(lady)}-${id || index}`,
-      canUploadMedia,
-      uploadedCount,
-      uploadStatusLabel: uploadedCount > 0 ? `已上傳 ${uploadedCount} 個` : '未上傳',
-      uploadSortRank: uploadedCount > 0 ? 0 : 1,
-      originalIndex: index
-    }
-  })
-
-  return rows.sort((a, b) => {
-    if (a.uploadSortRank !== b.uploadSortRank) return a.uploadSortRank - b.uploadSortRank
-    return a.originalIndex - b.originalIndex
-  })
-})
-
-watch(mediaUploadSelectableLadies, list => {
-  if (!mediaUploadLadyId.value) return
-
-  const stillInCurrentDocument = list.some(lady => String(lady.id) === String(mediaUploadLadyId.value))
-  if (!stillInCurrentDocument) {
-    mediaUploadLadyId.value = ''
-  }
-})
-
 
 
 function getLadyImageMedia(lady) {
@@ -2472,94 +2436,12 @@ function formatUploadFileSize(file) {
   return `${size} B`
 }
 
-function sameLadyIdentity(a, b) {
-  return makePreviewLadyKey(a) === makePreviewLadyKey(b)
-}
-
-async function ensureCurrentDocumentLadySavedForMedia(targetLady) {
-  saveApiBaseUrl()
-
-  const existed = frontendLadies.value.find(lady => sameLadyIdentity(lady, targetLady))
-  if (existed?.id) return existed
-
-  const payload = parseConfirmedTextToJson(confirmedText.value)
-  if (!payload.items.length) {
-    mediaUploadStatusText.value = '文件3目前沒有可送出資料庫的小姐，無法先建立媒體綁定資料。'
-    return null
-  }
-
-  const targetInPayload = payload.items.some(item => sameLadyIdentity(item, targetLady))
-  if (!targetInPayload) {
-    mediaUploadStatusText.value = '目前選擇的小姐不在文件3資料內，請重新產生文件3後再上傳。'
-    return null
-  }
-
-  try {
-    const backendVersion = await ensureAppendImportBackendReady()
-    mediaUploadStatusText.value = `後端版本確認：${backendVersion.version || backendVersion.batch || 'append 累加版'}，正在先建立小姐資料...`
-
-    const response = await fetch(`${apiBaseUrl.value}/api/ladies/import-db`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload)
-    })
-
-    const data = await response.json().catch(() => ({}))
-    if (!response.ok) {
-      throw new Error(data.message || `HTTP ${response.status}`)
-    }
-
-    await loadFrontendLadies()
-    await nextTick()
-
-    const saved = frontendLadies.value.find(lady => sameLadyIdentity(lady, targetLady))
-    if (!saved?.id) {
-      throw new Error('資料庫已送出，但還找不到對應小姐資料。請按「重新讀取前台資料」後再試。')
-    }
-
-    mediaUploadStatusText.value = `已自動建立【${targetLady.country || ''} ${targetLady.name || ''}】資料，準備上傳媒體。`
-    return saved
-  } catch (error) {
-    mediaUploadStatusText.value = `自動建立小姐資料失敗：${error.message || error}`
-    return null
-  }
-}
-
 async function uploadLadyMedia() {
   saveApiBaseUrl()
 
   if (!mediaUploadLadyId.value) {
-    mediaUploadStatusText.value = '請先選擇本次文件3裡要綁定的小姐。'
+    mediaUploadStatusText.value = '請先選擇要綁定的小姐。'
     return
-  }
-
-  const selectedUploadLady = mediaUploadSelectableLadies.value.find(lady => String(lady.id) === String(mediaUploadLadyId.value))
-  if (!selectedUploadLady) {
-    mediaUploadStatusText.value = '目前選擇的小姐不在本次文件3清單內，請重新選擇。'
-    mediaUploadLadyId.value = ''
-    return
-  }
-
-  let uploadLadyId = String(mediaUploadLadyId.value)
-  let uploadLadyForMedia = selectedUploadLady
-
-  if (!selectedUploadLady.canUploadMedia) {
-    mediaUploadStatusText.value = `【${selectedUploadLady.country || ''} ${selectedUploadLady.name || ''}】尚未在資料庫建立，系統會先自動送出本次文件，再接著上傳媒體。`
-    const savedLady = await ensureCurrentDocumentLadySavedForMedia(selectedUploadLady)
-    if (!savedLady?.id) {
-      mediaUploadStatusText.value = '自動建立小姐資料失敗，請稍後再試或先手動按「送出資料庫」。'
-      return
-    }
-
-    uploadLadyId = String(savedLady.id)
-    mediaUploadLadyId.value = uploadLadyId
-    uploadLadyForMedia = {
-      ...selectedUploadLady,
-      ...savedLady,
-      canUploadMedia: true
-    }
   }
 
   if (!mediaUploadFiles.value.length) {
@@ -2574,7 +2456,7 @@ async function uploadLadyMedia() {
     for (const file of mediaUploadFiles.value) {
       const formData = new FormData()
       formData.append('file', file)
-      formData.append('ladyId', uploadLadyId)
+      formData.append('ladyId', String(mediaUploadLadyId.value))
       formData.append('mediaType', file.type.startsWith('video/') ? 'video' : 'image')
       formData.append('note', '')
 
@@ -2855,6 +2737,11 @@ function updateJsonPreview() {
   jsonResultText.value = JSON.stringify(parseConfirmedTextToJson(confirmedText.value), null, 2)
 }
 
+function ensureSourceTextBottomBlankLines(text = '') {
+  const baseText = String(text || '').replace(/[\s\n]+$/g, '')
+  return `${baseText}\n\n`
+}
+
 function convertText() {
   const originalText = sourceText.value.trim()
   if (!originalText) {
@@ -2864,7 +2751,7 @@ function convertText() {
   }
 
   const cleanedText = cleanupSourceText(originalText)
-  sourceText.value = cleanedText
+  sourceText.value = ensureSourceTextBottomBlankLines(cleanedText)
 
   const blocks = splitBlocks(cleanedText)
   const parsed = blocks.map(block => ({
@@ -3238,6 +3125,18 @@ function parseBody(text) {
   }
 
   for (const line of lines) {
+    // batch018-71：支援「155.44.莫奶D」「155/44/莫奶D」這種點號身材。
+    // 這類資料常把 Cup 放在中文描述最後，原本只認「真D」或「D」，會導致整筆小姐解析失敗。
+    const descriptiveBodyMatch = line.match(/(\d{3})\s*[\/.．]\s*(\d{2})\s*[\/.．]\s*(?:[\u4e00-\u9fa5]{0,8})?([A-Za-z])\s*(?:奶|杯)?(?:\s*(\d{2})\s*(?:歲|y|Y))?/)
+    if (descriptiveBodyMatch) {
+      return {
+        height: descriptiveBodyMatch[1],
+        weight: descriptiveBodyMatch[2],
+        cup: descriptiveBodyMatch[3].toUpperCase(),
+        age: descriptiveBodyMatch[4] ? `${descriptiveBodyMatch[4]}y` : ''
+      }
+    }
+
     const bodyOnlyMatch = line.match(/(\d{3})\s*[\/.．]\s*(\d{2})\s*[\/.．]?\s*(?:\d{2})?\s*(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)?([A-Za-z])\s*(?:奶|杯)?/)
     if (bodyOnlyMatch) {
       return {
@@ -3248,7 +3147,7 @@ function parseBody(text) {
       }
     }
 
-    const spacedBodyMatch = line.match(/(\d{3})\s+(\d{2})\s+(?:\d{2})?\s*(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)?([A-Za-z])\s*(?:奶|杯)?/)
+    const spacedBodyMatch = line.match(/(\d{3})\s+(\d{2})\s+(?:\d{2})?\s*(?:[\u4e00-\u9fa5]{0,8})?(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)?([A-Za-z])\s*(?:奶|杯)?/)
     if (spacedBodyMatch) {
       return {
         height: spacedBodyMatch[1],
@@ -3374,11 +3273,7 @@ function parsePrices(text, increase) {
     const minutes = Number(minuteMatch[1])
     if (!minutes) return
 
-    // batch018-66：支援「60分2s 回3000」這種沒有斜線的節數寫法。
-    // 原本只認「60分/2S」，所以 60分2s 會被輸出成 60/1S。
-    const sessionMatch =
-      normalized.match(/\/\s*(\d+)\s*S/i) ||
-      normalized.match(/(?:分鐘|分)\s*(\d+)\s*S/i)
+    const sessionMatch = normalized.match(/\/\s*(\d+)\s*S/i)
     const sessionCount = sessionMatch ? Number(sessionMatch[1]) : 1
 
     const amountCandidates = [...normalized.matchAll(/([0-9]{3,5})/g)]
@@ -3935,7 +3830,7 @@ function buildLocalSettingsBackup() {
 
   return {
     app: 'auto-document-converter',
-    version: '0.0.18-68-preview-database-actions-no-country-filter',
+    version: '0.0.18-62-force-wide-staff-card-right-tabs',
     exportedAt: new Date().toISOString(),
     itemCount: Object.keys(items).length,
     items
@@ -8866,17 +8761,3 @@ select:focus, input:focus, textarea:focus {
   }
 }
 
-
-/* batch018-68 preview database action toolbar */
-.preview-db-tools {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.preview-db-tools .db-btn,
-.preview-db-tools .frontend-load-btn {
-  min-width: 150px;
-}
