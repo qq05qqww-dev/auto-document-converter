@@ -1,7 +1,7 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "0.0.18-66-fix-inline-2s-price-session-strong",
+  "version": "0.0.18-70-1-media-upload-status-no-db-lock",
   "type": "module",
   "scripts": {
     "dev": "vite",
