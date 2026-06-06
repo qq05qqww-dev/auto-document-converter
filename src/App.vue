@@ -1,5 +1,5 @@
 <template>
-  <!-- batch018-60-public-location-base-personal-hide -->
+  <!-- batch018-62-force-wide-staff-card-right-tabs -->
   <main v-if="!authReady" class="login-page-shell">
     <section class="login-card">
       <div class="login-brand">正式線上登入</div>
@@ -3256,7 +3256,11 @@ function parsePrices(text, increase) {
     const minutes = Number(minuteMatch[1])
     if (!minutes) return
 
-    const sessionMatch = normalized.match(/\/\s*(\d+)\s*S/i)
+    // batch018-66：支援「60分2s 回3000」這種沒有斜線的節數寫法。
+    // 原本只認「60分/2S」，所以 60分2s 會被輸出成 60/1S。
+    const sessionMatch =
+      normalized.match(/\/\s*(\d+)\s*S/i) ||
+      normalized.match(/(?:分鐘|分)\s*(\d+)\s*S/i)
     const sessionCount = sessionMatch ? Number(sessionMatch[1]) : 1
 
     const amountCandidates = [...normalized.matchAll(/([0-9]{3,5})/g)]
@@ -3813,7 +3817,7 @@ function buildLocalSettingsBackup() {
 
   return {
     app: 'auto-document-converter',
-    version: '0.0.18-60-public-location-base-personal-hide',
+    version: '0.0.18-66-fix-inline-2s-price-session-strong',
     exportedAt: new Date().toISOString(),
     itemCount: Object.keys(items).length,
     items
@@ -8526,6 +8530,77 @@ select:focus, input:focus, textarea:focus {
   color: #15803d;
 }
 
+
+
+/* batch018-62：強制放大左側登入資訊卡，功能按鈕貼近右側 */
+.top-control-header {
+  display: grid !important;
+  grid-template-columns: minmax(520px, 620px) minmax(0, 1fr) !important;
+  align-items: start !important;
+  gap: 28px !important;
+  width: 100% !important;
+}
+
+.top-staff-profile-card {
+  width: 100% !important;
+  max-width: 620px !important;
+  min-width: 520px !important;
+  flex: none !important;
+  justify-self: start !important;
+}
+
+.top-staff-profile-card .staff-profile-copy p:last-child {
+  max-width: 480px !important;
+}
+
+.compact-main-buttons {
+  width: 100% !important;
+  max-width: none !important;
+  justify-content: flex-end !important;
+  justify-self: end !important;
+  margin-left: 0 !important;
+  padding-right: 8px !important;
+  padding-top: 6px !important;
+}
+
+@media (min-width: 1600px) {
+  .top-control-header {
+    grid-template-columns: minmax(600px, 720px) minmax(0, 1fr) !important;
+  }
+
+  .top-staff-profile-card {
+    max-width: 720px !important;
+    min-width: 600px !important;
+  }
+
+  .top-staff-profile-card .staff-profile-copy p:last-child {
+    max-width: 560px !important;
+  }
+
+  .compact-main-buttons {
+    padding-right: 18px !important;
+  }
+}
+
+@media (max-width: 1180px) {
+  .top-control-header {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    justify-content: flex-start !important;
+  }
+
+  .top-staff-profile-card {
+    min-width: 0 !important;
+    max-width: none !important;
+    width: 100% !important;
+  }
+
+  .compact-main-buttons {
+    justify-content: flex-start !important;
+    padding-right: 0 !important;
+  }
+}
+
 </style>
 
 @media (max-width: 980px) {
@@ -8613,3 +8688,63 @@ select:focus, input:focus, textarea:focus {
     white-space: normal;
   }
 }
+
+/* batch018-61：登入資訊卡加寬，主功能按鈕靠右 */
+.top-control-header {
+  justify-content: space-between !important;
+  align-items: flex-start !important;
+  gap: 18px !important;
+  flex-wrap: nowrap !important;
+}
+
+.top-staff-profile-card {
+  flex: 0 0 430px !important;
+  max-width: 430px !important;
+}
+
+.top-staff-profile-card .staff-profile-copy p:last-child {
+  max-width: 360px !important;
+}
+
+.compact-main-buttons {
+  flex: 1 1 auto !important;
+  width: auto !important;
+  justify-content: flex-end !important;
+  margin-left: auto !important;
+  padding-right: 18px !important;
+}
+
+@media (min-width: 1500px) {
+  .top-staff-profile-card {
+    flex-basis: 460px !important;
+    max-width: 460px !important;
+  }
+
+  .top-staff-profile-card .staff-profile-copy p:last-child {
+    max-width: 390px !important;
+  }
+
+  .compact-main-buttons {
+    padding-right: 34px !important;
+  }
+}
+
+@media (max-width: 1100px) {
+  .top-control-header {
+    flex-wrap: wrap !important;
+    justify-content: flex-start !important;
+  }
+
+  .top-staff-profile-card {
+    flex: 1 1 100% !important;
+    max-width: none !important;
+  }
+
+  .compact-main-buttons {
+    width: 100% !important;
+    justify-content: flex-start !important;
+    margin-left: 0 !important;
+    padding-right: 0 !important;
+  }
+}
+

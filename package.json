@@ -1,7 +1,7 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "0.0.18-60-public-location-base-personal-hide",
+  "version": "0.0.18-66-fix-inline-2s-price-session-strong",
   "type": "module",
   "scripts": {
     "dev": "vite",
