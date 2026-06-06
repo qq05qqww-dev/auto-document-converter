@@ -1,5 +1,5 @@
 <template>
-  <!-- batch018-55-online-employee-scope-rules -->
+  <!-- batch018-57-owner-delete-employee -->
   <main v-if="!authReady" class="login-page-shell">
     <section class="login-card">
       <div class="login-brand">正式線上登入</div>
@@ -107,11 +107,57 @@
           <div class="employee-list-title">目前員工 / 帳號</div>
           <div v-if="employeeProfiles.length === 0" class="employee-empty-row">尚未讀取到員工資料，請按「重新整理員工」。</div>
           <div v-for="profile in employeeProfiles" :key="profile.id" class="employee-row">
-            <div>
-              <strong>{{ profile.display_name || profile.email }}</strong>
-              <span>{{ profile.email }}</span>
-            </div>
-            <em :class="{ owner: profile.role === 'owner' }">{{ profile.role === 'owner' ? '老闆' : '員工' }}</em>
+            <template v-if="editingEmployeeId === profile.id">
+              <div class="employee-edit-panel">
+                <label>
+                  員工名稱
+                  <input v-model="editingEmployeeDisplayName" type="text" placeholder="員工名稱" autocomplete="off" />
+                </label>
+                <label>
+                  員工 Email
+                  <input v-model="editingEmployeeEmail" type="email" placeholder="員工 Email" autocomplete="off" />
+                </label>
+                <label>
+                  新密碼
+                  <input v-model="editingEmployeePassword" type="text" placeholder="不修改請留空，至少 6 碼" autocomplete="off" />
+                </label>
+                <div class="employee-row-actions edit-actions">
+                  <button class="primary-btn small-action-btn" type="button" @click="updateEmployeeAccount(profile)" :disabled="isEmployeeBusy">
+                    儲存修改
+                  </button>
+                  <button class="ghost-btn small-action-btn" type="button" @click="cancelEditEmployee" :disabled="isEmployeeBusy">
+                    取消
+                  </button>
+                </div>
+              </div>
+            </template>
+            <template v-else>
+              <div>
+                <strong>{{ profile.display_name || profile.email }}</strong>
+                <span>{{ profile.email }}</span>
+              </div>
+              <div class="employee-row-side">
+                <em :class="{ owner: profile.role === 'owner' }">{{ profile.role === 'owner' ? '老闆' : '員工' }}</em>
+                <button
+                  v-if="profile.role !== 'owner'"
+                  class="ghost-btn small-action-btn"
+                  type="button"
+                  @click="startEditEmployee(profile)"
+                  :disabled="isEmployeeBusy"
+                >
+                  編輯 / 改密碼
+                </button>
+                <button
+                  v-if="profile.role !== 'owner'"
+                  class="danger-btn small-action-btn"
+                  type="button"
+                  @click="deleteEmployeeAccount(profile)"
+                  :disabled="isEmployeeBusy"
+                >
+                  刪除
+                </button>
+              </div>
+            </template>
           </div>
         </div>
       </section>
@@ -1111,6 +1157,8 @@ const mediaViewerLadyCountry = ref('')
 const confirmedText = ref('')
 const statusMessage = ref('等待貼上資料。')
 const supabaseConfigured = isSupabaseConfigured
+const SUPABASE_FUNCTIONS_BASE_URL = 'https://cdyuweikhbfgkfrezhxd.supabase.co/functions/v1'
+const SUPABASE_PUBLIC_API_KEY = 'sb_publishable_nc-vY2-GIr_jkEvS3YIUEQ_vw8bImsk'
 const authReady = ref(false)
 const authUser = ref(null)
 const authProfile = ref(null)
@@ -1122,6 +1170,10 @@ const isAuthBusy = ref(false)
 const employeeDisplayName = ref('')
 const employeeEmail = ref('')
 const employeePassword = ref('')
+const editingEmployeeId = ref('')
+const editingEmployeeDisplayName = ref('')
+const editingEmployeeEmail = ref('')
+const editingEmployeePassword = ref('')
 const employeeProfiles = ref([])
 const employeeManageStatus = ref('老闆可在此建立員工帳號。')
 const employeeManageStatusType = ref('')
@@ -1293,6 +1345,64 @@ async function loadEmployeeProfiles(options = {}) {
   }
 }
 
+function resetEmployeeEditForm() {
+  editingEmployeeId.value = ''
+  editingEmployeeDisplayName.value = ''
+  editingEmployeeEmail.value = ''
+  editingEmployeePassword.value = ''
+}
+
+function startEditEmployee(profile) {
+  if (!profile?.id || profile.role === 'owner') return
+  editingEmployeeId.value = profile.id
+  editingEmployeeDisplayName.value = profile.display_name || ''
+  editingEmployeeEmail.value = profile.email || ''
+  editingEmployeePassword.value = ''
+  employeeManageStatus.value = `正在編輯：${profile.display_name || profile.email}`
+  employeeManageStatusType.value = ''
+}
+
+function cancelEditEmployee() {
+  resetEmployeeEditForm()
+  employeeManageStatus.value = '已取消編輯。'
+  employeeManageStatusType.value = ''
+}
+
+async function callCreateEmployeeFunction(payload) {
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+  const accessToken = sessionData?.session?.access_token || ''
+
+  if (sessionError || !accessToken) {
+    throw new Error(`無法取得老闆登入憑證：${sessionError?.message || '請重新登入'}`)
+  }
+
+  const response = await fetch(`${SUPABASE_FUNCTIONS_BASE_URL}/create-employee`, {
+    method: 'POST',
+    headers: {
+      apikey: SUPABASE_PUBLIC_API_KEY,
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  })
+
+  const rawText = await response.text()
+  let data = null
+  try {
+    data = rawText ? JSON.parse(rawText) : null
+  } catch {
+    data = { error: rawText || `HTTP ${response.status}` }
+  }
+
+  if (!response.ok || data?.error) {
+    const detail = data?.error || data?.message || `HTTP ${response.status}`
+    const detailMessage = data?.detail?.message || data?.detail?.error_description || data?.profileSaveDetail?.message || ''
+    throw new Error(`${detail}${detailMessage ? `：${detailMessage}` : ''}（HTTP ${response.status}）`)
+  }
+
+  return data
+}
+
 async function createEmployeeAccount() {
   if (!supabaseConfigured || !isOwner.value) {
     employeeManageStatus.value = '只有老闆帳號可以建立員工。'
@@ -1320,34 +1430,17 @@ async function createEmployeeAccount() {
   employeeManageStatus.value = '正在建立員工帳號...'
   employeeManageStatusType.value = ''
 
-  const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
-  const accessToken = sessionData?.session?.access_token || ''
-
-  if (sessionError || !accessToken) {
+  let data = null
+  try {
+    data = await callCreateEmployeeFunction({ action: 'create', email, password, displayName })
+  } catch (error) {
     isEmployeeBusy.value = false
-    employeeManageStatus.value = `無法取得老闆登入憑證：${sessionError?.message || '請重新登入'}`
+    employeeManageStatus.value = `建立員工失敗：${error.message || error}`
     employeeManageStatusType.value = 'error'
     return
   }
-
-  const { data, error } = await supabase.functions.invoke('create-employee', {
-    body: { email, password, displayName },
-    headers: { Authorization: `Bearer ${accessToken}` }
-  })
 
   isEmployeeBusy.value = false
-
-  if (error) {
-    employeeManageStatus.value = `建立員工失敗：${error.message}`
-    employeeManageStatusType.value = 'error'
-    return
-  }
-
-  if (data?.error) {
-    employeeManageStatus.value = `建立員工失敗：${data.error}`
-    employeeManageStatusType.value = 'error'
-    return
-  }
 
   employeeManageStatus.value = `已建立員工：${data?.profile?.display_name || displayName || email}`
   employeeManageStatusType.value = 'ok'
@@ -1355,6 +1448,105 @@ async function createEmployeeAccount() {
   employeeEmail.value = ''
   employeePassword.value = ''
   await loadEmployeeProfiles({ silent: true })
+}
+
+async function updateEmployeeAccount(profile) {
+  if (!supabaseConfigured || !isOwner.value) {
+    employeeManageStatus.value = '只有老闆帳號可以修改員工。'
+    employeeManageStatusType.value = 'error'
+    return
+  }
+
+  if (!profile?.id || profile.role === 'owner') {
+    employeeManageStatus.value = '老闆帳號不在這裡修改，避免誤改登入權限。'
+    employeeManageStatusType.value = 'error'
+    return
+  }
+
+  const displayName = cleanStaffName(editingEmployeeDisplayName.value)
+  const email = String(editingEmployeeEmail.value || '').trim().toLowerCase()
+  const password = String(editingEmployeePassword.value || '').trim()
+
+  if (!email) {
+    employeeManageStatus.value = '請輸入員工 Email。'
+    employeeManageStatusType.value = 'error'
+    return
+  }
+
+  if (password && password.length < 6) {
+    employeeManageStatus.value = '新密碼至少需要 6 碼；不改密碼請留空。'
+    employeeManageStatusType.value = 'error'
+    return
+  }
+
+  isEmployeeBusy.value = true
+  employeeManageStatus.value = '正在儲存員工修改...'
+  employeeManageStatusType.value = ''
+
+  try {
+    const data = await callCreateEmployeeFunction({
+      action: 'update',
+      userId: profile.id,
+      email,
+      displayName: displayName || email.split('@')[0] || 'employee',
+      password: password || undefined
+    })
+
+    employeeManageStatus.value = password
+      ? `已修改員工資料與密碼：${data?.profile?.display_name || displayName || email}`
+      : `已修改員工資料：${data?.profile?.display_name || displayName || email}`
+    employeeManageStatusType.value = 'ok'
+    resetEmployeeEditForm()
+    await loadEmployeeProfiles({ silent: true })
+  } catch (error) {
+    employeeManageStatus.value = `修改員工失敗：${error.message || error}`
+    employeeManageStatusType.value = 'error'
+  } finally {
+    isEmployeeBusy.value = false
+  }
+}
+
+async function deleteEmployeeAccount(profile) {
+  if (!supabaseConfigured || !isOwner.value) {
+    employeeManageStatus.value = '只有老闆帳號可以刪除員工。'
+    employeeManageStatusType.value = 'error'
+    return
+  }
+
+  if (!profile?.id || profile.role === 'owner') {
+    employeeManageStatus.value = '老闆帳號不允許在這裡刪除，避免誤刪最高權限。'
+    employeeManageStatusType.value = 'error'
+    return
+  }
+
+  const label = profile.display_name || profile.email || '此員工'
+  const confirmed = window.confirm(`確定要刪除員工「${label}」嗎？\n\n刪除後此 Email 將無法登入，該員工的 profiles 資料也會一併清除。`)
+  if (!confirmed) return
+
+  isEmployeeBusy.value = true
+  employeeManageStatus.value = `正在刪除員工：${label}...`
+  employeeManageStatusType.value = ''
+
+  try {
+    await callCreateEmployeeFunction({
+      action: 'delete',
+      userId: profile.id,
+      email: profile.email
+    })
+
+    if (editingEmployeeId.value === profile.id) {
+      resetEmployeeEditForm()
+    }
+
+    employeeManageStatus.value = `已刪除員工：${label}`
+    employeeManageStatusType.value = 'ok'
+    await loadEmployeeProfiles({ silent: true })
+  } catch (error) {
+    employeeManageStatus.value = `刪除員工失敗：${error.message || error}`
+    employeeManageStatusType.value = 'error'
+  } finally {
+    isEmployeeBusy.value = false
+  }
 }
 
 async function logoutFromSupabase() {
@@ -1367,6 +1559,7 @@ async function logoutFromSupabase() {
   employeeProfiles.value = []
   employeeManageStatus.value = '老闆可在此建立員工帳號。'
   employeeManageStatusType.value = ''
+  resetEmployeeEditForm()
   loginStatus.value = '已登出，請重新登入。'
   loginStatusType.value = ''
 }
@@ -3564,7 +3757,7 @@ function buildLocalSettingsBackup() {
 
   return {
     app: 'auto-document-converter',
-    version: '0.0.18-55-online-employee-scope-rules',
+    version: '0.0.18-57-owner-delete-employee',
     exportedAt: new Date().toISOString(),
     itemCount: Object.keys(items).length,
     items
@@ -8044,6 +8237,52 @@ select:focus, input:focus, textarea:focus {
   gap: 3px;
 }
 
+.employee-row-side {
+  display: flex !important;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.employee-row-actions {
+  display: flex !important;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.employee-edit-panel {
+  width: 100%;
+  display: grid !important;
+  grid-template-columns: minmax(160px, 1fr) minmax(220px, 1.4fr) minmax(180px, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+}
+
+.employee-edit-panel label {
+  display: grid;
+  gap: 6px;
+  color: #0f172a;
+  font-weight: 900;
+}
+
+.employee-edit-panel input {
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  border-radius: 14px;
+  padding: 11px 13px;
+  font: inherit;
+  font-weight: 800;
+  outline: none;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.small-action-btn {
+  min-height: 38px;
+  padding: 9px 14px;
+  white-space: nowrap;
+}
+
 .employee-row strong {
   color: #0f172a;
 }
@@ -8232,3 +8471,15 @@ select:focus, input:focus, textarea:focus {
 }
 
 </style>
+
+@media (max-width: 980px) {
+  .employee-edit-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .employee-row-side,
+  .employee-row-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+}

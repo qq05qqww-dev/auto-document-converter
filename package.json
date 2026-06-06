@@ -1,7 +1,7 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "0.0.18-55-online-employee-scope-rules",
+  "version": "0.0.18-57-owner-delete-employee",
   "type": "module",
   "scripts": {
     "dev": "vite",
