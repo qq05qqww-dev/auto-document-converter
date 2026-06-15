@@ -856,8 +856,12 @@
             <label class="media-lady-select">
               選擇小姐
               <select v-model="mediaUploadLadyId">
-                <option value="">請選擇小姐</option>
-                <option v-for="lady in frontendLadies" :key="lady.id" :value="lady.id">
+                <option value="">請選擇小姐（本次文件共 {{ currentDocumentPreviewLadies.length }} 位）</option>
+                <option
+                  v-for="lady in currentDocumentPreviewLadies"
+                  :key="lady.previewKey"
+                  :value="lady.previewKey"
+                >
                   【{{ lady.country }} {{ lady.name }}】
                 </option>
               </select>
@@ -2203,6 +2207,8 @@ const currentDocumentPreviewLadies = computed(() => {
 
       return {
         id: dbLady?.id || `current-document-${index + 1}`,
+        dbLadyId: dbLady?.id || '',
+        previewKey: `${key}__${index + 1}`,
         isCurrentDocumentPreview: true,
         country: item.country || '',
         name: item.name || '',
@@ -2211,6 +2217,20 @@ const currentDocumentPreviewLadies = computed(() => {
         cup: body.cup || '',
         age: body.age ?? '',
         rawText: item.rawText || '',
+        importPayload: {
+          sourceIndex: item.sourceIndex || index + 1,
+          country: item.country || '',
+          name: item.name || '',
+          body: {
+            height: body.height ?? '',
+            weight: body.weight ?? '',
+            cup: body.cup || '',
+            age: body.age ?? ''
+          },
+          pricePlans: Array.isArray(item.pricePlans) ? item.pricePlans : [],
+          services: Array.isArray(item.services) ? item.services : [],
+          rawText: item.rawText || ''
+        },
         media: Array.isArray(dbLady?.media) ? dbLady.media : [],
         pricePlans: Array.isArray(item.pricePlans)
           ? item.pricePlans.map((plan, planIndex) => ({
@@ -2252,6 +2272,13 @@ const frontendCountries = computed(() => {
 const filteredFrontendLadies = computed(() => {
   if (countryFilter.value === '全部') return previewLadies.value
   return previewLadies.value.filter(item => item.country === countryFilter.value)
+})
+
+watch(currentDocumentPreviewLadies, ladies => {
+  const validKeys = new Set(ladies.map(lady => String(lady.previewKey || '')).filter(Boolean))
+  if (mediaUploadLadyId.value && !validKeys.has(String(mediaUploadLadyId.value))) {
+    mediaUploadLadyId.value = ''
+  }
 })
 
 
@@ -2429,11 +2456,52 @@ function formatUploadFileSize(file) {
   return `${size} B`
 }
 
+async function ensureSelectedPreviewLadyDbId() {
+  const selectedLady = currentDocumentPreviewLadies.value.find(
+    lady => String(lady.previewKey) === String(mediaUploadLadyId.value)
+  )
+
+  if (!selectedLady) {
+    throw new Error('找不到本次文件中選擇的小姐，請重新選擇。')
+  }
+
+  const existingLady = frontendLadies.value.find(
+    lady => makePreviewLadyKey(lady) === makePreviewLadyKey(selectedLady)
+  )
+  if (existingLady?.id) return existingLady.id
+
+  mediaUploadStatusText.value = `正在建立【${selectedLady.country || ''} ${selectedLady.name || ''}】資料…`
+
+  const response = await fetch(`${apiBaseUrl.value}/api/ladies/import`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ items: [selectedLady.importPayload] })
+  })
+  const data = await response.json().catch(() => ({}))
+
+  if (!response.ok) {
+    throw new Error(data.message || `建立小姐資料失敗：HTTP ${response.status}`)
+  }
+
+  await loadFrontendLadies()
+
+  const createdLady = frontendLadies.value.find(
+    lady => makePreviewLadyKey(lady) === makePreviewLadyKey(selectedLady)
+  )
+  if (!createdLady?.id) {
+    throw new Error('小姐資料已送出，但無法取得資料庫編號，請重新整理後再試。')
+  }
+
+  return createdLady.id
+}
+
 async function uploadLadyMedia() {
   saveApiBaseUrl()
 
   if (!mediaUploadLadyId.value) {
-    mediaUploadStatusText.value = '請先選擇要綁定的小姐。'
+    mediaUploadStatusText.value = currentDocumentPreviewLadies.value.length
+      ? '請先選擇本次文件中的小姐。'
+      : '文件3目前沒有小姐資料，請先由文件2確認並產生文件3。'
     return
   }
 
@@ -2446,10 +2514,12 @@ async function uploadLadyMedia() {
   let failCount = 0
 
   try {
+    const databaseLadyId = await ensureSelectedPreviewLadyDbId()
+
     for (const file of mediaUploadFiles.value) {
       const formData = new FormData()
       formData.append('file', file)
-      formData.append('ladyId', String(mediaUploadLadyId.value))
+      formData.append('ladyId', String(databaseLadyId))
       formData.append('mediaType', file.type.startsWith('video/') ? 'video' : 'image')
       formData.append('note', '')
 
