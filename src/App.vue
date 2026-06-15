@@ -68,7 +68,7 @@
           <button class="summary-pill api-toggle-pill" :class="{ active: activeTopPanel === 'api' }" type="button" @click="toggleTopPanel('api')">
             {{ showApiPanel ? '收合API' : 'API串接' }}
           </button>
-          <button class="summary-pill manager-toggle-pill" :class="{ active: showScopeManager }" type="button" @click="showScopeManager = !showScopeManager">
+          <button class="summary-pill manager-toggle-pill" :class="{ active: showScopeManager }" type="button" @click="toggleScopeManager">
             地區機房管理
           </button>
           <button v-if="isOwner" class="summary-pill account-manager-toggle-pill" :class="{ active: showEmployeeManager }" type="button" @click="toggleEmployeeManager">
@@ -675,7 +675,7 @@
     </section>
 
 
-    <section class="api-panel api-panel-top setting-content-block compact-control-content api-clean-panel">
+    <section v-if="showApiPanel" class="api-panel api-panel-top setting-content-block compact-control-content api-clean-panel">
       <div class="api-clean-header">
         <div>
           <h2>API 串接測試</h2>
@@ -856,12 +856,8 @@
             <label class="media-lady-select">
               選擇小姐
               <select v-model="mediaUploadLadyId">
-                <option value="">請選擇小姐（本次文件共 {{ currentDocumentPreviewLadies.length }} 位）</option>
-                <option
-                  v-for="lady in currentDocumentPreviewLadies"
-                  :key="lady.previewKey"
-                  :value="lady.previewKey"
-                >
+                <option value="">請選擇小姐</option>
+                <option v-for="lady in frontendLadies" :key="lady.id" :value="lady.id">
                   【{{ lady.country }} {{ lady.name }}】
                 </option>
               </select>
@@ -908,12 +904,14 @@
                     <img
                       v-if="isUploadFileImage(file)"
                       :src="getUploadFilePreviewUrl(file)"
-                      :alt="file.name" loading="lazy" decoding="async" />
+                      :alt="file.name"
+                    />
                     <video
                       v-else-if="isUploadFileVideo(file)"
                       :src="getUploadFilePreviewUrl(file)"
                       muted
-                      playsinline preload="none"></video>
+                      playsinline
+                    ></video>
                     <div v-else class="selected-file-fallback">FILE</div>
                   </button>
 
@@ -953,13 +951,15 @@
                       v-if="getLadyCoverMedia(lady).mediaType === 'image'"
                       :src="getLadyCoverMedia(lady).url"
                       :alt="getMediaDisplayName(getLadyCoverMedia(lady), lady)"
-                      class="lady-cover-media" loading="lazy" decoding="async" />
+                      class="lady-cover-media"
+                    />
                     <video
                       v-else
                       :src="getLadyCoverMedia(lady).url"
                       class="lady-cover-media"
                       muted
-                      playsinline preload="none"></video>
+                      playsinline
+                    ></video>
                   </button>
 
                   <button
@@ -1001,13 +1001,15 @@
                       v-if="media.mediaType === 'image'"
                       :src="media.url"
                       :alt="getMediaDisplayName(media, lady)"
-                      class="lady-media-thumb" loading="lazy" decoding="async" />
+                      class="lady-media-thumb"
+                    />
                     <video
                       v-else-if="media.mediaType === 'video'"
                       :src="media.url"
                       class="lady-media-thumb"
                       muted
-                      playsinline preload="none"></video>
+                      playsinline
+                    ></video>
                   </button>
                   <button type="button" class="lady-media-delete-btn mini" @click.stop="deleteLadyMedia(media, lady)">×</button>
                 </div>
@@ -1043,7 +1045,8 @@
               v-if="mediaViewerItem.mediaType === 'image'"
               :src="mediaViewerItem.url"
               :alt="getMediaDisplayName(mediaViewerItem, { name: mediaViewerLadyName, country: mediaViewerLadyCountry })"
-              class="media-viewer-content" loading="lazy" decoding="async" />
+              class="media-viewer-content"
+            />
             <video
               v-else
               :src="mediaViewerItem.url"
@@ -1658,8 +1661,8 @@ const showAdvancedSettings = ref(false)
 const showPriceSettings = ref(false)
 const showFormatSettings = ref(false)
 const showQuickRules = ref(false)
-const showApiPanel = ref(true)
-const activeTopPanel = ref('api')
+const showApiPanel = ref(false)
+const activeTopPanel = ref('')
 const activeAdvancedPanel = ref('country-map')
 const ruleScopeLevel = ref('global')
 const ruleScopeCity = ref('')
@@ -1695,6 +1698,19 @@ function toggleTopPanel(panel) {
   showQuickRules.value = activeTopPanel.value === 'quick'
   showAdvancedSettings.value = activeTopPanel.value === 'advanced'
   showApiPanel.value = activeTopPanel.value === 'api'
+}
+
+function toggleScopeManager() {
+  const nextVisible = !showScopeManager.value
+
+  activeTopPanel.value = ''
+  showPriceSettings.value = false
+  showFormatSettings.value = false
+  showQuickRules.value = false
+  showAdvancedSettings.value = false
+  showApiPanel.value = false
+
+  showScopeManager.value = nextVisible
 }
 
 function toggleEmployeeManager() {
@@ -2207,8 +2223,6 @@ const currentDocumentPreviewLadies = computed(() => {
 
       return {
         id: dbLady?.id || `current-document-${index + 1}`,
-        dbLadyId: dbLady?.id || '',
-        previewKey: `${key}__${index + 1}`,
         isCurrentDocumentPreview: true,
         country: item.country || '',
         name: item.name || '',
@@ -2217,20 +2231,6 @@ const currentDocumentPreviewLadies = computed(() => {
         cup: body.cup || '',
         age: body.age ?? '',
         rawText: item.rawText || '',
-        importPayload: {
-          sourceIndex: item.sourceIndex || index + 1,
-          country: item.country || '',
-          name: item.name || '',
-          body: {
-            height: body.height ?? '',
-            weight: body.weight ?? '',
-            cup: body.cup || '',
-            age: body.age ?? ''
-          },
-          pricePlans: Array.isArray(item.pricePlans) ? item.pricePlans : [],
-          services: Array.isArray(item.services) ? item.services : [],
-          rawText: item.rawText || ''
-        },
         media: Array.isArray(dbLady?.media) ? dbLady.media : [],
         pricePlans: Array.isArray(item.pricePlans)
           ? item.pricePlans.map((plan, planIndex) => ({
@@ -2272,13 +2272,6 @@ const frontendCountries = computed(() => {
 const filteredFrontendLadies = computed(() => {
   if (countryFilter.value === '全部') return previewLadies.value
   return previewLadies.value.filter(item => item.country === countryFilter.value)
-})
-
-watch(currentDocumentPreviewLadies, ladies => {
-  const validKeys = new Set(ladies.map(lady => String(lady.previewKey || '')).filter(Boolean))
-  if (mediaUploadLadyId.value && !validKeys.has(String(mediaUploadLadyId.value))) {
-    mediaUploadLadyId.value = ''
-  }
 })
 
 
@@ -2456,52 +2449,11 @@ function formatUploadFileSize(file) {
   return `${size} B`
 }
 
-async function ensureSelectedPreviewLadyDbId() {
-  const selectedLady = currentDocumentPreviewLadies.value.find(
-    lady => String(lady.previewKey) === String(mediaUploadLadyId.value)
-  )
-
-  if (!selectedLady) {
-    throw new Error('找不到本次文件中選擇的小姐，請重新選擇。')
-  }
-
-  const existingLady = frontendLadies.value.find(
-    lady => makePreviewLadyKey(lady) === makePreviewLadyKey(selectedLady)
-  )
-  if (existingLady?.id) return existingLady.id
-
-  mediaUploadStatusText.value = `正在建立【${selectedLady.country || ''} ${selectedLady.name || ''}】資料…`
-
-  const response = await fetch(`${apiBaseUrl.value}/api/ladies/import`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ items: [selectedLady.importPayload] })
-  })
-  const data = await response.json().catch(() => ({}))
-
-  if (!response.ok) {
-    throw new Error(data.message || `建立小姐資料失敗：HTTP ${response.status}`)
-  }
-
-  await loadFrontendLadies()
-
-  const createdLady = frontendLadies.value.find(
-    lady => makePreviewLadyKey(lady) === makePreviewLadyKey(selectedLady)
-  )
-  if (!createdLady?.id) {
-    throw new Error('小姐資料已送出，但無法取得資料庫編號，請重新整理後再試。')
-  }
-
-  return createdLady.id
-}
-
 async function uploadLadyMedia() {
   saveApiBaseUrl()
 
   if (!mediaUploadLadyId.value) {
-    mediaUploadStatusText.value = currentDocumentPreviewLadies.value.length
-      ? '請先選擇本次文件中的小姐。'
-      : '文件3目前沒有小姐資料，請先由文件2確認並產生文件3。'
+    mediaUploadStatusText.value = '請先選擇要綁定的小姐。'
     return
   }
 
@@ -2514,12 +2466,10 @@ async function uploadLadyMedia() {
   let failCount = 0
 
   try {
-    const databaseLadyId = await ensureSelectedPreviewLadyDbId()
-
     for (const file of mediaUploadFiles.value) {
       const formData = new FormData()
       formData.append('file', file)
-      formData.append('ladyId', String(databaseLadyId))
+      formData.append('ladyId', String(mediaUploadLadyId.value))
       formData.append('mediaType', file.type.startsWith('video/') ? 'video' : 'image')
       formData.append('note', '')
 
