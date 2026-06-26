@@ -863,6 +863,16 @@
               </select>
             </label>
 
+            <div v-if="currentDocumentPreviewLadies.length" class="media-db-submit-card">
+              <div>
+                <strong>第 1 步：先送出到資料庫</strong>
+                <span>文件3 / 文件4 目前有 {{ currentDocumentPreviewLadies.length }} 筆小姐。送出後才會有資料庫 ID，才能綁定照片 / 影片。</span>
+              </div>
+              <button class="primary-btn db-btn media-db-submit-btn" type="button" @click="submitCurrentPreviewToDatabase">
+                送出 {{ currentDocumentPreviewLadies.length }} 筆到資料庫
+              </button>
+            </div>
+
             <div
               class="media-drop-zone"
               :class="{ 'is-dragging': isMediaDragging }"
@@ -2293,6 +2303,11 @@ watch(mediaUploadLadyOptions, (ladies) => {
 
 function isCurrentDocumentPreviewLadyId(id) {
   return String(id || '').startsWith('current-document-')
+}
+
+async function submitCurrentPreviewToDatabase() {
+  await submitDocument4ToDatabase()
+  await loadFrontendLadies()
 }
 
 
@@ -6363,6 +6378,39 @@ select:focus, input:focus, textarea:focus {
 
 .media-lady-select {
   width: 100%;
+}
+
+.media-db-submit-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(37, 99, 235, 0.22);
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(239, 246, 255, 0.96), rgba(236, 254, 255, 0.92));
+}
+
+.media-db-submit-card strong,
+.media-db-submit-card span {
+  display: block;
+}
+
+.media-db-submit-card strong {
+  color: #1e3a8a;
+  font-size: 15px;
+  margin-bottom: 4px;
+}
+
+.media-db-submit-card span {
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.media-db-submit-btn {
+  min-width: 178px;
+  white-space: nowrap;
 }
 
 .media-inline-row {
