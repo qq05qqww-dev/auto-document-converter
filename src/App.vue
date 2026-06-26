@@ -863,16 +863,6 @@
               </select>
             </label>
 
-            <div v-if="currentDocumentPreviewLadies.length" class="media-db-submit-card">
-              <div>
-                <strong>第 1 步：先送出到資料庫</strong>
-                <span>文件3 / 文件4 目前有 {{ currentDocumentPreviewLadies.length }} 筆小姐。送出後才會有資料庫 ID，才能綁定照片 / 影片。</span>
-              </div>
-              <button class="primary-btn db-btn media-db-submit-btn" type="button" @click="submitCurrentPreviewToDatabase">
-                送出 {{ currentDocumentPreviewLadies.length }} 筆到資料庫
-              </button>
-            </div>
-
             <div
               class="media-drop-zone"
               :class="{ 'is-dragging': isMediaDragging }"
@@ -2268,8 +2258,7 @@ const currentDocumentPreviewLadies = computed(() => {
 const previewLadies = computed(() => currentDocumentPreviewLadies.value)
 
 const mediaUploadLadyOptions = computed(() => {
-  if (currentDocumentPreviewLadies.value.length) return currentDocumentPreviewLadies.value
-  return frontendLadies.value
+  return currentDocumentPreviewLadies.value
 })
 
 const previewStatusText = computed(() => {
@@ -2304,13 +2293,6 @@ watch(mediaUploadLadyOptions, (ladies) => {
 function isCurrentDocumentPreviewLadyId(id) {
   return String(id || '').startsWith('current-document-')
 }
-
-async function submitCurrentPreviewToDatabase() {
-  await submitDocument4ToDatabase()
-  await loadFrontendLadies()
-}
-
-
 
 function getLadyImageMedia(lady) {
   return Array.isArray(lady?.media)
@@ -2673,13 +2655,15 @@ function safeSetStorageValue(key, value) {
 }
 
 
-async function submitDocument4ToDatabase() {
+async function submitDocument4ToDatabase(options = {}) {
+  const shouldClearDocuments = options.clearDocuments !== false
+  const shouldReloadFrontendLadies = options.reloadFrontendLadies === true
   saveApiBaseUrl()
 
   const payload = parseConfirmedTextToJson(confirmedText.value)
   if (!payload.items.length) {
     apiStatusText.value = '文件3目前沒有可送出到資料庫的資料。'
-    return
+    return false
   }
 
   let databaseSaved = false
@@ -2710,13 +2694,28 @@ async function submitDocument4ToDatabase() {
 
     databaseSaved = true
     apiStatusText.value = `${data.message || '資料庫儲存成功'} 正在自動同步中央網站...`
+    if (shouldReloadFrontendLadies) {
+      await loadFrontendLadies()
+    }
     const centralSync = await syncSavedLadiesToCentralWebsite()
-    clearDocumentsAfterDatabaseSubmit()
-    apiStatusText.value = `${data.message || `已送出 ${data.count ?? payload.items.length} 筆到 Supabase PostgreSQL。`} ${centralSync.message || '中央網站同步完成。'} 已清空文件1 / 文件2 / 文件3 / 文件4，本次預覽已歸零，可以開始建立下一批。`
+
+    if (shouldClearDocuments) {
+      clearDocumentsAfterDatabaseSubmit()
+      apiStatusText.value = `${data.message || `已送出 ${data.count ?? payload.items.length} 筆到 Supabase PostgreSQL。`} ${centralSync.message || '中央網站同步完成。'} 已清空文件1 / 文件2 / 文件3 / 文件4，本次預覽已歸零，可以開始建立下一批。`
+    } else {
+      apiStatusText.value = `${data.message || `已送出 ${data.count ?? payload.items.length} 筆到 Supabase PostgreSQL。`} ${centralSync.message || '中央網站同步完成。'} 本次文件資料已保留，可直接選擇本次小姐上傳媒體。`
+      mediaUploadStatusText.value = '文件3已自動送出資料庫；下拉選單只顯示本次新增小姐，可以開始上傳媒體。'
+    }
+    return true
   } catch (error) {
     apiStatusText.value = databaseSaved
       ? `資料已存入 converter 資料庫，但同步中央網站失敗：${error.message || error}。請確認網站 Worker 已部署後再重試送出。`
       : `送出資料庫失敗：${error.message || error}`
+    if (databaseSaved && !shouldClearDocuments) {
+      mediaUploadStatusText.value = '文件3已存入資料庫；下拉選單只顯示本次新增小姐。中央網站同步失敗時，可稍後再重試同步。'
+      return true
+    }
+    return false
   }
 }
 
@@ -4950,11 +4949,17 @@ function appendResultToConfirmed() {
 
 
 
-function saveConfirmedText(options = {}) {
+async function saveConfirmedText(options = {}) {
   normalizeDocument3Text()
   localStorage.setItem(CONFIRMED_STORAGE_KEY, confirmedText.value)
   updateJsonPreview()
-  if (!options.silent) statusMessage.value = '文件3已儲存，文件4 JSON 已同步更新。'
+  if (!options.silent) {
+    statusMessage.value = '文件3已儲存，正在自動送出到資料庫...'
+    const savedToDatabase = await submitDocument4ToDatabase({ clearDocuments: false, reloadFrontendLadies: true })
+    statusMessage.value = savedToDatabase
+      ? '文件3已儲存並自動送出資料庫；下方只會顯示本次新增小姐。'
+      : '文件3已儲存，但自動送出資料庫失敗，請查看 API 狀態訊息。'
+  }
 }
 
 
@@ -6378,39 +6383,6 @@ select:focus, input:focus, textarea:focus {
 
 .media-lady-select {
   width: 100%;
-}
-
-.media-db-submit-card {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  border: 1px solid rgba(37, 99, 235, 0.22);
-  border-radius: 14px;
-  background: linear-gradient(135deg, rgba(239, 246, 255, 0.96), rgba(236, 254, 255, 0.92));
-}
-
-.media-db-submit-card strong,
-.media-db-submit-card span {
-  display: block;
-}
-
-.media-db-submit-card strong {
-  color: #1e3a8a;
-  font-size: 15px;
-  margin-bottom: 4px;
-}
-
-.media-db-submit-card span {
-  color: #475569;
-  font-size: 13px;
-  line-height: 1.55;
-}
-
-.media-db-submit-btn {
-  min-width: 178px;
-  white-space: nowrap;
 }
 
 .media-inline-row {
