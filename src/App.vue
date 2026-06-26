@@ -220,8 +220,6 @@
             <strong>{{ managerSelectedDistrict || '未選地區' }}</strong>
             <span>→</span>
             <strong>{{ managerSelectedType || '未選定點/外送' }}</strong>
-            <span>→</span>
-            <strong>{{ ruleScopeRoom || '未選機房/店家' }}</strong>
           </div>
         </div>
 
@@ -2230,6 +2228,12 @@ const currentDocumentPreviewLadies = computed(() => {
         isCurrentDocumentPreview: true,
         country: item.country || '',
         name: item.name || '',
+        city: item.city || '',
+        district: item.district || '',
+        mode: item.mode || '',
+        room: item.room || '',
+        location: item.location || '',
+        locationInfo: item.locationInfo || {},
         height: body.height ?? '',
         weight: body.weight ?? '',
         cup: body.cup || '',
@@ -2398,6 +2402,12 @@ async function deleteLadyMedia(media, lady) {
 
     frontendStatusText.value = data.message || '媒體已刪除。'
     await loadFrontendLadies()
+    try {
+      await syncSavedLadiesToCentralWebsite()
+      frontendStatusText.value = `${frontendStatusText.value} 中央網站已同步。`
+    } catch (syncError) {
+      frontendStatusText.value = `${frontendStatusText.value} 但中央網站同步失敗：${syncError.message || syncError}`
+    }
   } catch (error) {
     frontendStatusText.value = `刪除媒體失敗：${error.message || error}`
   }
@@ -2516,6 +2526,12 @@ async function uploadLadyMedia() {
     clearMediaUploadFiles()
 
     await loadFrontendLadies()
+    try {
+      await syncSavedLadiesToCentralWebsite()
+      mediaUploadStatusText.value = `媒體疊加上傳完成：成功 ${successCount} 個，失敗 ${failCount} 個。中央網站已同步。`
+    } catch (syncError) {
+      mediaUploadStatusText.value = `媒體已上傳到資料庫，但中央網站同步失敗：${syncError.message || syncError}`
+    }
   } catch (error) {
     mediaUploadStatusText.value = `媒體上傳中斷：成功 ${successCount} 個，失敗 ${failCount || 1} 個。錯誤：${error.message || error}`
     await loadFrontendLadies()
@@ -2629,6 +2645,37 @@ async function syncSavedLadiesToCentralWebsite() {
   const items = Array.isArray(ladiesData.items) ? ladiesData.items : []
   if (!items.length) throw new Error('資料庫目前沒有可同步到網站的小姐資料。')
 
+  const currentLocation = getCurrentListingLocation()
+  const currentPreviewByKey = new Map(
+    currentDocumentPreviewLadies.value.map(lady => [makePreviewLadyKey(lady), lady])
+  )
+  const syncItems = items.map(item => {
+    const currentPreview = currentPreviewByKey.get(makePreviewLadyKey(item))
+    if (!currentPreview) return item
+
+    const city = item.city || currentPreview.city || currentLocation.city
+    const district = item.district || currentPreview.district || currentLocation.district
+    const mode = item.mode || currentPreview.mode || currentLocation.mode
+    const room = ''
+
+    return {
+      ...item,
+      city,
+      district,
+      mode,
+      room,
+      location: item.location || currentPreview.location || [city, district].filter(Boolean).join(' '),
+      locationInfo: {
+        ...(item.locationInfo || {}),
+        ...(currentPreview.locationInfo || {}),
+        city,
+        district,
+        mode,
+        room
+      }
+    }
+  })
+
   const response = await fetch(`${CENTRAL_WEBSITE_API_BASE_URL}/api/integrations/converter/central-listings/import`, {
     method: 'POST',
     headers: {
@@ -2636,7 +2683,7 @@ async function syncSavedLadiesToCentralWebsite() {
       'Content-Type': 'application/json',
       'X-Converter-Apikey': SUPABASE_PUBLIC_API_KEY
     },
-    body: JSON.stringify({ items })
+    body: JSON.stringify({ items: syncItems })
   })
   const data = await response.json().catch(() => ({}))
   if (!response.ok) {
@@ -2659,6 +2706,9 @@ async function submitDocument4ToDatabase(options = {}) {
   const shouldClearDocuments = options.clearDocuments !== false
   const shouldReloadFrontendLadies = options.reloadFrontendLadies === true
   saveApiBaseUrl()
+
+  const listingLocation = validateCurrentListingLocation()
+  if (!listingLocation) return false
 
   const payload = parseConfirmedTextToJson(confirmedText.value)
   if (!payload.items.length) {
@@ -2764,7 +2814,35 @@ function parsePriceTextToObject(priceText) {
   }
 }
 
+function getCurrentListingLocation() {
+  const city = cleanScopeText(ruleScopeCity.value || managerSelectedCity.value)
+  const district = cleanScopeText(ruleScopeDistrict.value || managerSelectedDistrict.value)
+  const mode = cleanScopeText(ruleScopeType.value || managerSelectedType.value)
+  const room = ''
+
+  return {
+    city,
+    district,
+    mode,
+    room,
+    locationText: [city, district, mode].filter(Boolean).join(' / ')
+  }
+}
+
+function validateCurrentListingLocation() {
+  const location = getCurrentListingLocation()
+  if (!location.city || !location.district) {
+    const message = '請先在「地區機房管理」選擇縣市與地區，再儲存文件3送出資料庫。'
+    statusMessage.value = message
+    apiStatusText.value = message
+    return null
+  }
+
+  return location
+}
+
 function parseConfirmedTextToJson(text) {
+  const location = getCurrentListingLocation()
   const blocks = String(text || '')
     .replace(/^\n+/, '')
     .split(/\n\s*\n/)
@@ -2804,6 +2882,12 @@ function parseConfirmedTextToJson(text) {
       sourceIndex: index + 1,
       country,
       name,
+      city: location.city,
+      district: location.district,
+      mode: location.mode,
+      room: location.room,
+      location: location.locationText,
+      locationInfo: location,
       body: {
         height,
         weight,
@@ -2819,6 +2903,7 @@ function parseConfirmedTextToJson(text) {
   return {
     generatedAt: new Date().toISOString(),
     source: 'document3_confirmed',
+    location,
     total: items.length,
     items
   }
