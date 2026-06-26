@@ -857,7 +857,7 @@
               選擇小姐
               <select v-model="mediaUploadLadyId">
                 <option value="">請選擇小姐</option>
-                <option v-for="lady in frontendLadies" :key="lady.id" :value="lady.id">
+                <option v-for="lady in mediaUploadLadyOptions" :key="lady.id" :value="lady.id">
                   【{{ lady.country }} {{ lady.name }}】
                 </option>
               </select>
@@ -1143,6 +1143,10 @@ const jsonResultText = ref('')
 const REQUIRED_BACKEND_IMPORT_MODE = 'db_append_upsert_keep_existing_safety_checked'
 const REQUIRED_BACKEND_VERSION = '0.0.18-14-backend-version-guard'
 const DEFAULT_ONLINE_API_BASE_URL = 'https://auto-document-converter-api.qq05qqww-5c5.workers.dev'
+const CENTRAL_WEBSITE_API_BASE_URL = (
+  import.meta.env.VITE_CENTRAL_WEBSITE_API_BASE_URL ||
+  'https://auto-api-website-api.qq05qqww-5c5.workers.dev'
+).replace(/\/+$/, '')
 const apiBaseUrl = ref(DEFAULT_ONLINE_API_BASE_URL)
 const apiStatusText = ref('尚未測試 API。')
 const frontendLadies = ref([])
@@ -2253,6 +2257,11 @@ const currentDocumentPreviewLadies = computed(() => {
 
 const previewLadies = computed(() => currentDocumentPreviewLadies.value)
 
+const mediaUploadLadyOptions = computed(() => {
+  if (currentDocumentPreviewLadies.value.length) return currentDocumentPreviewLadies.value
+  return frontendLadies.value
+})
+
 const previewStatusText = computed(() => {
   if (currentDocumentPreviewLadies.value.length) {
     return `目前只顯示本次文件最新 ${currentDocumentPreviewLadies.value.length} 筆小姐；網站後台資料庫仍會累加保存。`
@@ -2273,6 +2282,18 @@ const filteredFrontendLadies = computed(() => {
   if (countryFilter.value === '全部') return previewLadies.value
   return previewLadies.value.filter(item => item.country === countryFilter.value)
 })
+
+watch(mediaUploadLadyOptions, (ladies) => {
+  const currentId = String(mediaUploadLadyId.value || '')
+  const hasCurrentLady = ladies.some(lady => String(lady.id || '') === currentId)
+  if (!hasCurrentLady) {
+    mediaUploadLadyId.value = ladies[0]?.id ? String(ladies[0].id) : ''
+  }
+}, { immediate: true })
+
+function isCurrentDocumentPreviewLadyId(id) {
+  return String(id || '').startsWith('current-document-')
+}
 
 
 
@@ -2457,6 +2478,11 @@ async function uploadLadyMedia() {
     return
   }
 
+  if (isCurrentDocumentPreviewLadyId(mediaUploadLadyId.value)) {
+    mediaUploadStatusText.value = '這位小姐目前只在文件3 / 文件4預覽，還沒有資料庫 ID。請先送出到資料庫後再上傳媒體。'
+    return
+  }
+
   if (!mediaUploadFiles.value.length) {
     mediaUploadStatusText.value = '請先選擇或拖曳圖片 / 影片檔案。'
     return
@@ -2591,6 +2617,37 @@ async function ensureAppendImportBackendReady() {
   return data
 }
 
+async function syncSavedLadiesToCentralWebsite() {
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+  const accessToken = sessionData?.session?.access_token || ''
+  if (sessionError || !accessToken) {
+    throw new Error(`無法取得員工登入憑證：${sessionError?.message || '請重新登入'}`)
+  }
+
+  const ladiesResponse = await fetch(`${apiBaseUrl.value}/api/public/ladies?includeInactive=1`)
+  const ladiesData = await ladiesResponse.json().catch(() => ({}))
+  if (!ladiesResponse.ok) {
+    throw new Error(ladiesData.message || `讀取已儲存小姐失敗：HTTP ${ladiesResponse.status}`)
+  }
+  const items = Array.isArray(ladiesData.items) ? ladiesData.items : []
+  if (!items.length) throw new Error('資料庫目前沒有可同步到網站的小姐資料。')
+
+  const response = await fetch(`${CENTRAL_WEBSITE_API_BASE_URL}/api/integrations/converter/central-listings/import`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      'X-Converter-Apikey': SUPABASE_PUBLIC_API_KEY
+    },
+    body: JSON.stringify({ items })
+  })
+  const data = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(data.message || `網站同步失敗：HTTP ${response.status}`)
+  }
+  return data
+}
+
 function safeSetStorageValue(key, value) {
   if (!key) return
   try {
@@ -2610,6 +2667,7 @@ async function submitDocument4ToDatabase() {
     return
   }
 
+  let databaseSaved = false
   try {
     const backendVersion = await ensureAppendImportBackendReady()
     apiStatusText.value = `後端版本確認：${backendVersion.version || backendVersion.batch || 'append 累加版'}，正在送出資料庫...`
@@ -2635,10 +2693,15 @@ async function submitDocument4ToDatabase() {
       throw new Error(`安全檢查失敗：匯入後 ${data.afterCount} 筆小於匯入前 ${data.beforeCount} 筆，已阻擋。`)
     }
 
+    databaseSaved = true
+    apiStatusText.value = `${data.message || '資料庫儲存成功'} 正在自動同步中央網站...`
+    const centralSync = await syncSavedLadiesToCentralWebsite()
     clearDocumentsAfterDatabaseSubmit()
-    apiStatusText.value = `${data.message || `已送出 ${data.count ?? payload.items.length} 筆到 Supabase PostgreSQL。`} 已清空文件1 / 文件2 / 文件3 / 文件4，本次預覽已歸零，可以開始建立下一批。`
+    apiStatusText.value = `${data.message || `已送出 ${data.count ?? payload.items.length} 筆到 Supabase PostgreSQL。`} ${centralSync.message || '中央網站同步完成。'} 已清空文件1 / 文件2 / 文件3 / 文件4，本次預覽已歸零，可以開始建立下一批。`
   } catch (error) {
-    apiStatusText.value = `送出資料庫失敗：${error.message || error}`
+    apiStatusText.value = databaseSaved
+      ? `資料已存入 converter 資料庫，但同步中央網站失敗：${error.message || error}。請確認網站 Worker 已部署後再重試送出。`
+      : `送出資料庫失敗：${error.message || error}`
   }
 }
 
@@ -8774,4 +8837,3 @@ select:focus, input:focus, textarea:focus {
     padding-right: 0 !important;
   }
 }
-
