@@ -2208,7 +2208,8 @@ function isNumericCleanupWord(word) {
 
 
 function makePreviewLadyKey(lady) {
-  return `${String(lady?.country || '').trim()}__${String(lady?.name || '').trim()}`.toLowerCase()
+  const country = lady?.country || lady?.nationality || lady?.nation || ''
+  return `${String(country).trim()}__${String(lady?.name || '').trim()}`.toLowerCase()
 }
 
 const currentDocumentPreviewLadies = computed(() => {
@@ -2653,9 +2654,9 @@ async function syncSavedLadiesToCentralWebsite() {
     const currentPreview = currentPreviewByKey.get(makePreviewLadyKey(item))
     if (!currentPreview) return item
 
-    const city = item.city || currentPreview.city || currentLocation.city
-    const district = item.district || currentPreview.district || currentLocation.district
-    const mode = item.mode || currentPreview.mode || currentLocation.mode
+    const city = currentPreview.city || item.city || currentLocation.city
+    const district = currentPreview.district || item.district || currentLocation.district
+    const mode = currentPreview.mode || item.mode || currentLocation.mode
     const room = ''
 
     return {
