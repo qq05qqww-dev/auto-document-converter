@@ -3332,7 +3332,7 @@ function convertText() {
   resultText.value = rows.join('\n\n')
 
   if (!rows.length) {
-    statusMessage.value = `沒有抓到可轉換資料。請確認文件1有小姐名、價格、身材；已將媒體上傳區改為左側小拖拉區、右側縮圖牆，支援多檔疊加上傳。已切出 ${blocks.length} 筆。`
+    statusMessage.value = `沒有抓到可轉換資料。請確認文件1有小姐名、國籍、身材與價格格式；目前已切出 ${blocks.length} 筆，但尚未找到可產生文件2的完整資料。`
     return
   }
 
@@ -3713,13 +3713,14 @@ function parseBody(text) {
       }
     }
 
-    const spacedBodyMatch = line.match(/(\d{3})\s+(\d{2})\s+(?:\d{2})?\s*(?:[\u4e00-\u9fa5]{0,8})?(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)?([A-Za-z])\s*(?:奶|杯)?/)
+    const spacedBodyMatch = line.match(/(\d{3})\s+(\d{2})\s+(?:\d{2}\s*)?(?:[\u4e00-\u9fa5]{0,8})?(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)?([A-Za-z])\s*(?:奶|杯)?/)
     if (spacedBodyMatch) {
+      const spacedAgeMatch = line.match(/(?:^|\s)(\d{2})\s*(?:歲|y|Y)\b/)
       return {
         height: spacedBodyMatch[1],
         weight: spacedBodyMatch[2],
         cup: spacedBodyMatch[3].toUpperCase(),
-        age: ''
+        age: spacedAgeMatch ? `${spacedAgeMatch[1]}y` : ''
       }
     }
   }
@@ -3796,18 +3797,25 @@ function parsePrices(text, increase) {
       .replace(/　/g, ' ')
       .trim()
 
-    const oldMatch = normalized.match(/(\d{2,3})\s*分\s*\/\s*([0-9.]+)\s*底/)
+    const oldMatch = normalized.match(/(\d{2,3})\s*(?:分鐘|分)\s*(?:\/|\s|:|-)*\s*([0-9]+(?:\.[0-9]+)?)\s*底/i)
     if (oldMatch) {
       const minutes = Number(oldMatch[1])
       const base = Number(oldMatch[2])
       if (!minutes || !base) return
+
+      // 第 018-75-1 批：
+      // 同時支援「30分/2.5底」與「短鐘 30分 2.5底」。
+      // 「長2S 60分 3.3底」會從同一行抓到 2S；未標節數時維持 1S。
+      const sessionMatch = normalized.match(/(?:長|短)?\s*(\d+)\s*S\b/i)
+        || normalized.match(/\/\s*(\d+)\s*S\b/i)
+      const sessionCount = sessionMatch ? Number(sessionMatch[1]) : 1
 
       // batch018-47：
       // 「20分/1300底」的 1300 是實際金額，不可以再 *1000，
       // 否則會變成 1300.5K/20/1S。
       // 只有「20分/1.3底」「30分/2.5底」這種 K 縮寫才轉成 1300 / 2500。
       const amount = base < 100 ? base * 1000 : base
-      pushPrice(minutes, 1, amount)
+      pushPrice(minutes, sessionCount, amount)
       return
     }
 
