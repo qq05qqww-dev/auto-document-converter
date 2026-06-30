@@ -831,6 +831,14 @@
         </div>
 
         <div class="preview-tools">
+          <button
+            class="primary-btn db-btn preview-database-btn"
+            type="button"
+            @click="submitDocument4ToDatabase({ clearDocuments: false, reloadFrontendLadies: true })"
+          >
+            送出本次文件3到資料庫
+          </button>
+
           <button class="primary-btn frontend-load-btn" type="button" @click="loadFrontendLadies">重新讀取前台資料</button>
 
           <label>
@@ -5547,6 +5555,7 @@ select:focus, input:focus, textarea:focus {
     justify-content: stretch;
   }
 
+  .preview-tools .preview-database-btn,
   .preview-tools .frontend-load-btn,
   .preview-tools label {
     width: 100%;
