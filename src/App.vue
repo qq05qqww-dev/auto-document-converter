@@ -1,5 +1,5 @@
 <template>
-  <!-- batch018-62-force-wide-staff-card-right-tabs -->
+  <!-- batch018-73-rule-save-verify-and-database-feedback -->
   <main v-if="!authReady" class="login-page-shell">
     <section class="login-card">
       <div class="login-brand">正式線上登入</div>
@@ -37,6 +37,19 @@
   </main>
 
   <main v-else class="page-shell">
+
+    <transition name="action-toast">
+      <div
+        v-if="actionToastVisible"
+        class="action-toast"
+        :class="`is-${actionToastType}`"
+        role="status"
+        aria-live="polite"
+      >
+        <strong>{{ actionToastType === 'error' ? '操作失敗' : actionToastType === 'warning' ? '請注意' : '操作成功' }}</strong>
+        <span>{{ actionToastText }}</span>
+      </div>
+    </transition>
 
     <section class="hero-card compact-control-card">
       <div class="top-control-header">
@@ -229,9 +242,28 @@
             <span>有效來源：{{ effectiveRuleSourceLabel }}</span>
           </div>
           <div class="room-rule-buttons">
-            <button class="primary-btn" type="button" @click="saveCurrentScopeRules">儲存目前機房規則</button>
-            <button class="ghost-btn" type="button" @click="loadCurrentScopeRules">讀取目前機房規則</button>
+            <button
+              class="primary-btn"
+              type="button"
+              :disabled="isSavingScopeRules || isLoadingScopeRules"
+              @click="saveCurrentScopeRules"
+            >
+              {{ isSavingScopeRules ? '儲存中...' : '儲存目前機房規則' }}
+            </button>
+            <button
+              class="ghost-btn"
+              type="button"
+              :disabled="isSavingScopeRules || isLoadingScopeRules"
+              @click="loadCurrentScopeRules"
+            >
+              {{ isLoadingScopeRules ? '讀取中...' : '讀取目前機房規則' }}
+            </button>
           </div>
+
+          <p class="room-rule-feedback" :class="`is-${roomRuleStatusType}`">
+            <span></span>
+            {{ roomRuleStatusText }}
+          </p>
         </div>
 
         <div v-if="showScopeCrudPanel" class="option-modal-mask" @click.self="showScopeCrudPanel = false">
@@ -705,7 +737,14 @@
           <h3>資料送出 / 讀取</h3>
           <div class="api-action-buttons">
             <button class="primary-btn" type="button" @click="submitDocument4ToApi">送出到本機JSON</button>
-            <button class="primary-btn db-btn" type="button" @click="submitDocument4ToDatabase">送出到資料庫</button>
+            <button
+              class="primary-btn db-btn"
+              type="button"
+              :disabled="isDatabaseSubmitting"
+              @click="submitDocument4ToDatabase"
+            >
+              {{ isDatabaseSubmitting ? '送出中...' : '送出到資料庫' }}
+            </button>
             <button class="ghost-btn frontend-load-btn" type="button" @click="loadFrontendLadies">讀取前台資料</button>
           </div>
         </section>
@@ -831,12 +870,17 @@
         </div>
 
         <div class="preview-tools">
+          <span class="database-submit-feedback" :class="`is-${databaseSubmitStatusType}`">
+            {{ databaseSubmitStatusText }}
+          </span>
+
           <button
             class="primary-btn db-btn preview-database-btn"
             type="button"
+            :disabled="isDatabaseSubmitting"
             @click="submitDocument4ToDatabase({ clearDocuments: false, reloadFrontendLadies: true })"
           >
-            送出本次文件3到資料庫
+            {{ isDatabaseSubmitting ? '送出中...' : '送出本次文件3到資料庫' }}
           </button>
 
           <button class="primary-btn frontend-load-btn" type="button" @click="loadFrontendLadies">重新讀取前台資料</button>
@@ -1100,7 +1144,7 @@ const RESULT_STORAGE_KEY = 'auto-document-converter-result-current'
 const RULE_SCOPE_STORAGE_KEY = 'auto-document-converter-scope-rules-current'
 const LOCATION_SCOPE_STORAGE_KEY = 'auto-document-converter-location-room-options-current'
 const CLEAN_START_PANEL_STORAGE_KEY = 'auto-document-converter-clean-start-panel-always-clean-home'
-const ONLINE_READY_VERSION_LABEL = '第 018-55 批：正式線上員工機房範圍與規則儲存'
+const ONLINE_READY_VERSION_LABEL = '第 018-73 批：機房規則儲存驗證與資料庫送出提示'
 const PROTECTED_GLOBAL_RULE_NOTICE = '公版規則已固定保護，不會被清除；若遺失會自動補回預設公版。'
 const SOURCE_SLASH_SPACE_NOTICE = '文件1已啟用斜線自動轉空格，貼上後 / 與 ／ 會自動變成空格。'
 const STAFF_PROFILE_STORAGE_KEY = 'auto-document-converter-current-staff-profile'
@@ -1169,6 +1213,40 @@ const mediaViewerLadyName = ref('')
 const mediaViewerLadyCountry = ref('')
 const confirmedText = ref('')
 const statusMessage = ref('等待貼上資料。')
+const isSavingScopeRules = ref(false)
+const isLoadingScopeRules = ref(false)
+const roomRuleStatusText = ref('選到完整機房後會自動讀取既有規則；修改後請按「儲存目前機房規則」。')
+const roomRuleStatusType = ref('info')
+const isDatabaseSubmitting = ref(false)
+const databaseSubmitStatusText = ref('尚未送出本次文件3。')
+const databaseSubmitStatusType = ref('info')
+const actionToastVisible = ref(false)
+const actionToastText = ref('')
+const actionToastType = ref('success')
+let actionToastTimer = 0
+
+function showActionToast(message, type = 'success') {
+  actionToastText.value = String(message || '')
+  actionToastType.value = type
+  actionToastVisible.value = true
+  window.clearTimeout(actionToastTimer)
+  actionToastTimer = window.setTimeout(() => {
+    actionToastVisible.value = false
+  }, 4200)
+}
+
+function setRoomRuleFeedback(message, type = 'info', options = {}) {
+  roomRuleStatusText.value = String(message || '')
+  roomRuleStatusType.value = type
+  if (!options.silent) statusMessage.value = roomRuleStatusText.value
+  if (options.toast) showActionToast(roomRuleStatusText.value, type)
+}
+
+function setDatabaseSubmitFeedback(message, type = 'info', options = {}) {
+  databaseSubmitStatusText.value = String(message || '')
+  databaseSubmitStatusType.value = type
+  if (options.toast) showActionToast(databaseSubmitStatusText.value, type)
+}
 const supabaseConfigured = isSupabaseConfigured
 const SUPABASE_FUNCTIONS_BASE_URL = 'https://cdyuweikhbfgkfrezhxd.supabase.co/functions/v1'
 const SUPABASE_PUBLIC_API_KEY = 'sb_publishable_nc-vY2-GIr_jkEvS3YIUEQ_vw8bImsk'
@@ -2712,23 +2790,39 @@ function safeSetStorageValue(key, value) {
 
 
 async function submitDocument4ToDatabase(options = {}) {
+  if (isDatabaseSubmitting.value) {
+    const message = '資料仍在送出中，請稍候。'
+    setDatabaseSubmitFeedback(message, 'warning', { toast: true })
+    return false
+  }
+
   const shouldClearDocuments = options.clearDocuments !== false
   const shouldReloadFrontendLadies = options.reloadFrontendLadies === true
   saveApiBaseUrl()
 
   const listingLocation = validateCurrentListingLocation()
-  if (!listingLocation) return false
-
-  const payload = parseConfirmedTextToJson(confirmedText.value)
-  if (!payload.items.length) {
-    apiStatusText.value = '文件3目前沒有可送出到資料庫的資料。'
+  if (!listingLocation) {
+    const message = apiStatusText.value || statusMessage.value || '請先選擇縣市、地區與定點／外送。'
+    setDatabaseSubmitFeedback(message, 'error', { toast: true })
     return false
   }
 
+  const payload = parseConfirmedTextToJson(confirmedText.value)
+  if (!payload.items.length) {
+    const message = '文件3目前沒有可送出到資料庫的資料。'
+    apiStatusText.value = message
+    setDatabaseSubmitFeedback(message, 'error', { toast: true })
+    return false
+  }
+
+  isDatabaseSubmitting.value = true
   let databaseSaved = false
+
   try {
+    setDatabaseSubmitFeedback('正在確認後端版本並準備送出資料...', 'pending')
     const backendVersion = await ensureAppendImportBackendReady()
     apiStatusText.value = `後端版本確認：${backendVersion.version || backendVersion.batch || 'append 累加版'}，正在送出資料庫...`
+    setDatabaseSubmitFeedback('後端版本確認完成，正在寫入資料庫...', 'pending')
 
     const response = await fetch(`${apiBaseUrl.value}/api/ladies/import-db`, {
       method: 'POST',
@@ -2744,7 +2838,7 @@ async function submitDocument4ToDatabase(options = {}) {
     }
 
     if (data.mode !== REQUIRED_BACKEND_IMPORT_MODE) {
-      throw new Error('送出成功但回傳不是累加版後端，請確認 Render 是否仍在舊版本。')
+      throw new Error('送出成功但回傳不是累加版後端，請確認正式後端是否仍在舊版本。')
     }
 
     if (Number(data.afterCount || 0) < Number(data.beforeCount || 0)) {
@@ -2753,30 +2847,48 @@ async function submitDocument4ToDatabase(options = {}) {
 
     databaseSaved = true
     apiStatusText.value = `${data.message || '資料庫儲存成功'} 正在自動同步中央網站...`
+    setDatabaseSubmitFeedback('資料庫儲存成功，正在同步中央網站...', 'pending')
+
     if (shouldReloadFrontendLadies) {
       await loadFrontendLadies()
     }
+
     const centralSync = await syncSavedLadiesToCentralWebsite()
+    const savedCount = data.count ?? payload.items.length
+    const successMessage = `儲存成功：本次 ${savedCount} 筆已寫入資料庫並同步中央網站。`
 
     if (shouldClearDocuments) {
       clearDocumentsAfterDatabaseSubmit()
-      apiStatusText.value = `${data.message || `已送出 ${data.count ?? payload.items.length} 筆到 Supabase PostgreSQL。`} ${centralSync.message || '中央網站同步完成。'} 已清空文件1 / 文件2 / 文件3 / 文件4，本次預覽已歸零，可以開始建立下一批。`
+      apiStatusText.value = `${data.message || `已送出 ${savedCount} 筆到 Supabase PostgreSQL。`} ${centralSync.message || '中央網站同步完成。'} 已清空文件1 / 文件2 / 文件3 / 文件4，本次預覽已歸零，可以開始建立下一批。`
     } else {
-      apiStatusText.value = `${data.message || `已送出 ${data.count ?? payload.items.length} 筆到 Supabase PostgreSQL。`} ${centralSync.message || '中央網站同步完成。'} 本次文件資料已保留，可直接選擇本次小姐上傳媒體。`
+      apiStatusText.value = `${data.message || `已送出 ${savedCount} 筆到 Supabase PostgreSQL。`} ${centralSync.message || '中央網站同步完成。'} 本次文件資料已保留，可直接選擇本次小姐上傳媒體。`
       mediaUploadStatusText.value = '文件3已自動送出資料庫；下拉選單只顯示本次新增小姐，可以開始上傳媒體。'
     }
+
+    setDatabaseSubmitFeedback(successMessage, 'success', { toast: true })
     return true
   } catch (error) {
-    apiStatusText.value = databaseSaved
-      ? `資料已存入 converter 資料庫，但同步中央網站失敗：${error.message || error}。請確認網站 Worker 已部署後再重試送出。`
+    const message = databaseSaved
+      ? `資料已寫入 converter 資料庫，但同步中央網站失敗：${error.message || error}`
       : `送出資料庫失敗：${error.message || error}`
+
+    apiStatusText.value = databaseSaved
+      ? `${message}。請確認網站 Worker 已部署後再重試送出。`
+      : message
+
+    setDatabaseSubmitFeedback(message, databaseSaved ? 'warning' : 'error', { toast: true })
+
     if (databaseSaved && !shouldClearDocuments) {
       mediaUploadStatusText.value = '文件3已存入資料庫；下拉選單只顯示本次新增小姐。中央網站同步失敗時，可稍後再重試同步。'
       return true
     }
+
     return false
+  } finally {
+    isDatabaseSubmitting.value = false
   }
 }
+
 
 async function submitDocument4ToApi() {
   saveApiBaseUrl()
@@ -4460,8 +4572,18 @@ watch(managerSelectedType, value => {
   syncRuleScopeLevelFromSelection()
 })
 
-watch(ruleScopeRoom, () => {
+watch(ruleScopeRoom, async value => {
   syncRuleScopeLevelFromSelection()
+
+  if (
+    cleanScopeText(value) &&
+    ruleScopeLevel.value === 'room' &&
+    cleanScopeText(ruleScopeCity.value) &&
+    cleanScopeText(ruleScopeDistrict.value) &&
+    cleanScopeText(ruleScopeType.value)
+  ) {
+    await loadCurrentScopeRules({ silent: true, auto: true })
+  }
 })
 
 watch(roomManagerSelectedCity, () => {
@@ -4597,7 +4719,8 @@ function validateCurrentRuleScope() {
   if (ruleScopeLevel.value === 'type' && cleanScopeText(ruleScopeCity.value) && cleanScopeText(ruleScopeDistrict.value) && cleanScopeText(ruleScopeType.value)) return true
   if (ruleScopeLevel.value === 'room' && cleanScopeText(ruleScopeCity.value) && cleanScopeText(ruleScopeDistrict.value) && cleanScopeText(ruleScopeType.value) && cleanScopeText(ruleScopeRoom.value)) return true
 
-  statusMessage.value = '請先把目前範圍的縣市 / 地區 / 定點外送 / 機房填完整。'
+  const message = '請先把目前範圍的縣市 / 地區 / 定點外送 / 機房填完整。'
+  setRoomRuleFeedback(message, 'warning', { toast: true })
   return false
 }
 
@@ -4664,60 +4787,131 @@ const currentRuleScopeLabel = computed(() => {
 
 const effectiveRuleSourceLabel = computed(() => getEffectiveScopedRuleData().label)
 
-async function saveCurrentScopeRules() {
-  if (!validateCurrentRuleScope()) return false
-  const { key } = getScopeBucketAndKey()
-  if (!key) {
-    statusMessage.value = '請先把目前範圍填完整再儲存。'
-    return false
-  }
+function areRuleDataEquivalent(savedRule, currentRule) {
+  if (!savedRule || !currentRule) return false
 
-  const data = collectRuleData()
-  const store = setRuleDataToScope(readScopeRuleStore(), ruleScopeLevel.value, key, data)
-  writeScopeRuleStore(store)
+  return Object.keys(currentRule).every(key => {
+    return JSON.stringify(savedRule[key] ?? null) === JSON.stringify(currentRule[key] ?? null)
+  })
+}
 
-  if (ruleScopeLevel.value === 'global') {
-    localStorage.setItem(getStaffScopedStorageKey(RULE_STORAGE_KEY), JSON.stringify(data))
-    statusMessage.value = '已儲存本機公版規則；線上員工規則請選到機房後儲存。'
-    return true
-  }
-
-  repairProtectedGlobalRules()
-
+async function saveOnlineRuleForCurrentRoom(data) {
   const city = cleanScopeText(ruleScopeCity.value)
   const district = cleanScopeText(ruleScopeDistrict.value)
   const type = cleanScopeText(ruleScopeType.value)
   const room = cleanScopeText(ruleScopeRoom.value)
 
-  if (ruleScopeLevel !== 'room' && ruleScopeLevel.value !== 'room') {
-    statusMessage.value = `已儲存「${currentRuleScopeLabel.value}」本機專屬規則。線上同步以完整機房為主。`
-    return true
-  }
-
-  if (!isOnlineWorkspaceReady()) {
-    statusMessage.value = `已儲存「${currentRuleScopeLabel.value}」本機規則；尚未登入線上帳號，無法同步。`
-    return true
-  }
-
-  const { error } = await supabase
+  const baseQuery = supabase
     .from('employee_rules')
-    .upsert({
-      user_id: authUser.value.id,
-      city,
-      district,
-      mode: type,
-      room,
-      rules: data
-    }, { onConflict: 'user_id,city,district,mode,room' })
+    .select('user_id')
+    .eq('user_id', authUser.value.id)
+    .eq('city', city)
+    .eq('district', district)
+    .eq('mode', type)
+    .eq('room', room)
+    .limit(1)
 
-  if (error) {
-    statusMessage.value = `本機已儲存，但線上儲存機房規則失敗：${error.message}`
+  const { data: existingRows, error: readError } = await baseQuery
+  if (readError) throw readError
+
+  let saveError = null
+
+  if (Array.isArray(existingRows) && existingRows.length > 0) {
+    const result = await supabase
+      .from('employee_rules')
+      .update({ rules: data })
+      .eq('user_id', authUser.value.id)
+      .eq('city', city)
+      .eq('district', district)
+      .eq('mode', type)
+      .eq('room', room)
+
+    saveError = result.error
+  } else {
+    const result = await supabase
+      .from('employee_rules')
+      .insert({
+        user_id: authUser.value.id,
+        city,
+        district,
+        mode: type,
+        room,
+        rules: data
+      })
+
+    saveError = result.error
+  }
+
+  if (saveError) throw saveError
+
+  const verifiedRule = await getOnlineRuleForCurrentRoom()
+  if (!verifiedRule || typeof verifiedRule !== 'object') {
+    throw new Error('資料送出後未能重新讀回，請確認 employee_rules 權限與資料表設定。')
+  }
+
+  if (!areRuleDataEquivalent(verifiedRule, data)) {
+    throw new Error('線上重新讀回的規則與本次修改不同，已停止顯示成功；請檢查 employee_rules 更新權限。')
+  }
+
+  return verifiedRule
+}
+
+async function saveCurrentScopeRules() {
+  if (isSavingScopeRules.value) return false
+  if (!validateCurrentRuleScope()) return false
+
+  const { key } = getScopeBucketAndKey()
+  if (!key) {
+    const message = '請先把目前範圍填完整再儲存。'
+    setRoomRuleFeedback(message, 'warning', { toast: true })
     return false
   }
 
-  statusMessage.value = `已線上儲存「${currentRuleScopeLabel.value}」規則，換電腦登入也會讀得到。`
-  return true
+  isSavingScopeRules.value = true
+  setRoomRuleFeedback(`正在儲存「${currentRuleScopeLabel.value}」規則...`, 'pending', { silent: true })
+
+  try {
+    const data = collectRuleData()
+    const store = setRuleDataToScope(readScopeRuleStore(), ruleScopeLevel.value, key, data)
+    writeScopeRuleStore(store)
+
+    if (ruleScopeLevel.value === 'global') {
+      localStorage.setItem(getStaffScopedStorageKey(RULE_STORAGE_KEY), JSON.stringify(data))
+      const message = '已儲存本機公版規則；線上員工規則請選到完整機房後儲存。'
+      setRoomRuleFeedback(message, 'success', { toast: true })
+      return true
+    }
+
+    repairProtectedGlobalRules()
+
+    if (ruleScopeLevel.value !== 'room') {
+      const message = `已儲存「${currentRuleScopeLabel.value}」本機專屬規則。線上同步以完整機房為主。`
+      setRoomRuleFeedback(message, 'success', { toast: true })
+      return true
+    }
+
+    if (!isOnlineWorkspaceReady()) {
+      const message = `已儲存「${currentRuleScopeLabel.value}」本機規則；尚未登入線上帳號，無法同步。`
+      setRoomRuleFeedback(message, 'warning', { toast: true })
+      return true
+    }
+
+    const verifiedRule = await saveOnlineRuleForCurrentRoom(data)
+    const verifiedStore = setRuleDataToScope(readScopeRuleStore(), 'room', key, verifiedRule)
+    writeScopeRuleStore(verifiedStore)
+
+    const message = `已確認線上儲存「${currentRuleScopeLabel.value}」規則；重新登入或換電腦後也會讀得到。`
+    setRoomRuleFeedback(message, 'success', { toast: true })
+    return true
+  } catch (error) {
+    const message = `本機已保留，但線上儲存機房規則失敗：${error.message || error}`
+    setRoomRuleFeedback(message, 'error', { toast: true })
+    return false
+  } finally {
+    isSavingScopeRules.value = false
+  }
 }
+
 
 async function getOnlineRuleForCurrentRoom() {
   if (!isOnlineWorkspaceReady()) return null
@@ -4737,42 +4931,77 @@ async function getOnlineRuleForCurrentRoom() {
     .eq('district', district)
     .eq('mode', type)
     .eq('room', room)
-    .maybeSingle()
+    .limit(1)
 
   if (error) throw error
-  return data?.rules || null
+  return Array.isArray(data) && data.length > 0 ? data[0]?.rules || null : null
 }
 
 async function loadCurrentScopeRules(options = {}) {
+  if (isLoadingScopeRules.value) return false
   if (!validateCurrentRuleScope()) return false
 
-  if (ruleScopeLevel.value === 'room' && isOnlineWorkspaceReady()) {
-    try {
+  const isAutoLoad = options.auto === true
+  isLoadingScopeRules.value = true
+
+  if (!isAutoLoad) {
+    setRoomRuleFeedback(`正在讀取「${currentRuleScopeLabel.value}」規則...`, 'pending', { silent: true })
+  }
+
+  try {
+    if (ruleScopeLevel.value === 'room' && isOnlineWorkspaceReady()) {
       const onlineRule = await getOnlineRuleForCurrentRoom()
       if (onlineRule && typeof onlineRule === 'object') {
-        applyRuleData(onlineRule)
+        applyRuleData(onlineRule, { keepPanelsOpen: true })
         const { key } = getScopeBucketAndKey()
         const store = setRuleDataToScope(readScopeRuleStore(), 'room', key, onlineRule)
         writeScopeRuleStore(store)
-        if (!options.silent) statusMessage.value = `已從線上讀取：${currentRuleScopeLabel.value}`
+
+        const message = isAutoLoad
+          ? `已自動讀取線上機房規則：${currentRuleScopeLabel.value}`
+          : `已從線上讀取：${currentRuleScopeLabel.value}`
+
+        setRoomRuleFeedback(message, 'success', {
+          silent: options.silent,
+          toast: !options.silent && !isAutoLoad
+        })
         return true
       }
-    } catch (error) {
-      if (!options.silent) statusMessage.value = `線上讀取機房規則失敗：${error.message || error}`
+    }
+
+    const resolved = getEffectiveScopedRuleData()
+    if (!resolved.data) {
+      const message = '目前範圍沒有專屬規則，也沒有公版規則；已保留畫面目前設定。'
+      setRoomRuleFeedback(message, 'warning', {
+        silent: options.silent,
+        toast: !options.silent && !isAutoLoad
+      })
       return false
     }
-  }
 
-  const resolved = getEffectiveScopedRuleData()
-  if (!resolved.data) {
-    if (!options.silent) statusMessage.value = '目前範圍沒有專屬規則，也沒有公版規則；已保留畫面目前設定。'
+    applyRuleData(resolved.data, { keepPanelsOpen: true })
+
+    const message = isAutoLoad
+      ? `此機房尚無線上專屬規則，已自動套用：${resolved.label}`
+      : `已套用：${resolved.label}`
+
+    setRoomRuleFeedback(message, 'success', {
+      silent: options.silent,
+      toast: !options.silent && !isAutoLoad
+    })
+    return true
+  } catch (error) {
+    const message = `線上讀取機房規則失敗：${error.message || error}`
+    setRoomRuleFeedback(message, 'error', {
+      silent: options.silent,
+      toast: !options.silent && !isAutoLoad
+    })
     return false
+  } finally {
+    isLoadingScopeRules.value = false
   }
-
-  applyRuleData(resolved.data)
-  if (!options.silent) statusMessage.value = `已套用：${resolved.label}`
-  return true
 }
+
 
 function copyGlobalRulesToCurrentScope() {
   if (ruleScopeLevel.value === 'global') {
@@ -4826,7 +5055,7 @@ function collectRuleData() {
   }
 }
 
-function applyRuleData(data) {
+function applyRuleData(data, options = {}) {
   priceMode.value = data.priceMode ?? 'country'
   globalIncrease.value = Number(data.globalIncrease ?? 500)
   customIncrease.value = Number(data.customIncrease ?? 700)
@@ -4844,18 +5073,20 @@ function applyRuleData(data) {
   countryFieldRulesText.value = data.countryFieldRulesText ?? countryFieldRulesText.value
   bodyCupPrefixText.value = data.bodyCupPrefixText ?? bodyCupPrefixText.value
   notNameWordsText.value = data.notNameWordsText ?? notNameWordsText.value
-  // 第 018-42 批：不要從舊規則備份恢復已展開的進階設定。
-  // 規則內容照常讀取，但首頁永遠保持乾淨，只顯示文件1/2/3/4。
-  activeTopPanel.value = ''
-  showAdvancedSettings.value = false
-  showPriceSettings.value = false
-  showFormatSettings.value = false
-  showQuickRules.value = false
-  showApiPanel.value = false
-  showScopeManager.value = false
-  showScopeCrudPanel.value = false
-  showAliasList.value = false
-  showRemoveWordList.value = false
+  // 第 018-42 批：從舊規則備份恢復時維持乾淨首頁。
+  // 第 018-73 批：機房規則讀取時保留目前面板，避免一讀取就把設定畫面關掉。
+  if (!options.keepPanelsOpen) {
+    activeTopPanel.value = ''
+    showAdvancedSettings.value = false
+    showPriceSettings.value = false
+    showFormatSettings.value = false
+    showQuickRules.value = false
+    showApiPanel.value = false
+    showScopeManager.value = false
+    showScopeCrudPanel.value = false
+    showAliasList.value = false
+    showRemoveWordList.value = false
+  }
 }
 
 function addAliasRule() {
@@ -5555,10 +5786,12 @@ select:focus, input:focus, textarea:focus {
     justify-content: stretch;
   }
 
+  .preview-tools .database-submit-feedback,
   .preview-tools .preview-database-btn,
   .preview-tools .frontend-load-btn,
   .preview-tools label {
     width: 100%;
+    max-width: none;
   }
 
   .preview-header {
@@ -5788,6 +6021,46 @@ select:focus, input:focus, textarea:focus {
   align-items: end;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.database-submit-feedback {
+  min-width: 250px;
+  max-width: 430px;
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  padding: 10px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(59, 130, 246, 0.22);
+  background: #eff6ff;
+  color: #1e40af;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.45;
+}
+
+.database-submit-feedback.is-pending {
+  background: #fff7ed;
+  border-color: #fdba74;
+  color: #9a3412;
+}
+
+.database-submit-feedback.is-success {
+  background: #ecfdf5;
+  border-color: #86efac;
+  color: #166534;
+}
+
+.database-submit-feedback.is-warning {
+  background: #fffbeb;
+  border-color: #fcd34d;
+  color: #92400e;
+}
+
+.database-submit-feedback.is-error {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #b91c1c;
 }
 
 .frontend-load-btn {
@@ -7821,6 +8094,55 @@ select:focus, input:focus, textarea:focus {
   gap: 8px;
 }
 
+.room-rule-feedback {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 10px 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border-radius: 13px;
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  background: #eff6ff;
+  color: #1e40af;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.45;
+}
+
+.room-rule-feedback > span {
+  width: 9px;
+  height: 9px;
+  margin-top: 5px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.room-rule-feedback.is-pending {
+  background: #fff7ed;
+  border-color: #fdba74;
+  color: #9a3412;
+}
+
+.room-rule-feedback.is-success {
+  background: #ecfdf5;
+  border-color: #86efac;
+  color: #166534;
+}
+
+.room-rule-feedback.is-warning {
+  background: #fffbeb;
+  border-color: #fcd34d;
+  color: #92400e;
+}
+
+.room-rule-feedback.is-error {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #b91c1c;
+}
+
 @media (max-width: 980px) {
   .room-rule-action-row {
     grid-template-columns: 1fr;
@@ -7838,6 +8160,61 @@ select:focus, input:focus, textarea:focus {
   }
 }
 
+
+.action-toast {
+  position: fixed;
+  top: 22px;
+  right: 22px;
+  z-index: 5000;
+  width: min(430px, calc(100vw - 32px));
+  display: grid;
+  gap: 4px;
+  padding: 15px 18px;
+  border-radius: 16px;
+  border: 1px solid #86efac;
+  background: rgba(236, 253, 245, 0.98);
+  color: #166534;
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.2);
+  backdrop-filter: blur(12px);
+}
+
+.action-toast strong {
+  font-size: 15px;
+}
+
+.action-toast span {
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.5;
+}
+
+.action-toast.is-warning {
+  border-color: #fcd34d;
+  background: rgba(255, 251, 235, 0.98);
+  color: #92400e;
+}
+
+.action-toast.is-error {
+  border-color: #fca5a5;
+  background: rgba(254, 242, 242, 0.98);
+  color: #b91c1c;
+}
+
+.action-toast-enter-active,
+.action-toast-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.action-toast-enter-from,
+.action-toast-leave-to {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
 
 .scope-manager-selection-shell {
   display: grid;
