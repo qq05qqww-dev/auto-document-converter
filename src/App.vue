@@ -880,7 +880,7 @@
             :disabled="isDatabaseSubmitting"
             @click="submitDocument4ToDatabase({ clearDocuments: false, reloadFrontendLadies: true })"
           >
-            {{ isDatabaseSubmitting ? '送出中...' : '送出本次文件3到資料庫' }}
+            {{ databaseSubmitButtonText }}
           </button>
 
           <button class="primary-btn frontend-load-btn" type="button" @click="loadFrontendLadies">重新讀取前台資料</button>
@@ -1032,6 +1032,12 @@
               <div class="lady-card-title compact-right-title">
                 <strong>【{{ lady.country }} {{ lady.name }}】</strong>
                 <span v-if="lady.age">{{ lady.age }}y</span>
+              </div>
+
+              <div class="lady-sync-status-row" :title="lady.syncStateMessage">
+                <span class="lady-sync-status-badge" :class="`is-${lady.syncState}`">
+                  {{ lady.syncStateLabel }}
+                </span>
               </div>
 
               <div class="lady-body-line compact-right-body-line">
@@ -1201,6 +1207,7 @@ const apiBaseUrl = ref(DEFAULT_ONLINE_API_BASE_URL)
 const apiStatusText = ref('尚未測試 API。')
 const frontendLadies = ref([])
 const frontendStatusText = ref('尚未讀取前台資料。')
+const frontendLadiesLoaded = ref(false)
 const countryFilter = ref('全部')
 const mediaUploadLadyId = ref('')
 const mediaUploadType = ref('image')
@@ -2268,6 +2275,7 @@ onMounted(async () => {
   loadRules({ silent: true })
   loadConfirmedText({ silent: true })
   normalizeDocument3Text()
+  await loadFrontendLadies({ silent: true })
   closeAllTopPanelsForCleanStart()
 })
 
@@ -2293,9 +2301,156 @@ function isNumericCleanupWord(word) {
 
 
 
+function normalizeLadySyncText(value) {
+  return String(value ?? '')
+    .normalize('NFKC')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase()
+}
+
+function normalizeLadySyncCompactText(value) {
+  return normalizeLadySyncText(value)
+    .replace(/[\s　]+/g, '')
+    .replace(/[|｜/\\:_：,，。．、\-–—()（）【】\[\]]/g, '')
+}
+
 function makePreviewLadyKey(lady) {
   const country = lady?.country || lady?.nationality || lady?.nation || ''
-  return `${String(country).trim()}__${String(lady?.name || '').trim()}`.toLowerCase()
+  return `${normalizeLadySyncCompactText(country)}__${normalizeLadySyncCompactText(lady?.name || '')}`
+}
+
+function getLadySyncLocation(lady) {
+  const locationInfo = lady?.locationInfo || lady?.location_info || {}
+  return {
+    city: lady?.city || lady?.county || lady?.locationCity || lady?.location_city || locationInfo?.city || '',
+    district: lady?.district || lady?.area || lady?.region || lady?.locationDistrict || lady?.location_district || locationInfo?.district || '',
+    mode: lady?.mode || lady?.environment || lady?.serviceType || lady?.service_type || locationInfo?.mode || '',
+    room: lady?.sourceRoom || lady?.source_room || lady?.room || locationInfo?.room || ''
+  }
+}
+
+function normalizeLadySyncList(value, candidateKeys = []) {
+  const rows = Array.isArray(value) ? value : []
+  return rows
+    .map(item => {
+      if (item && typeof item === 'object') {
+        for (const key of candidateKeys) {
+          const candidate = normalizeLadySyncText(item?.[key])
+          if (candidate) return candidate
+        }
+      }
+      return normalizeLadySyncText(item)
+    })
+    .filter(Boolean)
+    .sort()
+}
+
+function buildLadySyncComparable(lady) {
+  const body = lady?.body || {}
+  const location = getLadySyncLocation(lady)
+  return {
+    country: normalizeLadySyncCompactText(lady?.country || lady?.nationality || lady?.nation || ''),
+    name: normalizeLadySyncCompactText(lady?.name || ''),
+    city: normalizeLadySyncCompactText(location.city),
+    district: normalizeLadySyncCompactText(location.district),
+    mode: normalizeLadySyncCompactText(location.mode),
+    height: normalizeLadySyncText(lady?.height ?? body?.height ?? ''),
+    weight: normalizeLadySyncText(lady?.weight ?? body?.weight ?? ''),
+    cup: normalizeLadySyncCompactText(lady?.cup ?? body?.cup ?? ''),
+    age: normalizeLadySyncText(lady?.age ?? body?.age ?? ''),
+    pricePlans: normalizeLadySyncList(lady?.pricePlans || lady?.plans || lady?.prices, ['priceText', 'price_text', 'displayText', 'display_text']),
+    services: normalizeLadySyncList(lady?.services || lady?.serviceList, ['serviceName', 'service_name', 'name'])
+  }
+}
+
+function makeStableLadySourceIdentity(lady) {
+  const location = getLadySyncLocation(lady)
+  const country = normalizeLadySyncCompactText(lady?.country || lady?.nationality || lady?.nation || '') || 'unknown-country'
+  const name = normalizeLadySyncCompactText(lady?.name || '') || 'unknown-name'
+  const room = normalizeLadySyncCompactText(location.room || ruleScopeRoom.value)
+  const fallbackScope = [
+    normalizeLadySyncCompactText(location.city),
+    normalizeLadySyncCompactText(location.district),
+    normalizeLadySyncCompactText(location.mode)
+  ].filter(Boolean).join('-') || 'unknown-scope'
+  const scope = room ? `room-${room}` : `scope-${fallbackScope}`
+  return `converter-${country}-${name}-${scope}`.slice(0, 220)
+}
+
+function assessLadyDatabaseSync(lady) {
+  if (!frontendLadiesLoaded.value) {
+    return {
+      state: 'checking',
+      label: '尚未比對',
+      message: '正在讀取資料庫，確認是否已同步。',
+      match: null,
+      matches: []
+    }
+  }
+
+  const key = makePreviewLadyKey(lady)
+  const matches = frontendLadies.value.filter(item => makePreviewLadyKey(item) === key)
+
+  if (!matches.length) {
+    return {
+      state: 'new',
+      label: '可新增',
+      message: '資料庫尚無同國籍、同姓名小姐，可安全新增。',
+      match: null,
+      matches
+    }
+  }
+
+  if (matches.length > 1) {
+    return {
+      state: 'suspected',
+      label: `疑似重複 ${matches.length} 筆`,
+      message: '資料庫已有多筆同國籍、同姓名資料，已禁止自動送出，避免誤新增或誤更新。',
+      match: null,
+      matches
+    }
+  }
+
+  const match = matches[0]
+  const sameContent = JSON.stringify(buildLadySyncComparable(lady)) === JSON.stringify(buildLadySyncComparable(match))
+
+  if (sameContent) {
+    return {
+      state: 'synced',
+      label: '已同步',
+      message: '資料庫已有完全相同資料，本次會略過，不會重複新增。',
+      match,
+      matches
+    }
+  }
+
+  return {
+    state: 'update',
+    label: '可更新',
+    message: '資料庫已有同一位小姐，但內容有變更；本次會更新原資料，不會建立第二筆。',
+    match,
+    matches
+  }
+}
+
+function buildDatabaseSubmissionPlan(payload) {
+  const rows = (Array.isArray(payload?.items) ? payload.items : []).map(item => ({
+    item,
+    assessment: assessLadyDatabaseSync(item)
+  }))
+
+  return {
+    rows,
+    newCount: rows.filter(row => row.assessment.state === 'new').length,
+    updateCount: rows.filter(row => row.assessment.state === 'update').length,
+    syncedCount: rows.filter(row => row.assessment.state === 'synced').length,
+    suspectedCount: rows.filter(row => row.assessment.state === 'suspected').length,
+    checkingCount: rows.filter(row => row.assessment.state === 'checking').length,
+    itemsToSubmit: rows
+      .filter(row => ['new', 'update'].includes(row.assessment.state))
+      .map(row => row.item)
+  }
 }
 
 const currentDocumentPreviewLadies = computed(() => {
@@ -2307,8 +2462,8 @@ const currentDocumentPreviewLadies = computed(() => {
     const items = Array.isArray(parsed?.items) ? parsed.items : []
     return items.map((item, index) => {
       const body = item.body || {}
-      const key = makePreviewLadyKey(item)
-      const dbLady = frontendLadies.value.find(lady => makePreviewLadyKey(lady) === key)
+      const assessment = assessLadyDatabaseSync(item)
+      const dbLady = assessment.match
 
       return {
         id: dbLady?.id || `current-document-${index + 1}`,
@@ -2319,8 +2474,13 @@ const currentDocumentPreviewLadies = computed(() => {
         district: item.district || '',
         mode: item.mode || '',
         room: item.room || '',
+        sourceRoom: item.sourceRoom || '',
+        sourceIdentity: item.sourceIdentity || makeStableLadySourceIdentity(item),
         location: item.location || '',
         locationInfo: item.locationInfo || {},
+        syncState: assessment.state,
+        syncStateLabel: assessment.label,
+        syncStateMessage: assessment.message,
         height: body.height ?? '',
         weight: body.weight ?? '',
         cup: body.cup || '',
@@ -2351,6 +2511,42 @@ const previewLadies = computed(() => currentDocumentPreviewLadies.value)
 const mediaUploadLadyOptions = computed(() => {
   return currentDocumentPreviewLadies.value
 })
+
+const currentDocumentSyncSummary = computed(() => {
+  const ladies = currentDocumentPreviewLadies.value
+  return {
+    total: ladies.length,
+    newCount: ladies.filter(lady => lady.syncState === 'new').length,
+    updateCount: ladies.filter(lady => lady.syncState === 'update').length,
+    syncedCount: ladies.filter(lady => lady.syncState === 'synced').length,
+    suspectedCount: ladies.filter(lady => lady.syncState === 'suspected').length,
+    checkingCount: ladies.filter(lady => lady.syncState === 'checking').length
+  }
+})
+
+const databaseSubmitButtonText = computed(() => {
+  if (isDatabaseSubmitting.value) return '送出中...'
+
+  const summary = currentDocumentSyncSummary.value
+  if (!summary.total) return '送出本次文件3到資料庫'
+  if (summary.checkingCount) return '先讀取資料庫比對'
+  if (summary.suspectedCount) return '發現疑似重複，已暫停'
+  if (!summary.newCount && !summary.updateCount) return '確認已同步（不重複新增）'
+  return `送出：新增 ${summary.newCount}／更新 ${summary.updateCount}`
+})
+
+const databaseSyncSummaryText = computed(() => {
+  const summary = currentDocumentSyncSummary.value
+  if (!summary.total) return '尚未產生本次文件3。'
+  if (summary.checkingCount) return `正在比對本次 ${summary.total} 筆小姐...`
+  return `本次比對：新增 ${summary.newCount}、更新 ${summary.updateCount}、已同步 ${summary.syncedCount}、疑似重複 ${summary.suspectedCount}。`
+})
+
+watch(databaseSyncSummaryText, message => {
+  if (!isDatabaseSubmitting.value && ['info', 'success'].includes(databaseSubmitStatusType.value)) {
+    setDatabaseSubmitFeedback(message, 'info')
+  }
+}, { immediate: true })
 
 const previewStatusText = computed(() => {
   if (currentDocumentPreviewLadies.value.length) {
@@ -2625,7 +2821,7 @@ async function uploadLadyMedia() {
   }
 }
 
-async function loadFrontendLadies() {
+async function loadFrontendLadies(options = {}) {
   saveApiBaseUrl()
 
   try {
@@ -2637,9 +2833,16 @@ async function loadFrontendLadies() {
     }
 
     frontendLadies.value = Array.isArray(data.items) ? data.items : []
+    frontendLadiesLoaded.value = true
     frontendStatusText.value = `已讀取 ${frontendLadies.value.length} 筆前台資料。`
+    return true
   } catch (error) {
+    frontendLadiesLoaded.value = false
     frontendStatusText.value = `讀取前台資料失敗：${error.message || error}`
+    if (!options.silent) {
+      showActionToast('無法讀取資料庫清單，為避免重複已停止自動送出。', 'error')
+    }
+    return false
   }
 }
 
@@ -2745,8 +2948,17 @@ async function syncSavedLadiesToCentralWebsite() {
     const mode = currentPreview.mode || item.mode || currentLocation.mode
     const room = ''
 
+    const sourceIdentity = currentPreview.sourceIdentity || makeStableLadySourceIdentity({
+      ...item,
+      ...currentPreview,
+      sourceRoom: currentPreview.sourceRoom || ruleScopeRoom.value
+    })
+
     return {
       ...item,
+      sourceId: sourceIdentity,
+      sourceIdentity,
+      sourceRoom: currentPreview.sourceRoom || ruleScopeRoom.value || '',
       city,
       district,
       mode,
@@ -2819,17 +3031,56 @@ async function submitDocument4ToDatabase(options = {}) {
   let databaseSaved = false
 
   try {
-    setDatabaseSubmitFeedback('正在確認後端版本並準備送出資料...', 'pending')
+    setDatabaseSubmitFeedback('正在讀取資料庫並檢查重複小姐...', 'pending')
+    const databaseListReady = await loadFrontendLadies({ silent: true })
+    if (!databaseListReady) {
+      throw new Error('無法讀取目前資料庫清單；為避免重複新增，已停止本次送出。')
+    }
+
+    const plan = buildDatabaseSubmissionPlan(payload)
+
+    if (plan.checkingCount) {
+      throw new Error('資料庫比對尚未完成；為避免重複新增，已停止本次送出。')
+    }
+
+    if (plan.suspectedCount) {
+      const message = `發現 ${plan.suspectedCount} 筆疑似重複小姐：資料庫已有多筆同國籍、同姓名資料。已禁止自動送出，請先到網站後台確認或整理重複資料。`
+      apiStatusText.value = message
+      setDatabaseSubmitFeedback(message, 'warning', { toast: true })
+      return false
+    }
+
+    if (!plan.itemsToSubmit.length) {
+      databaseSaved = true
+      setDatabaseSubmitFeedback(`本次 ${plan.syncedCount} 筆皆已同步，已略過資料庫寫入；正在確認中央網站同步...`, 'pending')
+      const centralSync = await syncSavedLadiesToCentralWebsite()
+      const duplicatePreventedCount = Number(centralSync?.data?.duplicatePreventedCount || 0)
+      const message = `確認完成：本次 ${plan.syncedCount} 筆皆已存在，未重複新增；中央網站已同步${duplicatePreventedCount ? `，並攔截 ${duplicatePreventedCount} 筆可能重複資料` : ''}。`
+      apiStatusText.value = message
+      setDatabaseSubmitFeedback(message, 'success', { toast: true })
+      return true
+    }
+
+    setDatabaseSubmitFeedback(
+      `比對完成：新增 ${plan.newCount}、更新 ${plan.updateCount}、已同步略過 ${plan.syncedCount}。正在確認後端版本...`,
+      'pending'
+    )
     const backendVersion = await ensureAppendImportBackendReady()
     apiStatusText.value = `後端版本確認：${backendVersion.version || backendVersion.batch || 'append 累加版'}，正在送出資料庫...`
     setDatabaseSubmitFeedback('後端版本確認完成，正在寫入資料庫...', 'pending')
+
+    const submissionPayload = {
+      ...payload,
+      total: plan.itemsToSubmit.length,
+      items: plan.itemsToSubmit
+    }
 
     const response = await fetch(`${apiBaseUrl.value}/api/ladies/import-db`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(submissionPayload)
     })
 
     const data = await response.json().catch(() => ({}))
@@ -2850,26 +3101,32 @@ async function submitDocument4ToDatabase(options = {}) {
     setDatabaseSubmitFeedback('資料庫儲存成功，正在同步中央網站...', 'pending')
 
     if (shouldReloadFrontendLadies) {
-      await loadFrontendLadies()
+      await loadFrontendLadies({ silent: true })
     }
 
     const centralSync = await syncSavedLadiesToCentralWebsite()
-    const savedCount = data.count ?? payload.items.length
-    const successMessage = `儲存成功：本次 ${savedCount} 筆已寫入資料庫並同步中央網站。`
+    const duplicatePreventedCount = Number(centralSync?.data?.duplicatePreventedCount || 0)
+    const suspectedDuplicateCount = Number(centralSync?.data?.suspectedDuplicateCount || 0)
+    const successMessage = [
+      `同步完成：新增 ${plan.newCount}、更新 ${plan.updateCount}、已同步略過 ${plan.syncedCount}`,
+      duplicatePreventedCount ? `中央網站另攔截 ${duplicatePreventedCount} 筆可能重複資料` : '',
+      suspectedDuplicateCount ? `另有 ${suspectedDuplicateCount} 筆疑似同名資料已停止處理` : '',
+      '未建立重複小姐'
+    ].filter(Boolean).join('；') + '。'
 
     if (shouldClearDocuments) {
       clearDocumentsAfterDatabaseSubmit()
-      apiStatusText.value = `${data.message || `已送出 ${savedCount} 筆到 Supabase PostgreSQL。`} ${centralSync.message || '中央網站同步完成。'} 已清空文件1 / 文件2 / 文件3 / 文件4，本次預覽已歸零，可以開始建立下一批。`
+      apiStatusText.value = `${data.message || `已送出 ${plan.itemsToSubmit.length} 筆到 Supabase PostgreSQL。`} ${centralSync.message || '中央網站同步完成。'} 已清空文件1 / 文件2 / 文件3 / 文件4，本次預覽已歸零，可以開始建立下一批。`
     } else {
-      apiStatusText.value = `${data.message || `已送出 ${savedCount} 筆到 Supabase PostgreSQL。`} ${centralSync.message || '中央網站同步完成。'} 本次文件資料已保留，可直接選擇本次小姐上傳媒體。`
-      mediaUploadStatusText.value = '文件3已自動送出資料庫；下拉選單只顯示本次新增小姐，可以開始上傳媒體。'
+      apiStatusText.value = `${data.message || `已送出 ${plan.itemsToSubmit.length} 筆到 Supabase PostgreSQL。`} ${centralSync.message || '中央網站同步完成。'} 本次文件資料已保留，可直接選擇本次已同步小姐上傳媒體。`
+      mediaUploadStatusText.value = '文件3已完成防重比對並送出；下拉選單顯示本次已同步小姐，可以開始上傳媒體。'
     }
 
-    setDatabaseSubmitFeedback(successMessage, 'success', { toast: true })
+    setDatabaseSubmitFeedback(successMessage, suspectedDuplicateCount ? 'warning' : 'success', { toast: true })
     return true
   } catch (error) {
     const message = databaseSaved
-      ? `資料已寫入 converter 資料庫，但同步中央網站失敗：${error.message || error}`
+      ? `資料已存在或已寫入 converter 資料庫，但同步中央網站失敗：${error.message || error}`
       : `送出資料庫失敗：${error.message || error}`
 
     apiStatusText.value = databaseSaved
@@ -2879,7 +3136,7 @@ async function submitDocument4ToDatabase(options = {}) {
     setDatabaseSubmitFeedback(message, databaseSaved ? 'warning' : 'error', { toast: true })
 
     if (databaseSaved && !shouldClearDocuments) {
-      mediaUploadStatusText.value = '文件3已存入資料庫；下拉選單只顯示本次新增小姐。中央網站同步失敗時，可稍後再重試同步。'
+      mediaUploadStatusText.value = '文件3資料已存在於資料庫；中央網站同步失敗時，可稍後再次按送出，系統不會重複新增。'
       return true
     }
 
@@ -2999,8 +3256,20 @@ function parseConfirmedTextToJson(text) {
       ? serviceLine.split(/\s+/).map(item => item.trim()).filter(Boolean)
       : []
 
+    const sourceRoom = cleanScopeText(ruleScopeRoom.value)
+    const sourceIdentity = makeStableLadySourceIdentity({
+      country,
+      name,
+      city: location.city,
+      district: location.district,
+      mode: location.mode,
+      sourceRoom
+    })
+
     return {
       sourceIndex: index + 1,
+      sourceIdentity,
+      sourceRoom,
       country,
       name,
       city: location.city,
@@ -5282,7 +5551,7 @@ async function saveConfirmedText(options = {}) {
     statusMessage.value = '文件3已儲存，正在自動送出到資料庫...'
     const savedToDatabase = await submitDocument4ToDatabase({ clearDocuments: false, reloadFrontendLadies: true })
     statusMessage.value = savedToDatabase
-      ? '文件3已儲存並自動送出資料庫；下方只會顯示本次新增小姐。'
+      ? '文件3已儲存並完成防重同步；下方顯示本次已同步小姐。'
       : '文件3已儲存，但自動送出資料庫失敗，請查看 API 狀態訊息。'
   }
 }
@@ -5964,6 +6233,51 @@ select:focus, input:focus, textarea:focus {
 .lady-card-title span {
   color: #2563eb;
   font-weight: 900;
+}
+
+.lady-sync-status-row {
+  display: flex;
+  align-items: center;
+  margin: 4px 0 8px;
+}
+
+.lady-sync-status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.lady-sync-status-badge.is-synced {
+  border-color: #86efac;
+  background: #ecfdf5;
+  color: #166534;
+}
+
+.lady-sync-status-badge.is-update {
+  border-color: #fdba74;
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.lady-sync-status-badge.is-suspected {
+  border-color: #fca5a5;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.lady-sync-status-badge.is-checking {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+  color: #475569;
 }
 
 .lady-body-line {
