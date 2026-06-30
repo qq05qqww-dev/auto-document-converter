@@ -1,5 +1,5 @@
 <template>
-  <!-- batch018-73-rule-save-verify-and-database-feedback -->
+  <!-- batch018-76-employee-rules-semantic-verify-fix -->
   <main v-if="!authReady" class="login-page-shell">
     <section class="login-card">
       <div class="login-brand">正式線上登入</div>
@@ -2368,13 +2368,24 @@ function makeStableLadySourceIdentity(lady) {
   const location = getLadySyncLocation(lady)
   const country = normalizeLadySyncCompactText(lady?.country || lady?.nationality || lady?.nation || '') || 'unknown-country'
   const name = normalizeLadySyncCompactText(lady?.name || '') || 'unknown-name'
+  const body = lady?.body || {}
+  const bodyParts = [
+    normalizeLadySyncText(lady?.height ?? body?.height ?? ''),
+    normalizeLadySyncText(lady?.weight ?? body?.weight ?? ''),
+    normalizeLadySyncCompactText(lady?.cup ?? body?.cup ?? ''),
+    normalizeLadySyncText(lady?.age ?? body?.age ?? '')
+  ].filter(Boolean)
   const room = normalizeLadySyncCompactText(location.room || ruleScopeRoom.value)
   const fallbackScope = [
     normalizeLadySyncCompactText(location.city),
     normalizeLadySyncCompactText(location.district),
     normalizeLadySyncCompactText(location.mode)
   ].filter(Boolean).join('-') || 'unknown-scope'
-  const scope = room ? `room-${room}` : `scope-${fallbackScope}`
+  const scope = bodyParts.length >= 3
+    ? `body-${bodyParts.join('-')}`
+    : room
+      ? `room-${room}`
+      : `scope-${fallbackScope}`
   return `converter-${country}-${name}-${scope}`.slice(0, 220)
 }
 
@@ -3263,7 +3274,13 @@ function parseConfirmedTextToJson(text) {
       city: location.city,
       district: location.district,
       mode: location.mode,
-      sourceRoom
+      sourceRoom,
+      body: {
+        height,
+        weight,
+        cup,
+        age
+      }
     })
 
     return {
@@ -5064,12 +5081,64 @@ const currentRuleScopeLabel = computed(() => {
 
 const effectiveRuleSourceLabel = computed(() => getEffectiveScopedRuleData().label)
 
-function areRuleDataEquivalent(savedRule, currentRule) {
-  if (!savedRule || !currentRule) return false
+function normalizeRuleTextForCompare(value) {
+  return String(value ?? '')
+    .replace(/\r\n?/g, '\n')
+    .trimEnd()
+}
 
-  return Object.keys(currentRule).every(key => {
-    return JSON.stringify(savedRule[key] ?? null) === JSON.stringify(currentRule[key] ?? null)
-  })
+function normalizeRuleDataForCompare(data = {}) {
+  return {
+    priceMode: String(data.priceMode ?? 'country'),
+    globalIncrease: Number(data.globalIncrease ?? 500),
+    customIncrease: Number(data.customIncrease ?? 700),
+    amountPriorityMode: String(data.amountPriorityMode ?? 'higher-price'),
+    titleMode: String(data.titleMode ?? 'country-name'),
+    formatHint: normalizeRuleTextForCompare(data.formatHint),
+    countryPriceRulesText: normalizeRuleTextForCompare(data.countryPriceRulesText),
+    minutePriceAddRulesText: normalizeRuleTextForCompare(data.minutePriceAddRulesText),
+    countryAliasText: normalizeRuleTextForCompare(data.countryAliasText),
+    amountTransformRules: normalizeAmountRules(
+      data.amountTransformRules ?? data.amountTransformRulesText ?? []
+    ),
+    serviceOrderText: normalizeRuleTextForCompare(data.serviceOrderText),
+    aliasRulesText: normalizeRuleTextForCompare(data.aliasRulesText),
+    removeWordsText: normalizeRuleTextForCompare(data.removeWordsText),
+    extraKeepText: normalizeRuleTextForCompare(data.extraKeepText),
+    countryFieldRulesText: normalizeRuleTextForCompare(data.countryFieldRulesText),
+    bodyCupPrefixText: normalizeRuleTextForCompare(data.bodyCupPrefixText),
+    notNameWordsText: normalizeRuleTextForCompare(data.notNameWordsText)
+  }
+}
+
+function stableRuleStringify(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map(item => stableRuleStringify(item)).join(',')}]`
+  }
+
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value)
+      .sort()
+      .map(key => `${JSON.stringify(key)}:${stableRuleStringify(value[key])}`)
+      .join(',')}}`
+  }
+
+  return JSON.stringify(value)
+}
+
+function getRuleDataDifferenceFields(savedRule, currentRule) {
+  if (!savedRule || !currentRule) return ['規則資料不存在']
+
+  const saved = normalizeRuleDataForCompare(savedRule)
+  const current = normalizeRuleDataForCompare(currentRule)
+
+  return Object.keys(current).filter(key => (
+    stableRuleStringify(saved[key]) !== stableRuleStringify(current[key])
+  ))
+}
+
+function areRuleDataEquivalent(savedRule, currentRule) {
+  return getRuleDataDifferenceFields(savedRule, currentRule).length === 0
 }
 
 async function saveOnlineRuleForCurrentRoom(data) {
@@ -5092,6 +5161,7 @@ async function saveOnlineRuleForCurrentRoom(data) {
   if (readError) throw readError
 
   let saveError = null
+  let savedRows = []
 
   if (Array.isArray(existingRows) && existingRows.length > 0) {
     const result = await supabase
@@ -5102,8 +5172,10 @@ async function saveOnlineRuleForCurrentRoom(data) {
       .eq('district', district)
       .eq('mode', type)
       .eq('room', room)
+      .select('rules')
 
     saveError = result.error
+    savedRows = Array.isArray(result.data) ? result.data : []
   } else {
     const result = await supabase
       .from('employee_rules')
@@ -5115,19 +5187,28 @@ async function saveOnlineRuleForCurrentRoom(data) {
         room,
         rules: data
       })
+      .select('rules')
 
     saveError = result.error
+    savedRows = Array.isArray(result.data) ? result.data : []
   }
 
   if (saveError) throw saveError
+
+  if (!savedRows.length) {
+    throw new Error('Supabase 回傳寫入 0 筆；請確認 employee_rules 的 UPDATE／INSERT 政策與目前登入身分。')
+  }
 
   const verifiedRule = await getOnlineRuleForCurrentRoom()
   if (!verifiedRule || typeof verifiedRule !== 'object') {
     throw new Error('資料送出後未能重新讀回，請確認 employee_rules 權限與資料表設定。')
   }
 
-  if (!areRuleDataEquivalent(verifiedRule, data)) {
-    throw new Error('線上重新讀回的規則與本次修改不同，已停止顯示成功；請檢查 employee_rules 更新權限。')
+  const differenceFields = getRuleDataDifferenceFields(verifiedRule, data)
+  if (differenceFields.length) {
+    throw new Error(
+      `線上重新讀回的規則與本次修改不同；差異欄位：${differenceFields.join('、')}。`
+    )
   }
 
   return verifiedRule
