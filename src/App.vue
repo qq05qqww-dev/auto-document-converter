@@ -1,3 +1,4 @@
+<!-- 第 018-77 批：K底價格格式解析修正版 -->
 <template>
   <!-- batch018-76-employee-rules-semantic-verify-fix -->
   <main v-if="!authReady" class="login-page-shell">
@@ -3813,6 +3814,29 @@ function parsePrices(text, increase) {
       .replace(/[／]/g, '/')
       .replace(/　/g, ' ')
       .trim()
+
+    // 第 018-77 批：
+    // 支援店家常見寫法：
+    // 快餐20分1S 1.5K底
+    // 短鐘40分1S 2.0K底
+    // 長鐘60分1S 2.3K底
+    //
+    // 原本只有「20分/1.5K」或「20分/1.5底」能被辨識，
+    // 分鐘後直接接 1S、價格又帶 K底時會整筆解析失敗。
+    const labeledKBottomMatch = normalized.match(
+      /(?:快餐|短[鐘鍾]|長[鐘鍾])?\s*(\d{2,3})\s*(?:分鐘|分)\s*(?:(\d+)\s*S)?\s*([0-9]+(?:\.[0-9]+)?)\s*[kK]\s*底?/i
+    )
+
+    if (labeledKBottomMatch) {
+      const minutes = Number(labeledKBottomMatch[1])
+      const sessionCount = Number(labeledKBottomMatch[2] || 1)
+      const kAmount = Number(labeledKBottomMatch[3])
+
+      if (minutes && sessionCount && kAmount) {
+        pushPrice(minutes, sessionCount, kAmount * 1000)
+      }
+      return
+    }
 
     const oldMatch = normalized.match(/(\d{2,3})\s*(?:分鐘|分)\s*(?:\/|\s|:|-)*\s*([0-9]+(?:\.[0-9]+)?)\s*底/i)
     if (oldMatch) {
