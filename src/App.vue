@@ -1,4 +1,4 @@
-<!-- 第 018-78 批：10,000 位小姐分頁讀取＋輕量索引版 -->
+<!-- 第 018-83 批：小姐輕量索引真分頁＋本次命中完整資料按需補讀版 -->
 <template>
   <!-- batch018-76-employee-rules-semantic-verify-fix -->
   <main v-if="!authReady" class="login-page-shell">
@@ -2948,60 +2948,10 @@ async function uploadLadyMedia() {
 
 
 const PUBLIC_LADIES_PAGE_SIZE = 200
-const LADIES_INDEX_CACHE_DB_NAME = 'auto-document-converter-public-cache'
-const LADIES_INDEX_CACHE_DB_VERSION = 1
-const LADIES_INDEX_CACHE_STORE = 'ladies-index'
-
-function openLadiesIndexCacheDb() {
-  return new Promise((resolve, reject) => {
-    if (typeof indexedDB === 'undefined') {
-      resolve(null)
-      return
-    }
-
-    const request = indexedDB.open(LADIES_INDEX_CACHE_DB_NAME, LADIES_INDEX_CACHE_DB_VERSION)
-    request.onupgradeneeded = () => {
-      const db = request.result
-      if (!db.objectStoreNames.contains(LADIES_INDEX_CACHE_STORE)) {
-        db.createObjectStore(LADIES_INDEX_CACHE_STORE, { keyPath: 'key' })
-      }
-    }
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error || new Error('IndexedDB 開啟失敗'))
-  })
-}
-
-async function readLadiesIndexBrowserCache(key) {
-  const db = await openLadiesIndexCacheDb().catch(() => null)
-  if (!db) return null
-
-  return new Promise((resolve) => {
-    const transaction = db.transaction(LADIES_INDEX_CACHE_STORE, 'readonly')
-    const request = transaction.objectStore(LADIES_INDEX_CACHE_STORE).get(key)
-    request.onsuccess = () => resolve(request.result || null)
-    request.onerror = () => resolve(null)
-    transaction.oncomplete = () => db.close()
-    transaction.onerror = () => db.close()
-  })
-}
-
-async function writeLadiesIndexBrowserCache(record) {
-  const db = await openLadiesIndexCacheDb().catch(() => null)
-  if (!db) return false
-
-  return new Promise((resolve) => {
-    const transaction = db.transaction(LADIES_INDEX_CACHE_STORE, 'readwrite')
-    transaction.objectStore(LADIES_INDEX_CACHE_STORE).put(record)
-    transaction.oncomplete = () => {
-      db.close()
-      resolve(true)
-    }
-    transaction.onerror = () => {
-      db.close()
-      resolve(false)
-    }
-  })
-}
+const PUBLIC_LADIES_INDEX_MATCH_PAGE_SIZE = 50
+const PUBLIC_LADIES_INDEX_MAX_MATCH_PAGES = 100
+const PUBLIC_LADIES_INDEX_LOOKUP_CONCURRENCY = 4
+const publicLadyDetailCache = new Map()
 
 async function fetchPublicLadiesIndexVersion(options = {}) {
   const query = new URLSearchParams()
@@ -3019,9 +2969,15 @@ async function fetchPublicLadiesIndexVersion(options = {}) {
   return data
 }
 
-async function fetchPublicLadiesIndexNetwork(options = {}) {
-  const query = new URLSearchParams()
+async function fetchPublicLadiesIndexPage(options = {}) {
+  const query = new URLSearchParams({
+    page: String(Math.max(1, Number(options.page || 1))),
+    pageSize: String(Math.max(1, Number(options.pageSize || PUBLIC_LADIES_INDEX_MATCH_PAGE_SIZE))),
+  })
   if (options.includeInactive) query.set('includeInactive', '1')
+  if (options.keyword) query.set('keyword', String(options.keyword))
+  if (options.country) query.set('country', String(options.country))
+  if (options.version) query.set('version', String(options.version))
   if (options.refresh) query.set('cacheBust', String(Date.now()))
 
   const response = await fetch(
@@ -3034,53 +2990,25 @@ async function fetchPublicLadiesIndexNetwork(options = {}) {
     throw new Error(data.message || `HTTP ${response.status}`)
   }
 
-  return Array.isArray(data.items) ? data.items : []
-}
-
-async function fetchPublicLadiesIndex(options = {}) {
-  const includeInactive = options.includeInactive === true
-  const cacheKey = includeInactive ? 'all' : 'active'
-  const versionInfo = await fetchPublicLadiesIndexVersion({
-    includeInactive,
-    refresh: options.refresh === true,
-  })
-  const cached = options.refresh === true
-    ? null
-    : await readLadiesIndexBrowserCache(cacheKey)
-
-  if (
-    cached &&
-    cached.version === versionInfo.version &&
-    Array.isArray(cached.items)
-  ) {
-    return {
-      items: cached.items,
-      version: versionInfo.version,
-      browserCacheHit: true,
-    }
-  }
-
-  const items = await fetchPublicLadiesIndexNetwork({
-    includeInactive,
-    refresh: options.refresh === true,
-  })
-  await writeLadiesIndexBrowserCache({
-    key: cacheKey,
-    version: versionInfo.version,
-    items,
-    savedAt: Date.now(),
-  })
-
+  const items = Array.isArray(data.items) ? data.items : []
   return {
     items,
-    version: versionInfo.version,
-    browserCacheHit: false,
+    total: Number(data.total || items.length),
+    page: Number(data.page || options.page || 1),
+    pageSize: Number(data.pageSize || options.pageSize || PUBLIC_LADIES_INDEX_MATCH_PAGE_SIZE),
+    totalPages: Number(data.totalPages || 0),
+    hasMore: data.hasMore === true,
   }
 }
 
 async function fetchPublicLadyDetail(ladyId, options = {}) {
   const id = Number(ladyId || 0)
   if (!id) return null
+
+  const cacheKey = String(id)
+  if (!options.refresh && publicLadyDetailCache.has(cacheKey)) {
+    return publicLadyDetailCache.get(cacheKey)
+  }
 
   const query = new URLSearchParams()
   if (options.refresh) query.set('cacheBust', String(Date.now()))
@@ -3095,7 +3023,9 @@ async function fetchPublicLadyDetail(ladyId, options = {}) {
     throw new Error(data.message || `HTTP ${response.status}`)
   }
 
-  return data.item || null
+  const item = data.item || null
+  if (item) publicLadyDetailCache.set(cacheKey, item)
+  return item
 }
 
 function getCurrentDocumentItemsForDetailLookup() {
@@ -3110,51 +3040,130 @@ function getCurrentDocumentItemsForDetailLookup() {
   }
 }
 
-async function enrichLadiesIndexForCurrentDocument(indexItems, options = {}) {
-  const rows = Array.isArray(indexItems) ? indexItems : []
+async function mapWithConcurrency(items, limit, mapper) {
+  const rows = Array.isArray(items) ? items : []
+  if (!rows.length) return []
+
+  const results = new Array(rows.length)
+  let nextIndex = 0
+
+  async function runWorker() {
+    while (nextIndex < rows.length) {
+      const currentIndex = nextIndex
+      nextIndex += 1
+      results[currentIndex] = await mapper(rows[currentIndex], currentIndex)
+    }
+  }
+
+  const workerCount = Math.min(Math.max(1, Number(limit || 1)), rows.length)
+  await Promise.all(Array.from({ length: workerCount }, () => runWorker()))
+  return results
+}
+
+async function fetchPublicLadiesIndexMatches(sourceLady, options = {}) {
+  const name = String(sourceLady?.name || '').trim()
+  const country = String(sourceLady?.country || sourceLady?.nationality || sourceLady?.nation || '').trim()
+  const targetKey = makePreviewLadyKey(sourceLady)
+  if (!name || !targetKey) return []
+
+  const matchedRows = []
+  let page = 1
+  let hasMore = true
+
+  while (hasMore && page <= PUBLIC_LADIES_INDEX_MAX_MATCH_PAGES) {
+    const data = await fetchPublicLadiesIndexPage({
+      includeInactive: options.includeInactive === true,
+      page,
+      pageSize: PUBLIC_LADIES_INDEX_MATCH_PAGE_SIZE,
+      keyword: name,
+      country,
+      version: options.version,
+      refresh: options.refresh === true,
+    })
+
+    for (const item of data.items) {
+      if (makePreviewLadyKey(item) === targetKey) matchedRows.push(item)
+    }
+
+    hasMore = data.hasMore === true
+    page += 1
+  }
+
+  return matchedRows
+}
+
+async function loadCurrentDocumentLadyMatches(options = {}) {
   const currentItems = getCurrentDocumentItemsForDetailLookup()
-  if (!rows.length || !currentItems.length) {
-    return { items: rows, detailCount: 0 }
-  }
+  const uniqueByKey = new Map()
 
-  const currentKeys = new Set(currentItems.map(makePreviewLadyKey).filter(Boolean))
-  const matchesByKey = new Map()
-
-  for (const item of rows) {
+  for (const item of currentItems) {
     const key = makePreviewLadyKey(item)
-    if (!currentKeys.has(key)) continue
-    if (!matchesByKey.has(key)) matchesByKey.set(key, [])
-    matchesByKey.get(key).push(item)
+    if (key && !uniqueByKey.has(key)) uniqueByKey.set(key, item)
   }
 
-  const matchedIds = Array.from(matchesByKey.values())
-    .filter(matches => matches.length === 1)
-    .map(matches => Number(matches[0]?.id || 0))
-    .filter(Boolean)
-    .slice(0, 50)
-
-  if (!matchedIds.length) {
-    return { items: rows, detailCount: 0 }
+  const lookupItems = Array.from(uniqueByKey.values())
+  if (!lookupItems.length) {
+    return {
+      items: [],
+      queryCount: 0,
+      detailCount: 0,
+      version: '',
+    }
   }
 
-  const details = await Promise.all(
-    matchedIds.map(async id => {
-      try {
-        return await fetchPublicLadyDetail(id, options)
-      } catch (error) {
-        console.warn(`讀取小姐 ${id} 完整資料失敗，保留輕量索引：`, error)
-        return null
-      }
+  const versionInfo = await fetchPublicLadiesIndexVersion({
+    includeInactive: true,
+    refresh: options.refresh === true,
+  })
+
+  const matchGroups = await mapWithConcurrency(
+    lookupItems,
+    PUBLIC_LADIES_INDEX_LOOKUP_CONCURRENCY,
+    item => fetchPublicLadiesIndexMatches(item, {
+      includeInactive: true,
+      version: versionInfo.version,
+      refresh: options.refresh === true,
     })
   )
 
-  const detailById = new Map(
-    details.filter(Boolean).map(item => [Number(item.id), item])
+  const indexById = new Map()
+  for (const group of matchGroups) {
+    for (const item of group) {
+      indexById.set(String(item.id), item)
+    }
+  }
+
+  const singleMatches = matchGroups
+    .filter(group => group.length === 1)
+    .map(group => group[0])
+
+  const details = await mapWithConcurrency(
+    singleMatches,
+    PUBLIC_LADIES_INDEX_LOOKUP_CONCURRENCY,
+    async item => {
+      try {
+        return await fetchPublicLadyDetail(item.id, {
+          refresh: options.refresh === true,
+        })
+      } catch (error) {
+        console.warn(`讀取小姐 ${item.id} 完整資料失敗，保留輕量索引：`, error)
+        return null
+      }
+    }
   )
 
+  const detailById = new Map(
+    details.filter(Boolean).map(item => [String(item.id), item])
+  )
+  const items = Array.from(indexById.values()).map(item => (
+    detailById.get(String(item.id)) || item
+  ))
+
   return {
-    items: rows.map(item => detailById.get(Number(item.id)) || item),
-    detailCount: detailById.size
+    items,
+    queryCount: lookupItems.length,
+    detailCount: detailById.size,
+    version: versionInfo.version || '',
   }
 }
 
@@ -3196,25 +3205,24 @@ async function loadFrontendLadies(options = {}) {
   saveApiBaseUrl()
 
   try {
-    // 第 018-79 批：
-    // 先讀取萬筆可承受的輕量索引，再只補讀本次文件中有命中的小姐完整資料。
-    // 這樣可立即取得真實資料庫 ID、媒體與完整內容，又不會下載全部小姐媒體。
-    const indexResult = await fetchPublicLadiesIndex({
-      includeInactive: true,
+    // 第 018-83 批：
+    // 不再先下載全部 5,000～10,000 筆小姐索引。
+    // 只依本次文件中的國籍＋姓名查詢輕量索引；唯一命中時才補讀該位完整資料，
+    // 保留防重比對、媒體縮圖、方案與服務顯示，同時大幅降低 Worker／Supabase 流量。
+    const lookupResult = await loadCurrentDocumentLadyMatches({
       refresh: options.refresh === true,
     })
-    const indexItems = indexResult.items
-    const enriched = await enrichLadiesIndexForCurrentDocument(indexItems, {
-      refresh: options.refresh === true,
-    })
-    frontendLadies.value = enriched.items
+
+    frontendLadies.value = lookupResult.items
     frontendLadiesLoaded.value = true
-    const indexSourceText = indexResult.browserCacheHit
-      ? '瀏覽器快取（版本未變更，未重新下載萬筆索引）'
-      : 'Worker 輕量索引'
-    frontendStatusText.value = enriched.detailCount
-      ? `已從${indexSourceText}讀取 ${indexItems.length} 筆小姐索引，並補讀本次 ${enriched.detailCount} 筆完整資料。`
-      : `已從${indexSourceText}讀取 ${indexItems.length} 筆小姐索引。`
+
+    if (!lookupResult.queryCount) {
+      frontendStatusText.value = '本次文件尚無小姐資料，未發出小姐索引查詢。'
+    } else if (lookupResult.detailCount) {
+      frontendStatusText.value = `已用 Worker 輕量索引精準查詢本次 ${lookupResult.queryCount} 組小姐，並補讀 ${lookupResult.detailCount} 筆完整資料。`
+    } else {
+      frontendStatusText.value = `已用 Worker 輕量索引精準查詢本次 ${lookupResult.queryCount} 組小姐，資料庫目前沒有唯一命中資料。`
+    }
     return true
   } catch (error) {
     frontendLadiesLoaded.value = false
@@ -3686,7 +3694,12 @@ function parseConfirmedTextToJson(text) {
 }
 
 function updateJsonPreview() {
-  jsonResultText.value = JSON.stringify(parseConfirmedTextToJson(confirmedText.value), null, 2)
+  const nextJson = JSON.stringify(parseConfirmedTextToJson(confirmedText.value), null, 2)
+  if (nextJson !== jsonResultText.value) {
+    frontendLadiesLoaded.value = false
+    frontendLadies.value = []
+  }
+  jsonResultText.value = nextJson
 }
 
 function ensureSourceTextBottomBlankLines(text = '') {
