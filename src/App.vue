@@ -1,4 +1,4 @@
-<!-- 第 018-77 批：K底價格格式解析修正版 -->
+<!-- 第 018-78 批：10,000 位小姐分頁讀取＋輕量索引版 -->
 <template>
   <!-- batch018-76-employee-rules-semantic-verify-fix -->
   <main v-if="!authReady" class="login-page-shell">
@@ -746,7 +746,7 @@
             >
               {{ isDatabaseSubmitting ? '送出中...' : '送出到資料庫' }}
             </button>
-            <button class="ghost-btn frontend-load-btn" type="button" @click="loadFrontendLadies">讀取前台資料</button>
+            <button class="ghost-btn frontend-load-btn" type="button" @click="loadFrontendLadies({ refresh: true })">讀取前台資料</button>
           </div>
         </section>
       </div>
@@ -884,7 +884,7 @@
             {{ databaseSubmitButtonText }}
           </button>
 
-          <button class="primary-btn frontend-load-btn" type="button" @click="loadFrontendLadies">重新讀取前台資料</button>
+          <button class="primary-btn frontend-load-btn" type="button" @click="loadFrontendLadies({ refresh: true })">重新讀取前台資料</button>
 
           <label>
             國籍篩選
@@ -1139,6 +1139,7 @@
 </template>
 
 <script setup>
+// 第 018-80 批：輕量小姐索引加入版本探測與 IndexedDB 快取；未變更時不重新下載萬筆索引。
 import { computed, onMounted, ref, watch } from 'vue'
 import { isSupabaseConfigured, supabase } from './supabaseClient'
 
@@ -1151,7 +1152,7 @@ const RESULT_STORAGE_KEY = 'auto-document-converter-result-current'
 const RULE_SCOPE_STORAGE_KEY = 'auto-document-converter-scope-rules-current'
 const LOCATION_SCOPE_STORAGE_KEY = 'auto-document-converter-location-room-options-current'
 const CLEAN_START_PANEL_STORAGE_KEY = 'auto-document-converter-clean-start-panel-always-clean-home'
-const ONLINE_READY_VERSION_LABEL = '第 018-73 批：機房規則儲存驗證與資料庫送出提示'
+const ONLINE_READY_VERSION_LABEL = '第 018-79 批：新增後立即取得資料庫 ID 與媒體刷新修正版'
 const PROTECTED_GLOBAL_RULE_NOTICE = '公版規則已固定保護，不會被清除；若遺失會自動補回預設公版。'
 const SOURCE_SLASH_SPACE_NOTICE = '文件1已啟用斜線自動轉空格，貼上後 / 與 ／ 會自動變成空格。'
 const STAFF_PROFILE_STORAGE_KEY = 'auto-document-converter-current-staff-profile'
@@ -2696,7 +2697,7 @@ async function deleteLadyMedia(media, lady) {
     }
 
     frontendStatusText.value = data.message || '媒體已刪除。'
-    await loadFrontendLadies()
+    await loadFrontendLadies({ refresh: true })
     try {
       await syncSavedLadiesToCentralWebsite()
       frontendStatusText.value = `${frontendStatusText.value} 中央網站已同步。`
@@ -2820,7 +2821,7 @@ async function uploadLadyMedia() {
     mediaUploadStatusText.value = `媒體疊加上傳完成：成功 ${successCount} 個，失敗 ${failCount} 個。`
     clearMediaUploadFiles()
 
-    await loadFrontendLadies()
+    await loadFrontendLadies({ refresh: true })
     try {
       await syncSavedLadiesToCentralWebsite()
       mediaUploadStatusText.value = `媒體疊加上傳完成：成功 ${successCount} 個，失敗 ${failCount} 個。中央網站已同步。`
@@ -2829,24 +2830,279 @@ async function uploadLadyMedia() {
     }
   } catch (error) {
     mediaUploadStatusText.value = `媒體上傳中斷：成功 ${successCount} 個，失敗 ${failCount || 1} 個。錯誤：${error.message || error}`
-    await loadFrontendLadies()
+    await loadFrontendLadies({ refresh: true })
   }
+}
+
+
+const PUBLIC_LADIES_PAGE_SIZE = 200
+const LADIES_INDEX_CACHE_DB_NAME = 'auto-document-converter-public-cache'
+const LADIES_INDEX_CACHE_DB_VERSION = 1
+const LADIES_INDEX_CACHE_STORE = 'ladies-index'
+
+function openLadiesIndexCacheDb() {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') {
+      resolve(null)
+      return
+    }
+
+    const request = indexedDB.open(LADIES_INDEX_CACHE_DB_NAME, LADIES_INDEX_CACHE_DB_VERSION)
+    request.onupgradeneeded = () => {
+      const db = request.result
+      if (!db.objectStoreNames.contains(LADIES_INDEX_CACHE_STORE)) {
+        db.createObjectStore(LADIES_INDEX_CACHE_STORE, { keyPath: 'key' })
+      }
+    }
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error || new Error('IndexedDB 開啟失敗'))
+  })
+}
+
+async function readLadiesIndexBrowserCache(key) {
+  const db = await openLadiesIndexCacheDb().catch(() => null)
+  if (!db) return null
+
+  return new Promise((resolve) => {
+    const transaction = db.transaction(LADIES_INDEX_CACHE_STORE, 'readonly')
+    const request = transaction.objectStore(LADIES_INDEX_CACHE_STORE).get(key)
+    request.onsuccess = () => resolve(request.result || null)
+    request.onerror = () => resolve(null)
+    transaction.oncomplete = () => db.close()
+    transaction.onerror = () => db.close()
+  })
+}
+
+async function writeLadiesIndexBrowserCache(record) {
+  const db = await openLadiesIndexCacheDb().catch(() => null)
+  if (!db) return false
+
+  return new Promise((resolve) => {
+    const transaction = db.transaction(LADIES_INDEX_CACHE_STORE, 'readwrite')
+    transaction.objectStore(LADIES_INDEX_CACHE_STORE).put(record)
+    transaction.oncomplete = () => {
+      db.close()
+      resolve(true)
+    }
+    transaction.onerror = () => {
+      db.close()
+      resolve(false)
+    }
+  })
+}
+
+async function fetchPublicLadiesIndexVersion(options = {}) {
+  const query = new URLSearchParams()
+  if (options.includeInactive) query.set('includeInactive', '1')
+  if (options.refresh) query.set('cacheBust', String(Date.now()))
+
+  const response = await fetch(
+    `${apiBaseUrl.value}/api/public/ladies/index/version?${query.toString()}`,
+    options.refresh ? { cache: 'no-store' } : undefined
+  )
+  const data = await response.json().catch(() => ({}))
+  if (!response.ok || data.ok === false) {
+    throw new Error(data.message || `HTTP ${response.status}`)
+  }
+  return data
+}
+
+async function fetchPublicLadiesIndexNetwork(options = {}) {
+  const query = new URLSearchParams()
+  if (options.includeInactive) query.set('includeInactive', '1')
+  if (options.refresh) query.set('cacheBust', String(Date.now()))
+
+  const response = await fetch(
+    `${apiBaseUrl.value}/api/public/ladies/index?${query.toString()}`,
+    options.refresh ? { cache: 'no-store' } : undefined
+  )
+  const data = await response.json().catch(() => ({}))
+
+  if (!response.ok || data.ok === false) {
+    throw new Error(data.message || `HTTP ${response.status}`)
+  }
+
+  return Array.isArray(data.items) ? data.items : []
+}
+
+async function fetchPublicLadiesIndex(options = {}) {
+  const includeInactive = options.includeInactive === true
+  const cacheKey = includeInactive ? 'all' : 'active'
+  const versionInfo = await fetchPublicLadiesIndexVersion({
+    includeInactive,
+    refresh: options.refresh === true,
+  })
+  const cached = options.refresh === true
+    ? null
+    : await readLadiesIndexBrowserCache(cacheKey)
+
+  if (
+    cached &&
+    cached.version === versionInfo.version &&
+    Array.isArray(cached.items)
+  ) {
+    return {
+      items: cached.items,
+      version: versionInfo.version,
+      browserCacheHit: true,
+    }
+  }
+
+  const items = await fetchPublicLadiesIndexNetwork({
+    includeInactive,
+    refresh: options.refresh === true,
+  })
+  await writeLadiesIndexBrowserCache({
+    key: cacheKey,
+    version: versionInfo.version,
+    items,
+    savedAt: Date.now(),
+  })
+
+  return {
+    items,
+    version: versionInfo.version,
+    browserCacheHit: false,
+  }
+}
+
+async function fetchPublicLadyDetail(ladyId, options = {}) {
+  const id = Number(ladyId || 0)
+  if (!id) return null
+
+  const query = new URLSearchParams()
+  if (options.refresh) query.set('cacheBust', String(Date.now()))
+  const suffix = query.toString() ? `?${query.toString()}` : ''
+  const response = await fetch(
+    `${apiBaseUrl.value}/api/public/ladies/${id}${suffix}`,
+    options.refresh ? { cache: 'no-store' } : undefined
+  )
+  const data = await response.json().catch(() => ({}))
+
+  if (!response.ok || data.ok === false) {
+    throw new Error(data.message || `HTTP ${response.status}`)
+  }
+
+  return data.item || null
+}
+
+function getCurrentDocumentItemsForDetailLookup() {
+  const text = String(jsonResultText.value || '').trim()
+  if (!text) return []
+
+  try {
+    const parsed = JSON.parse(text)
+    return Array.isArray(parsed?.items) ? parsed.items : []
+  } catch (_error) {
+    return []
+  }
+}
+
+async function enrichLadiesIndexForCurrentDocument(indexItems, options = {}) {
+  const rows = Array.isArray(indexItems) ? indexItems : []
+  const currentItems = getCurrentDocumentItemsForDetailLookup()
+  if (!rows.length || !currentItems.length) {
+    return { items: rows, detailCount: 0 }
+  }
+
+  const currentKeys = new Set(currentItems.map(makePreviewLadyKey).filter(Boolean))
+  const matchesByKey = new Map()
+
+  for (const item of rows) {
+    const key = makePreviewLadyKey(item)
+    if (!currentKeys.has(key)) continue
+    if (!matchesByKey.has(key)) matchesByKey.set(key, [])
+    matchesByKey.get(key).push(item)
+  }
+
+  const matchedIds = Array.from(matchesByKey.values())
+    .filter(matches => matches.length === 1)
+    .map(matches => Number(matches[0]?.id || 0))
+    .filter(Boolean)
+    .slice(0, 50)
+
+  if (!matchedIds.length) {
+    return { items: rows, detailCount: 0 }
+  }
+
+  const details = await Promise.all(
+    matchedIds.map(async id => {
+      try {
+        return await fetchPublicLadyDetail(id, options)
+      } catch (error) {
+        console.warn(`讀取小姐 ${id} 完整資料失敗，保留輕量索引：`, error)
+        return null
+      }
+    })
+  )
+
+  const detailById = new Map(
+    details.filter(Boolean).map(item => [Number(item.id), item])
+  )
+
+  return {
+    items: rows.map(item => detailById.get(Number(item.id)) || item),
+    detailCount: detailById.size
+  }
+}
+
+async function fetchAllPublicLadies(options = {}) {
+  const allItems = []
+  let page = 1
+  let hasMore = true
+  let safetyPages = 0
+
+  while (hasMore && safetyPages < 100) {
+    const query = new URLSearchParams({
+      page: String(page),
+      pageSize: String(PUBLIC_LADIES_PAGE_SIZE),
+    })
+    if (options.includeInactive) query.set('includeInactive', '1')
+    if (options.refresh) query.set('cacheBust', String(Date.now()))
+
+    const response = await fetch(
+      `${apiBaseUrl.value}/api/public/ladies?${query.toString()}`,
+      options.refresh ? { cache: 'no-store' } : undefined
+    )
+    const data = await response.json().catch(() => ({}))
+
+    if (!response.ok || data.ok === false) {
+      throw new Error(data.message || `HTTP ${response.status}`)
+    }
+
+    const items = Array.isArray(data.items) ? data.items : []
+    allItems.push(...items)
+    hasMore = data.hasMore === true
+    page += 1
+    safetyPages += 1
+  }
+
+  return allItems
 }
 
 async function loadFrontendLadies(options = {}) {
   saveApiBaseUrl()
 
   try {
-    const response = await fetch(`${apiBaseUrl.value}/api/public/ladies`)
-    const data = await response.json().catch(() => ({}))
-
-    if (!response.ok) {
-      throw new Error(data.message || `HTTP ${response.status}`)
-    }
-
-    frontendLadies.value = Array.isArray(data.items) ? data.items : []
+    // 第 018-79 批：
+    // 先讀取萬筆可承受的輕量索引，再只補讀本次文件中有命中的小姐完整資料。
+    // 這樣可立即取得真實資料庫 ID、媒體與完整內容，又不會下載全部小姐媒體。
+    const indexResult = await fetchPublicLadiesIndex({
+      includeInactive: true,
+      refresh: options.refresh === true,
+    })
+    const indexItems = indexResult.items
+    const enriched = await enrichLadiesIndexForCurrentDocument(indexItems, {
+      refresh: options.refresh === true,
+    })
+    frontendLadies.value = enriched.items
     frontendLadiesLoaded.value = true
-    frontendStatusText.value = `已讀取 ${frontendLadies.value.length} 筆前台資料。`
+    const indexSourceText = indexResult.browserCacheHit
+      ? '瀏覽器快取（版本未變更，未重新下載萬筆索引）'
+      : 'Worker 輕量索引'
+    frontendStatusText.value = enriched.detailCount
+      ? `已從${indexSourceText}讀取 ${indexItems.length} 筆小姐索引，並補讀本次 ${enriched.detailCount} 筆完整資料。`
+      : `已從${indexSourceText}讀取 ${indexItems.length} 筆小姐索引。`
     return true
   } catch (error) {
     frontendLadiesLoaded.value = false
@@ -2939,12 +3195,12 @@ async function syncSavedLadiesToCentralWebsite() {
     throw new Error(`無法取得員工登入憑證：${sessionError?.message || '請重新登入'}`)
   }
 
-  const ladiesResponse = await fetch(`${apiBaseUrl.value}/api/public/ladies?includeInactive=1`)
-  const ladiesData = await ladiesResponse.json().catch(() => ({}))
-  if (!ladiesResponse.ok) {
-    throw new Error(ladiesData.message || `讀取已儲存小姐失敗：HTTP ${ladiesResponse.status}`)
-  }
-  const items = Array.isArray(ladiesData.items) ? ladiesData.items : []
+  // 第 018-78 批：中央同步屬人工操作，改用每頁 200 筆分段讀取，
+  // 避免 5,000～10,000 位小姐一次形成超大 JSON。
+  const items = await fetchAllPublicLadies({
+    includeInactive: true,
+    refresh: true,
+  })
   if (!items.length) throw new Error('資料庫目前沒有可同步到網站的小姐資料。')
 
   const currentLocation = getCurrentListingLocation()
@@ -3044,7 +3300,7 @@ async function submitDocument4ToDatabase(options = {}) {
 
   try {
     setDatabaseSubmitFeedback('正在讀取資料庫並檢查重複小姐...', 'pending')
-    const databaseListReady = await loadFrontendLadies({ silent: true })
+    const databaseListReady = await loadFrontendLadies({ silent: true, refresh: true })
     if (!databaseListReady) {
       throw new Error('無法讀取目前資料庫清單；為避免重複新增，已停止本次送出。')
     }
@@ -3113,7 +3369,7 @@ async function submitDocument4ToDatabase(options = {}) {
     setDatabaseSubmitFeedback('資料庫儲存成功，正在同步中央網站...', 'pending')
 
     if (shouldReloadFrontendLadies) {
-      await loadFrontendLadies({ silent: true })
+      await loadFrontendLadies({ silent: true, refresh: true })
     }
 
     const centralSync = await syncSavedLadiesToCentralWebsite()
