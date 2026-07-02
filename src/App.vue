@@ -1048,7 +1048,7 @@
               </div>
 
               <div v-if="lady.media && lady.media.length > 1" class="lady-media-thumbs compact-right-thumbs">
-                <div v-for="media in lady.media.slice(1, 5)" :key="media.id || media.url" class="lady-media-thumb-wrap">
+                <div v-for="media in lady.media.slice(1)" :key="media.id || media.url" class="lady-media-thumb-wrap">
                   <button
                     type="button"
                     class="lady-media-open-btn"
@@ -1152,7 +1152,7 @@ const RESULT_STORAGE_KEY = 'auto-document-converter-result-current'
 const RULE_SCOPE_STORAGE_KEY = 'auto-document-converter-scope-rules-current'
 const LOCATION_SCOPE_STORAGE_KEY = 'auto-document-converter-location-room-options-current'
 const CLEAN_START_PANEL_STORAGE_KEY = 'auto-document-converter-clean-start-panel-always-clean-home'
-const ONLINE_READY_VERSION_LABEL = '第 018-79 批：新增後立即取得資料庫 ID 與媒體刷新修正版'
+const ONLINE_READY_VERSION_LABEL = '第 018-81 批：媒體縮圖完整顯示版'
 const PROTECTED_GLOBAL_RULE_NOTICE = '公版規則已固定保護，不會被清除；若遺失會自動補回預設公版。'
 const SOURCE_SLASH_SPACE_NOTICE = '文件1已啟用斜線自動轉空格，貼上後 / 與 ／ 會自動變成空格。'
 const STAFF_PROFILE_STORAGE_KEY = 'auto-document-converter-current-staff-profile'
@@ -6001,6 +6001,7 @@ async function copyText(text, label) {
 </script>
 
 <style scoped>
+/* 第 018-81 批：文件預覽卡片顯示全部媒體縮圖；主圖下方其餘媒體自動換行，不增加 API 查詢。 */
 * { box-sizing: border-box; }
 
 .page-shell {
