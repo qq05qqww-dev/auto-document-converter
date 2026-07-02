@@ -1097,26 +1097,55 @@
       <div v-if="mediaViewerItem" class="media-viewer-mask" @click.self="closeMediaViewer">
         <div class="media-viewer-dialog">
           <button type="button" class="media-viewer-close" @click="closeMediaViewer">×</button>
-          <div class="media-viewer-body">
+          <div
+            class="media-viewer-body"
+            @touchstart.passive="handleMediaViewerTouchStart"
+            @touchend.passive="handleMediaViewerTouchEnd"
+          >
+            <span v-if="mediaViewerTotal > 1" class="media-viewer-counter">
+              {{ mediaViewerPositionText }}
+            </span>
+
+            <button
+              v-if="mediaViewerTotal > 1"
+              type="button"
+              class="media-viewer-nav media-viewer-prev"
+              aria-label="上一個媒體"
+              title="上一個（鍵盤 ←）"
+              @click.stop="showPreviousMedia"
+            >‹</button>
+
             <img
               v-if="mediaViewerItem.mediaType === 'image'"
+              :key="mediaViewerItem.id || mediaViewerItem.url"
               :src="mediaViewerItem.url"
               :alt="getMediaDisplayName(mediaViewerItem, { name: mediaViewerLadyName, country: mediaViewerLadyCountry })"
               class="media-viewer-content"
             />
             <video
               v-else
+              :key="mediaViewerItem.id || mediaViewerItem.url"
               :src="mediaViewerItem.url"
               class="media-viewer-content"
               controls
               autoplay
               playsinline
             ></video>
+
+            <button
+              v-if="mediaViewerTotal > 1"
+              type="button"
+              class="media-viewer-nav media-viewer-next"
+              aria-label="下一個媒體"
+              title="下一個（鍵盤 →）"
+              @click.stop="showNextMedia"
+            >›</button>
           </div>
           <div class="media-viewer-footer">
             <div>
               <strong>{{ getMediaDisplayName(mediaViewerItem, { name: mediaViewerLadyName, country: mediaViewerLadyCountry }) }}</strong>
               <span v-if="mediaViewerLadyName || mediaViewerLadyCountry">【{{ mediaViewerLadyCountry }} {{ mediaViewerLadyName }}】</span>
+              <small v-if="mediaViewerTotal > 1" class="media-viewer-hint">可按左右箭頭、鍵盤 ← →，手機可左右滑動</small>
             </div>
             <div class="media-viewer-actions">
               <button
@@ -1139,8 +1168,8 @@
 </template>
 
 <script setup>
-// 第 018-80 批：輕量小姐索引加入版本探測與 IndexedDB 快取；未變更時不重新下載萬筆索引。
-import { computed, onMounted, ref, watch } from 'vue'
+// 第 018-82 批：媒體燈箱加入左右切換、張數指示、鍵盤方向鍵與手機滑動；延續 018-81 全媒體縮圖。
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { isSupabaseConfigured, supabase } from './supabaseClient'
 
 // 第 009-7 批開始固定使用這兩個正式儲存位置。
@@ -1152,7 +1181,7 @@ const RESULT_STORAGE_KEY = 'auto-document-converter-result-current'
 const RULE_SCOPE_STORAGE_KEY = 'auto-document-converter-scope-rules-current'
 const LOCATION_SCOPE_STORAGE_KEY = 'auto-document-converter-location-room-options-current'
 const CLEAN_START_PANEL_STORAGE_KEY = 'auto-document-converter-clean-start-panel-always-clean-home'
-const ONLINE_READY_VERSION_LABEL = '第 018-81 批：媒體縮圖完整顯示版'
+const ONLINE_READY_VERSION_LABEL = '第 018-82 批：媒體燈箱左右切換版'
 const PROTECTED_GLOBAL_RULE_NOTICE = '公版規則已固定保護，不會被清除；若遺失會自動補回預設公版。'
 const SOURCE_SLASH_SPACE_NOTICE = '文件1已啟用斜線自動轉空格，貼上後 / 與 ／ 會自動變成空格。'
 const STAFF_PROFILE_STORAGE_KEY = 'auto-document-converter-current-staff-profile'
@@ -1218,8 +1247,17 @@ const mediaUploadFiles = ref([])
 const isMediaDragging = ref(false)
 const mediaUploadStatusText = ref('尚未上傳媒體。')
 const mediaViewerItem = ref(null)
+const mediaViewerItems = ref([])
+const mediaViewerIndex = ref(0)
+const mediaViewerTouchStartX = ref(null)
 const mediaViewerLadyName = ref('')
 const mediaViewerLadyCountry = ref('')
+
+const mediaViewerTotal = computed(() => mediaViewerItems.value.length)
+const mediaViewerPositionText = computed(() => {
+  if (!mediaViewerItem.value || !mediaViewerTotal.value) return ''
+  return `${mediaViewerIndex.value + 1} / ${mediaViewerTotal.value}`
+})
 const confirmedText = ref('')
 const statusMessage = ref('等待貼上資料。')
 const isSavingScopeRules = ref(false)
@@ -2270,6 +2308,7 @@ function closeAllTopPanelsForCleanStart() {
 }
 
 onMounted(async () => {
+  window.addEventListener('keydown', handleMediaViewerKeydown)
   await refreshAuthState()
   if (!authUser.value) return
   repairProtectedGlobalRules()
@@ -2279,6 +2318,10 @@ onMounted(async () => {
   normalizeDocument3Text()
   await loadFrontendLadies({ silent: true })
   closeAllTopPanelsForCleanStart()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleMediaViewerKeydown)
 })
 
 
@@ -2624,29 +2667,98 @@ function getMediaDisplayName(media, lady) {
   return media?.note || media?.name || (lady ? `【${lady.country || ''} ${lady.name || ''}】` : '媒體預覽')
 }
 
+function getMediaViewerItemKey(media) {
+  return String(media?.id || media?.url || media?.note || media?.name || '')
+}
+
+function setMediaViewerIndex(index) {
+  const items = mediaViewerItems.value
+  if (!items.length) return
+
+  const normalizedIndex = ((Number(index) % items.length) + items.length) % items.length
+  mediaViewerIndex.value = normalizedIndex
+  mediaViewerItem.value = items[normalizedIndex] || null
+}
+
 function openMediaViewer(media, lady) {
   if (!media) return
-  mediaViewerItem.value = media
+
+  const items = Array.isArray(lady?.media)
+    ? lady.media.filter(item => item?.url)
+    : [media]
+  const targetKey = getMediaViewerItemKey(media)
+  const targetIndex = Math.max(0, items.findIndex(item => getMediaViewerItemKey(item) === targetKey))
+
+  mediaViewerItems.value = items.length ? items : [media]
   mediaViewerLadyName.value = lady?.name || ''
   mediaViewerLadyCountry.value = lady?.country || ''
+  setMediaViewerIndex(targetIndex)
 }
 
 function openUploadFileViewer(file) {
   if (!file) return
 
-  mediaViewerItem.value = {
-    id: 0,
-    url: getUploadFilePreviewUrl(file),
-    mediaType: isUploadFileVideo(file) ? 'video' : 'image',
-    note: file.name,
+  const items = mediaUploadFiles.value.map((item, index) => ({
+    id: `local-upload-${item.name}-${item.size}-${item.lastModified}-${index}`,
+    url: getUploadFilePreviewUrl(item),
+    mediaType: isUploadFileVideo(item) ? 'video' : 'image',
+    note: item.name,
     isLocalUpload: true
-  }
+  }))
+  const targetIndex = Math.max(0, mediaUploadFiles.value.indexOf(file))
+
+  mediaViewerItems.value = items
   mediaViewerLadyName.value = '待上傳檔案'
   mediaViewerLadyCountry.value = ''
+  setMediaViewerIndex(targetIndex)
+}
+
+function showPreviousMedia() {
+  if (mediaViewerTotal.value <= 1) return
+  setMediaViewerIndex(mediaViewerIndex.value - 1)
+}
+
+function showNextMedia() {
+  if (mediaViewerTotal.value <= 1) return
+  setMediaViewerIndex(mediaViewerIndex.value + 1)
+}
+
+function handleMediaViewerKeydown(event) {
+  if (!mediaViewerItem.value) return
+
+  if (event.key === 'ArrowLeft') {
+    event.preventDefault()
+    showPreviousMedia()
+  } else if (event.key === 'ArrowRight') {
+    event.preventDefault()
+    showNextMedia()
+  } else if (event.key === 'Escape') {
+    event.preventDefault()
+    closeMediaViewer()
+  }
+}
+
+function handleMediaViewerTouchStart(event) {
+  mediaViewerTouchStartX.value = Number(event?.changedTouches?.[0]?.clientX ?? event?.touches?.[0]?.clientX)
+}
+
+function handleMediaViewerTouchEnd(event) {
+  const startX = mediaViewerTouchStartX.value
+  const endX = Number(event?.changedTouches?.[0]?.clientX)
+  mediaViewerTouchStartX.value = null
+
+  if (!Number.isFinite(startX) || !Number.isFinite(endX)) return
+  const distance = endX - startX
+  if (Math.abs(distance) < 45) return
+  if (distance > 0) showPreviousMedia()
+  else showNextMedia()
 }
 
 function closeMediaViewer() {
   mediaViewerItem.value = null
+  mediaViewerItems.value = []
+  mediaViewerIndex.value = 0
+  mediaViewerTouchStartX.value = null
   mediaViewerLadyName.value = ''
   mediaViewerLadyCountry.value = ''
 }
@@ -7784,9 +7896,70 @@ select:focus, input:focus, textarea:focus {
 }
 
 .media-viewer-body {
+  position: relative;
   display: grid;
   place-items: center;
   min-height: 320px;
+  overflow: hidden;
+  border-radius: 18px;
+  touch-action: pan-y;
+}
+
+.media-viewer-counter {
+  position: absolute;
+  top: 12px;
+  left: 14px;
+  z-index: 4;
+  min-width: 58px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.82);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 900;
+  text-align: center;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.2);
+  backdrop-filter: blur(8px);
+}
+
+.media-viewer-nav {
+  position: absolute;
+  top: 50%;
+  z-index: 4;
+  width: 48px;
+  height: 64px;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.72);
+  color: #fff;
+  font-size: 44px;
+  font-weight: 500;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transform: translateY(-50%);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.24);
+  backdrop-filter: blur(8px);
+  transition: transform 0.18s ease, background 0.18s ease, opacity 0.18s ease;
+}
+
+.media-viewer-nav:hover {
+  background: rgba(37, 99, 235, 0.9);
+  transform: translateY(-50%) scale(1.05);
+}
+
+.media-viewer-nav:focus-visible {
+  outline: 3px solid rgba(96, 165, 250, 0.55);
+  outline-offset: 3px;
+}
+
+.media-viewer-prev {
+  left: 14px;
+}
+
+.media-viewer-next {
+  right: 14px;
 }
 
 .media-viewer-content {
@@ -7816,6 +7989,14 @@ select:focus, input:focus, textarea:focus {
   font-weight: 700;
 }
 
+.media-viewer-hint {
+  display: block;
+  margin-top: 4px;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .media-viewer-actions {
   display: flex;
   gap: 10px;
@@ -7837,6 +8018,26 @@ select:focus, input:focus, textarea:focus {
 }
 
 @media (max-width: 760px) {
+  .media-viewer-nav {
+    width: 40px;
+    height: 54px;
+    border-radius: 14px;
+    font-size: 36px;
+  }
+
+  .media-viewer-prev {
+    left: 8px;
+  }
+
+  .media-viewer-next {
+    right: 8px;
+  }
+
+  .media-viewer-counter {
+    top: 8px;
+    left: 8px;
+  }
+
   .compact-right-lady-grid {
     grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)) !important;
   }
@@ -10013,3 +10214,6 @@ button:disabled {
     padding-right: 0 !important;
   }
 }
+
+
+/* 第 018-82 批：媒體燈箱左右箭頭、循環切換、張數指示、鍵盤方向鍵、Esc 關閉與手機滑動。 */
