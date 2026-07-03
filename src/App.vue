@@ -1,4 +1,4 @@
-<!-- 第 018-83 批：小姐輕量索引真分頁＋本次命中完整資料按需補讀版 -->
+<!-- 第 018-78 批：10,000 位小姐分頁讀取＋輕量索引版 -->
 <template>
   <!-- batch018-76-employee-rules-semantic-verify-fix -->
   <main v-if="!authReady" class="login-page-shell">
@@ -939,6 +939,15 @@
               </button>
             </div>
 
+            <button
+              class="ghost-btn central-lady-sync-btn"
+              type="button"
+              :disabled="isSingleLadyCentralSyncing || !mediaUploadLadyId || isCurrentDocumentPreviewLadyId(mediaUploadLadyId)"
+              @click="syncSelectedLadyToCentralWebsite"
+            >
+              {{ isSingleLadyCentralSyncing ? '同步中央網站中...' : '重新同步目前小姐到中央網站' }}
+            </button>
+
             <div class="media-upload-selected-panel">
               <div class="selected-panel-title">
                 <strong>待上傳縮圖</strong>
@@ -1246,6 +1255,7 @@ const mediaUploadNote = ref('')
 const mediaUploadFiles = ref([])
 const isMediaDragging = ref(false)
 const mediaUploadStatusText = ref('尚未上傳媒體。')
+const isSingleLadyCentralSyncing = ref(false)
 const mediaViewerItem = ref(null)
 const mediaViewerItems = ref([])
 const mediaViewerIndex = ref(0)
@@ -2811,10 +2821,16 @@ async function deleteLadyMedia(media, lady) {
     frontendStatusText.value = data.message || '媒體已刪除。'
     await loadFrontendLadies({ refresh: true })
     try {
-      await syncSavedLadiesToCentralWebsite()
-      frontendStatusText.value = `${frontendStatusText.value} 中央網站已同步。`
+      const targetLadyId = Number(data?.ladyId || lady?.id || 0)
+      await syncSingleLadyToCentralWebsite(targetLadyId, {
+        maxAttempts: 3,
+        onRetry: ({ nextAttempt, maxAttempts }) => {
+          frontendStatusText.value = `${data.message || '媒體已刪除。'} 中央網站同步暫時失敗，正在進行第 ${nextAttempt} / ${maxAttempts} 次重試...`
+        }
+      })
+      frontendStatusText.value = `${data.message || '媒體已刪除。'} 中央網站已同步。`
     } catch (syncError) {
-      frontendStatusText.value = `${frontendStatusText.value} 但中央網站同步失敗：${syncError.message || syncError}`
+      frontendStatusText.value = `${data.message || '媒體已刪除。'} 但中央網站同步失敗：${syncError.message || syncError}`
     }
   } catch (error) {
     frontendStatusText.value = `刪除媒體失敗：${error.message || error}`
@@ -2935,10 +2951,16 @@ async function uploadLadyMedia() {
 
     await loadFrontendLadies({ refresh: true })
     try {
-      await syncSavedLadiesToCentralWebsite()
-      mediaUploadStatusText.value = `媒體疊加上傳完成：成功 ${successCount} 個，失敗 ${failCount} 個。中央網站已同步。`
+      const targetLadyId = Number(mediaUploadLadyId.value || 0)
+      await syncSingleLadyToCentralWebsite(targetLadyId, {
+        maxAttempts: 3,
+        onRetry: ({ nextAttempt, maxAttempts }) => {
+          mediaUploadStatusText.value = `媒體已上傳到資料庫；中央網站同步暫時失敗，正在進行第 ${nextAttempt} / ${maxAttempts} 次重試...`
+        }
+      })
+      mediaUploadStatusText.value = `媒體疊加上傳完成：成功 ${successCount} 個，失敗 ${failCount} 個。中央網站已同步目前小姐。`
     } catch (syncError) {
-      mediaUploadStatusText.value = `媒體已上傳到資料庫，但中央網站同步失敗：${syncError.message || syncError}`
+      mediaUploadStatusText.value = `媒體已上傳到資料庫，但中央網站同步失敗：${syncError.message || syncError}。圖片仍已保留，可按「重新同步目前小姐到中央網站」再次同步。`
     }
   } catch (error) {
     mediaUploadStatusText.value = `媒體上傳中斷：成功 ${successCount} 個，失敗 ${failCount || 1} 個。錯誤：${error.message || error}`
@@ -2946,12 +2968,90 @@ async function uploadLadyMedia() {
   }
 }
 
+async function syncSelectedLadyToCentralWebsite() {
+  const targetLadyId = Number(mediaUploadLadyId.value || 0)
+  if (!targetLadyId || isCurrentDocumentPreviewLadyId(mediaUploadLadyId.value)) {
+    mediaUploadStatusText.value = '請先選擇已送出到資料庫、具有真實 ID 的小姐。'
+    return
+  }
+
+  if (isSingleLadyCentralSyncing.value) return
+
+  isSingleLadyCentralSyncing.value = true
+  mediaUploadStatusText.value = '正在讀取目前小姐的完整資料與媒體，並同步中央網站...'
+
+  try {
+    const data = await syncSingleLadyToCentralWebsite(targetLadyId, {
+      maxAttempts: 3,
+      onRetry: ({ nextAttempt, maxAttempts }) => {
+        mediaUploadStatusText.value = `中央網站同步暫時失敗，正在進行第 ${nextAttempt} / ${maxAttempts} 次重試...`
+      }
+    })
+    mediaUploadStatusText.value = data?.message || '目前小姐的圖片、影片與資料已同步到中央網站。'
+    await loadFrontendLadies({ refresh: true })
+  } catch (error) {
+    mediaUploadStatusText.value = `目前小姐同步中央網站失敗：${error.message || error}。圖片仍保留在資料庫，可稍後再次重試。`
+  } finally {
+    isSingleLadyCentralSyncing.value = false
+  }
+}
+
 
 const PUBLIC_LADIES_PAGE_SIZE = 200
-const PUBLIC_LADIES_INDEX_MATCH_PAGE_SIZE = 50
-const PUBLIC_LADIES_INDEX_MAX_MATCH_PAGES = 100
-const PUBLIC_LADIES_INDEX_LOOKUP_CONCURRENCY = 4
-const publicLadyDetailCache = new Map()
+const LADIES_INDEX_CACHE_DB_NAME = 'auto-document-converter-public-cache'
+const LADIES_INDEX_CACHE_DB_VERSION = 1
+const LADIES_INDEX_CACHE_STORE = 'ladies-index'
+
+function openLadiesIndexCacheDb() {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') {
+      resolve(null)
+      return
+    }
+
+    const request = indexedDB.open(LADIES_INDEX_CACHE_DB_NAME, LADIES_INDEX_CACHE_DB_VERSION)
+    request.onupgradeneeded = () => {
+      const db = request.result
+      if (!db.objectStoreNames.contains(LADIES_INDEX_CACHE_STORE)) {
+        db.createObjectStore(LADIES_INDEX_CACHE_STORE, { keyPath: 'key' })
+      }
+    }
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error || new Error('IndexedDB 開啟失敗'))
+  })
+}
+
+async function readLadiesIndexBrowserCache(key) {
+  const db = await openLadiesIndexCacheDb().catch(() => null)
+  if (!db) return null
+
+  return new Promise((resolve) => {
+    const transaction = db.transaction(LADIES_INDEX_CACHE_STORE, 'readonly')
+    const request = transaction.objectStore(LADIES_INDEX_CACHE_STORE).get(key)
+    request.onsuccess = () => resolve(request.result || null)
+    request.onerror = () => resolve(null)
+    transaction.oncomplete = () => db.close()
+    transaction.onerror = () => db.close()
+  })
+}
+
+async function writeLadiesIndexBrowserCache(record) {
+  const db = await openLadiesIndexCacheDb().catch(() => null)
+  if (!db) return false
+
+  return new Promise((resolve) => {
+    const transaction = db.transaction(LADIES_INDEX_CACHE_STORE, 'readwrite')
+    transaction.objectStore(LADIES_INDEX_CACHE_STORE).put(record)
+    transaction.oncomplete = () => {
+      db.close()
+      resolve(true)
+    }
+    transaction.onerror = () => {
+      db.close()
+      resolve(false)
+    }
+  })
+}
 
 async function fetchPublicLadiesIndexVersion(options = {}) {
   const query = new URLSearchParams()
@@ -2969,15 +3069,9 @@ async function fetchPublicLadiesIndexVersion(options = {}) {
   return data
 }
 
-async function fetchPublicLadiesIndexPage(options = {}) {
-  const query = new URLSearchParams({
-    page: String(Math.max(1, Number(options.page || 1))),
-    pageSize: String(Math.max(1, Number(options.pageSize || PUBLIC_LADIES_INDEX_MATCH_PAGE_SIZE))),
-  })
+async function fetchPublicLadiesIndexNetwork(options = {}) {
+  const query = new URLSearchParams()
   if (options.includeInactive) query.set('includeInactive', '1')
-  if (options.keyword) query.set('keyword', String(options.keyword))
-  if (options.country) query.set('country', String(options.country))
-  if (options.version) query.set('version', String(options.version))
   if (options.refresh) query.set('cacheBust', String(Date.now()))
 
   const response = await fetch(
@@ -2990,25 +3084,53 @@ async function fetchPublicLadiesIndexPage(options = {}) {
     throw new Error(data.message || `HTTP ${response.status}`)
   }
 
-  const items = Array.isArray(data.items) ? data.items : []
+  return Array.isArray(data.items) ? data.items : []
+}
+
+async function fetchPublicLadiesIndex(options = {}) {
+  const includeInactive = options.includeInactive === true
+  const cacheKey = includeInactive ? 'all' : 'active'
+  const versionInfo = await fetchPublicLadiesIndexVersion({
+    includeInactive,
+    refresh: options.refresh === true,
+  })
+  const cached = options.refresh === true
+    ? null
+    : await readLadiesIndexBrowserCache(cacheKey)
+
+  if (
+    cached &&
+    cached.version === versionInfo.version &&
+    Array.isArray(cached.items)
+  ) {
+    return {
+      items: cached.items,
+      version: versionInfo.version,
+      browserCacheHit: true,
+    }
+  }
+
+  const items = await fetchPublicLadiesIndexNetwork({
+    includeInactive,
+    refresh: options.refresh === true,
+  })
+  await writeLadiesIndexBrowserCache({
+    key: cacheKey,
+    version: versionInfo.version,
+    items,
+    savedAt: Date.now(),
+  })
+
   return {
     items,
-    total: Number(data.total || items.length),
-    page: Number(data.page || options.page || 1),
-    pageSize: Number(data.pageSize || options.pageSize || PUBLIC_LADIES_INDEX_MATCH_PAGE_SIZE),
-    totalPages: Number(data.totalPages || 0),
-    hasMore: data.hasMore === true,
+    version: versionInfo.version,
+    browserCacheHit: false,
   }
 }
 
 async function fetchPublicLadyDetail(ladyId, options = {}) {
   const id = Number(ladyId || 0)
   if (!id) return null
-
-  const cacheKey = String(id)
-  if (!options.refresh && publicLadyDetailCache.has(cacheKey)) {
-    return publicLadyDetailCache.get(cacheKey)
-  }
 
   const query = new URLSearchParams()
   if (options.refresh) query.set('cacheBust', String(Date.now()))
@@ -3023,9 +3145,7 @@ async function fetchPublicLadyDetail(ladyId, options = {}) {
     throw new Error(data.message || `HTTP ${response.status}`)
   }
 
-  const item = data.item || null
-  if (item) publicLadyDetailCache.set(cacheKey, item)
-  return item
+  return data.item || null
 }
 
 function getCurrentDocumentItemsForDetailLookup() {
@@ -3040,130 +3160,51 @@ function getCurrentDocumentItemsForDetailLookup() {
   }
 }
 
-async function mapWithConcurrency(items, limit, mapper) {
-  const rows = Array.isArray(items) ? items : []
-  if (!rows.length) return []
-
-  const results = new Array(rows.length)
-  let nextIndex = 0
-
-  async function runWorker() {
-    while (nextIndex < rows.length) {
-      const currentIndex = nextIndex
-      nextIndex += 1
-      results[currentIndex] = await mapper(rows[currentIndex], currentIndex)
-    }
-  }
-
-  const workerCount = Math.min(Math.max(1, Number(limit || 1)), rows.length)
-  await Promise.all(Array.from({ length: workerCount }, () => runWorker()))
-  return results
-}
-
-async function fetchPublicLadiesIndexMatches(sourceLady, options = {}) {
-  const name = String(sourceLady?.name || '').trim()
-  const country = String(sourceLady?.country || sourceLady?.nationality || sourceLady?.nation || '').trim()
-  const targetKey = makePreviewLadyKey(sourceLady)
-  if (!name || !targetKey) return []
-
-  const matchedRows = []
-  let page = 1
-  let hasMore = true
-
-  while (hasMore && page <= PUBLIC_LADIES_INDEX_MAX_MATCH_PAGES) {
-    const data = await fetchPublicLadiesIndexPage({
-      includeInactive: options.includeInactive === true,
-      page,
-      pageSize: PUBLIC_LADIES_INDEX_MATCH_PAGE_SIZE,
-      keyword: name,
-      country,
-      version: options.version,
-      refresh: options.refresh === true,
-    })
-
-    for (const item of data.items) {
-      if (makePreviewLadyKey(item) === targetKey) matchedRows.push(item)
-    }
-
-    hasMore = data.hasMore === true
-    page += 1
-  }
-
-  return matchedRows
-}
-
-async function loadCurrentDocumentLadyMatches(options = {}) {
+async function enrichLadiesIndexForCurrentDocument(indexItems, options = {}) {
+  const rows = Array.isArray(indexItems) ? indexItems : []
   const currentItems = getCurrentDocumentItemsForDetailLookup()
-  const uniqueByKey = new Map()
+  if (!rows.length || !currentItems.length) {
+    return { items: rows, detailCount: 0 }
+  }
 
-  for (const item of currentItems) {
+  const currentKeys = new Set(currentItems.map(makePreviewLadyKey).filter(Boolean))
+  const matchesByKey = new Map()
+
+  for (const item of rows) {
     const key = makePreviewLadyKey(item)
-    if (key && !uniqueByKey.has(key)) uniqueByKey.set(key, item)
+    if (!currentKeys.has(key)) continue
+    if (!matchesByKey.has(key)) matchesByKey.set(key, [])
+    matchesByKey.get(key).push(item)
   }
 
-  const lookupItems = Array.from(uniqueByKey.values())
-  if (!lookupItems.length) {
-    return {
-      items: [],
-      queryCount: 0,
-      detailCount: 0,
-      version: '',
-    }
+  const matchedIds = Array.from(matchesByKey.values())
+    .filter(matches => matches.length === 1)
+    .map(matches => Number(matches[0]?.id || 0))
+    .filter(Boolean)
+    .slice(0, 50)
+
+  if (!matchedIds.length) {
+    return { items: rows, detailCount: 0 }
   }
 
-  const versionInfo = await fetchPublicLadiesIndexVersion({
-    includeInactive: true,
-    refresh: options.refresh === true,
-  })
-
-  const matchGroups = await mapWithConcurrency(
-    lookupItems,
-    PUBLIC_LADIES_INDEX_LOOKUP_CONCURRENCY,
-    item => fetchPublicLadiesIndexMatches(item, {
-      includeInactive: true,
-      version: versionInfo.version,
-      refresh: options.refresh === true,
-    })
-  )
-
-  const indexById = new Map()
-  for (const group of matchGroups) {
-    for (const item of group) {
-      indexById.set(String(item.id), item)
-    }
-  }
-
-  const singleMatches = matchGroups
-    .filter(group => group.length === 1)
-    .map(group => group[0])
-
-  const details = await mapWithConcurrency(
-    singleMatches,
-    PUBLIC_LADIES_INDEX_LOOKUP_CONCURRENCY,
-    async item => {
+  const details = await Promise.all(
+    matchedIds.map(async id => {
       try {
-        return await fetchPublicLadyDetail(item.id, {
-          refresh: options.refresh === true,
-        })
+        return await fetchPublicLadyDetail(id, options)
       } catch (error) {
-        console.warn(`讀取小姐 ${item.id} 完整資料失敗，保留輕量索引：`, error)
+        console.warn(`讀取小姐 ${id} 完整資料失敗，保留輕量索引：`, error)
         return null
       }
-    }
+    })
   )
 
   const detailById = new Map(
-    details.filter(Boolean).map(item => [String(item.id), item])
+    details.filter(Boolean).map(item => [Number(item.id), item])
   )
-  const items = Array.from(indexById.values()).map(item => (
-    detailById.get(String(item.id)) || item
-  ))
 
   return {
-    items,
-    queryCount: lookupItems.length,
-    detailCount: detailById.size,
-    version: versionInfo.version || '',
+    items: rows.map(item => detailById.get(Number(item.id)) || item),
+    detailCount: detailById.size
   }
 }
 
@@ -3205,24 +3246,25 @@ async function loadFrontendLadies(options = {}) {
   saveApiBaseUrl()
 
   try {
-    // 第 018-83 批：
-    // 不再先下載全部 5,000～10,000 筆小姐索引。
-    // 只依本次文件中的國籍＋姓名查詢輕量索引；唯一命中時才補讀該位完整資料，
-    // 保留防重比對、媒體縮圖、方案與服務顯示，同時大幅降低 Worker／Supabase 流量。
-    const lookupResult = await loadCurrentDocumentLadyMatches({
+    // 第 018-79 批：
+    // 先讀取萬筆可承受的輕量索引，再只補讀本次文件中有命中的小姐完整資料。
+    // 這樣可立即取得真實資料庫 ID、媒體與完整內容，又不會下載全部小姐媒體。
+    const indexResult = await fetchPublicLadiesIndex({
+      includeInactive: true,
       refresh: options.refresh === true,
     })
-
-    frontendLadies.value = lookupResult.items
+    const indexItems = indexResult.items
+    const enriched = await enrichLadiesIndexForCurrentDocument(indexItems, {
+      refresh: options.refresh === true,
+    })
+    frontendLadies.value = enriched.items
     frontendLadiesLoaded.value = true
-
-    if (!lookupResult.queryCount) {
-      frontendStatusText.value = '本次文件尚無小姐資料，未發出小姐索引查詢。'
-    } else if (lookupResult.detailCount) {
-      frontendStatusText.value = `已用 Worker 輕量索引精準查詢本次 ${lookupResult.queryCount} 組小姐，並補讀 ${lookupResult.detailCount} 筆完整資料。`
-    } else {
-      frontendStatusText.value = `已用 Worker 輕量索引精準查詢本次 ${lookupResult.queryCount} 組小姐，資料庫目前沒有唯一命中資料。`
-    }
+    const indexSourceText = indexResult.browserCacheHit
+      ? '瀏覽器快取（版本未變更，未重新下載萬筆索引）'
+      : 'Worker 輕量索引'
+    frontendStatusText.value = enriched.detailCount
+      ? `已從${indexSourceText}讀取 ${indexItems.length} 筆小姐索引，並補讀本次 ${enriched.detailCount} 筆完整資料。`
+      : `已從${indexSourceText}讀取 ${indexItems.length} 筆小姐索引。`
     return true
   } catch (error) {
     frontendLadiesLoaded.value = false
@@ -3308,75 +3350,152 @@ async function ensureAppendImportBackendReady() {
   return data
 }
 
-async function syncSavedLadiesToCentralWebsite() {
+// 第 018-85 批：媒體上傳／刪除只同步目前小姐，避免單次操作重送全部資料。
+const CENTRAL_WEBSITE_SYNC_TIMEOUT_MS = 20000
+const CENTRAL_WEBSITE_SINGLE_SYNC_ATTEMPTS = 3
+
+function waitCentralWebsiteSyncRetry(milliseconds) {
+  return new Promise(resolve => window.setTimeout(resolve, milliseconds))
+}
+
+function getCurrentDocumentPreviewLady(item) {
+  const itemId = String(item?.id || '')
+  const itemKey = makePreviewLadyKey(item)
+
+  return currentDocumentPreviewLadies.value.find(lady => (
+    itemId && String(lady?.id || '') === itemId
+  )) || currentDocumentPreviewLadies.value.find(lady => (
+    itemKey && makePreviewLadyKey(lady) === itemKey
+  )) || null
+}
+
+function buildCentralWebsiteSyncItem(item, previewLady = null) {
+  const currentPreview = previewLady || getCurrentDocumentPreviewLady(item)
+  if (!currentPreview) return item
+
+  const currentLocation = getCurrentListingLocation()
+  const city = currentPreview.city || item.city || currentLocation.city
+  const district = currentPreview.district || item.district || currentLocation.district
+  const mode = currentPreview.mode || item.mode || currentLocation.mode
+  const room = ''
+  const sourceIdentity = currentPreview.sourceIdentity || makeStableLadySourceIdentity({
+    ...item,
+    ...currentPreview,
+    sourceRoom: currentPreview.sourceRoom || ruleScopeRoom.value
+  })
+
+  return {
+    ...item,
+    sourceId: sourceIdentity,
+    sourceIdentity,
+    sourceRoom: currentPreview.sourceRoom || ruleScopeRoom.value || '',
+    city,
+    district,
+    mode,
+    room,
+    location: item.location || currentPreview.location || [city, district].filter(Boolean).join(' '),
+    locationInfo: {
+      ...(item.locationInfo || {}),
+      ...(currentPreview.locationInfo || {}),
+      city,
+      district,
+      mode,
+      room
+    }
+  }
+}
+
+async function getCentralWebsiteAccessToken() {
   const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
   const accessToken = sessionData?.session?.access_token || ''
   if (sessionError || !accessToken) {
     throw new Error(`無法取得員工登入憑證：${sessionError?.message || '請重新登入'}`)
   }
+  return accessToken
+}
 
-  // 第 018-78 批：中央同步屬人工操作，改用每頁 200 筆分段讀取，
-  // 避免 5,000～10,000 位小姐一次形成超大 JSON。
+async function postCentralWebsiteSyncItems(items, options = {}) {
+  const syncItems = Array.isArray(items) ? items.filter(Boolean) : []
+  if (!syncItems.length) throw new Error('沒有可同步到中央網站的小姐資料。')
+
+  const accessToken = await getCentralWebsiteAccessToken()
+  const maxAttempts = Math.max(1, Number(options.maxAttempts || 1))
+  let lastError = null
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(() => controller.abort(), CENTRAL_WEBSITE_SYNC_TIMEOUT_MS)
+
+    try {
+      const response = await fetch(`${CENTRAL_WEBSITE_API_BASE_URL}/api/integrations/converter/central-listings/import`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'X-Converter-Apikey': SUPABASE_PUBLIC_API_KEY
+        },
+        body: JSON.stringify({ items: syncItems }),
+        signal: controller.signal
+      })
+      const data = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        const error = new Error(data.message || data.error || `網站同步失敗：HTTP ${response.status}`)
+        error.status = response.status
+        throw error
+      }
+
+      return data
+    } catch (error) {
+      lastError = error
+      const status = Number(error?.status || 0)
+      const retryableStatus = !status || [408, 425, 429, 500, 502, 503, 504].includes(status)
+      const shouldRetry = attempt < maxAttempts && retryableStatus
+
+      if (!shouldRetry) throw error
+
+      if (typeof options.onRetry === 'function') {
+        options.onRetry({
+          attempt,
+          nextAttempt: attempt + 1,
+          maxAttempts,
+          error
+        })
+      }
+
+      await waitCentralWebsiteSyncRetry(Math.min(3000, 600 * attempt))
+    } finally {
+      window.clearTimeout(timeoutId)
+    }
+  }
+
+  throw lastError || new Error('中央網站同步失敗。')
+}
+
+async function syncSingleLadyToCentralWebsite(ladyId, options = {}) {
+  const id = Number(ladyId || 0)
+  if (!id) throw new Error('找不到要同步的小姐資料庫 ID。')
+
+  const item = await fetchPublicLadyDetail(id, { refresh: true })
+  if (!item) throw new Error('讀不到目前小姐的完整資料。')
+
+  const syncItem = buildCentralWebsiteSyncItem(item, options.previewLady || null)
+  return postCentralWebsiteSyncItems([syncItem], {
+    ...options,
+    maxAttempts: Math.max(1, Number(options.maxAttempts || CENTRAL_WEBSITE_SINGLE_SYNC_ATTEMPTS))
+  })
+}
+
+async function syncSavedLadiesToCentralWebsite() {
+  // 文件3正式送出仍保留整批同步；媒體上傳與刪除改走 syncSingleLadyToCentralWebsite。
   const items = await fetchAllPublicLadies({
     includeInactive: true,
     refresh: true,
   })
   if (!items.length) throw new Error('資料庫目前沒有可同步到網站的小姐資料。')
 
-  const currentLocation = getCurrentListingLocation()
-  const currentPreviewByKey = new Map(
-    currentDocumentPreviewLadies.value.map(lady => [makePreviewLadyKey(lady), lady])
-  )
-  const syncItems = items.map(item => {
-    const currentPreview = currentPreviewByKey.get(makePreviewLadyKey(item))
-    if (!currentPreview) return item
-
-    const city = currentPreview.city || item.city || currentLocation.city
-    const district = currentPreview.district || item.district || currentLocation.district
-    const mode = currentPreview.mode || item.mode || currentLocation.mode
-    const room = ''
-
-    const sourceIdentity = currentPreview.sourceIdentity || makeStableLadySourceIdentity({
-      ...item,
-      ...currentPreview,
-      sourceRoom: currentPreview.sourceRoom || ruleScopeRoom.value
-    })
-
-    return {
-      ...item,
-      sourceId: sourceIdentity,
-      sourceIdentity,
-      sourceRoom: currentPreview.sourceRoom || ruleScopeRoom.value || '',
-      city,
-      district,
-      mode,
-      room,
-      location: item.location || currentPreview.location || [city, district].filter(Boolean).join(' '),
-      locationInfo: {
-        ...(item.locationInfo || {}),
-        ...(currentPreview.locationInfo || {}),
-        city,
-        district,
-        mode,
-        room
-      }
-    }
-  })
-
-  const response = await fetch(`${CENTRAL_WEBSITE_API_BASE_URL}/api/integrations/converter/central-listings/import`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-      'X-Converter-Apikey': SUPABASE_PUBLIC_API_KEY
-    },
-    body: JSON.stringify({ items: syncItems })
-  })
-  const data = await response.json().catch(() => ({}))
-  if (!response.ok) {
-    throw new Error(data.message || `網站同步失敗：HTTP ${response.status}`)
-  }
-  return data
+  const syncItems = items.map(item => buildCentralWebsiteSyncItem(item))
+  return postCentralWebsiteSyncItems(syncItems, { maxAttempts: 1 })
 }
 
 function safeSetStorageValue(key, value) {
@@ -3694,12 +3813,7 @@ function parseConfirmedTextToJson(text) {
 }
 
 function updateJsonPreview() {
-  const nextJson = JSON.stringify(parseConfirmedTextToJson(confirmedText.value), null, 2)
-  if (nextJson !== jsonResultText.value) {
-    frontendLadiesLoaded.value = false
-    frontendLadies.value = []
-  }
-  jsonResultText.value = nextJson
+  jsonResultText.value = JSON.stringify(parseConfirmedTextToJson(confirmedText.value), null, 2)
 }
 
 function ensureSourceTextBottomBlankLines(text = '') {
@@ -8089,6 +8203,11 @@ select:focus, input:focus, textarea:focus {
 
 .compact-media-upload-box .media-upload-actions {
   gap: 8px !important;
+}
+
+.central-lady-sync-btn {
+  width: 100%;
+  min-height: 42px;
 }
 
 .media-upload-selected-panel {
