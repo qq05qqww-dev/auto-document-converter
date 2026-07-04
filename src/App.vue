@@ -11184,7 +11184,7 @@ button:disabled {
   inset: 0 !important;
   display: grid !important;
   place-items: center !important;
-  padding: 28px 18px !important;
+  padding: 8px 18px !important;
   overflow: hidden !important;
 }
 
@@ -11198,9 +11198,9 @@ button:disabled {
   margin: 0 auto !important;
   width: min(1180px, calc(100vw - 54px)) !important;
   max-width: min(1180px, calc(100vw - 54px)) !important;
-  height: calc(100vh - 80px) !important;
-  min-height: 680px !important;
-  max-height: calc(100vh - 56px) !important;
+  height: calc(100vh - 16px) !important;
+  min-height: min(760px, calc(100vh - 16px)) !important;
+  max-height: calc(100vh - 16px) !important;
   overflow: hidden !important;
   display: grid !important;
   grid-template-rows: auto minmax(0, 1fr) auto !important;
@@ -11232,7 +11232,7 @@ button:disabled {
   height: auto !important;
   min-height: 0 !important;
   max-height: none !important;
-  overflow: visible !important;
+  overflow: auto !important;
   box-sizing: border-box !important;
   display: grid !important;
   grid-template-columns: minmax(0, 0.96fr) minmax(0, 1.04fr) minmax(0, 0.96fr) !important;
@@ -11243,7 +11243,7 @@ button:disabled {
 
 .location-manager-modal-card .option-manager-panel {
   min-height: 0 !important;
-  height: auto !important;
+  height: 100% !important;
   max-height: none !important;
   overflow: visible !important;
   padding: 16px !important;
