@@ -1,4 +1,4 @@
-<!-- 第 018-78 批：10,000 位小姐分頁讀取＋輕量索引版 -->
+<!-- 第 018-86 批：頂部設定功能改成畫面中央彈窗版 -->
 <template>
   <!-- batch018-76-employee-rules-semantic-verify-fix -->
   <main v-if="!authReady" class="login-page-shell">
@@ -91,6 +91,12 @@
         </div>
       </div>
 
+      <div
+        v-if="activeTopPanel || showScopeManager"
+        class="top-settings-modal-backdrop"
+        @click.self="closeTopSettingModal"
+      ></div>
+
       <section v-if="isOwner && showEmployeeManager" class="owner-employee-card">
         <div class="owner-employee-header">
           <div>
@@ -179,13 +185,16 @@
         </div>
       </section>
 
-      <section class="scope-manager-card" v-if="showScopeManager">
-        <div class="scope-rule-header">
+      <section class="scope-manager-card top-settings-modal-card top-settings-scope-modal" v-if="showScopeManager">
+        <div class="scope-rule-header top-settings-modal-head">
           <div>
             <h3>我的地區 / 定點外送 / 機房管理</h3>
             <p>{{ currentStaffName }} 的個人管理清單；新增、修改、刪除只影響目前登入的員工。</p>
           </div>
-          <div class="scope-status-pill">{{ currentStaffName }} 已建立：{{ locationCities.length }} 縣市 / {{ totalDistrictCount }} 地區 / {{ totalRoomCount }} 機房</div>
+          <div class="top-settings-modal-head-actions">
+            <div class="scope-status-pill">{{ currentStaffName }} 已建立：{{ locationCities.length }} 縣市 / {{ totalDistrictCount }} 地區 / {{ totalRoomCount }} 機房</div>
+            <button class="top-settings-modal-close" type="button" @click="closeTopSettingModal">關閉</button>
+          </div>
         </div>
 
         <div class="scope-manager-selection-shell">
@@ -403,7 +412,14 @@
 
       </section>
 
-        <div v-if="showPriceSettings" class="hero-actions setting-content-block">
+        <div v-if="showPriceSettings" class="hero-actions setting-content-block top-settings-modal-card top-settings-price-modal">
+        <div class="top-settings-modal-head">
+          <div>
+            <h3>金額設定</h3>
+            <p>調整加價模式、固定加價、自訂加價與分鐘加價規則。</p>
+          </div>
+          <button class="top-settings-modal-close" type="button" @click="closeTopSettingModal">關閉</button>
+        </div>
         <label>
           加價模式
           <select v-model="priceMode">
@@ -448,7 +464,14 @@
         </label>
 
         </div>
-      <div v-if="showFormatSettings" class="rule-grid top-rules setting-content-block compact-control-content">
+      <div v-if="showFormatSettings" class="rule-grid top-rules setting-content-block compact-control-content top-settings-modal-card top-settings-format-modal">
+        <div class="top-settings-modal-head">
+          <div>
+            <h3>輸出格式</h3>
+            <p>設定文件輸出的標題與格式提示。</p>
+          </div>
+          <button class="top-settings-modal-close" type="button" @click="closeTopSettingModal">關閉</button>
+        </div>
         <label>
           輸出格式說明
           <input v-model="formatHint" />
@@ -464,12 +487,13 @@
         </label>
         </div>
 
-      <section v-if="showQuickRules" class="quick-rule-section setting-content-block compact-control-content">
-        <div class="quick-rule-header">
+      <section v-if="showQuickRules" class="quick-rule-section setting-content-block compact-control-content top-settings-modal-card top-settings-quick-modal">
+        <div class="quick-rule-header top-settings-modal-head">
           <div>
             <h3>簡單模式｜常用規則</h3>
             <p>平常主要改這裡；新店家特殊格式再展開進階設定。</p>
           </div>
+          <button class="top-settings-modal-close" type="button" @click="closeTopSettingModal">關閉</button>
         </div>
 
         <div class="rule-actions rule-actions-center quick-rules-actions">
@@ -539,10 +563,13 @@
         </div>
       </section>
 
-      <section v-if="showAdvancedSettings" class="advanced-section compact-control-content">
-        <div class="advanced-title">
-          <h3>進階設定</h3>
-          <p>一般情況不用改這裡；遇到新店家格式抓不到、身材格式特殊、或詞被誤判成小姐名時再調整。</p>
+      <section v-if="showAdvancedSettings" class="advanced-section compact-control-content top-settings-modal-card top-settings-advanced-modal">
+        <div class="advanced-title top-settings-modal-head">
+          <div>
+            <h3>進階設定</h3>
+            <p>一般情況不用改這裡；遇到新店家格式抓不到、身材格式特殊、或詞被誤判成小姐名時再調整。</p>
+          </div>
+          <button class="top-settings-modal-close" type="button" @click="closeTopSettingModal">關閉</button>
         </div>
 
                 <div class="advanced-inner-tabs">
@@ -706,15 +733,18 @@
     </section>
 
 
-    <section v-if="showApiPanel" class="api-panel api-panel-top setting-content-block compact-control-content api-clean-panel">
-      <div class="api-clean-header">
+    <section v-if="showApiPanel" class="api-panel api-panel-top setting-content-block compact-control-content api-clean-panel top-settings-modal-card top-settings-api-modal">
+      <div class="api-clean-header top-settings-modal-head">
         <div>
           <h2>API 串接測試</h2>
           <p>這裡預設連線到 Render 線上 API，也可以手動切換其他 API 位置。</p>
           <p class="online-ready-hint">{{ ONLINE_READY_VERSION_LABEL }}｜線上版測試更清楚。</p>
         </div>
-        <div class="api-status-box">
-          <p class="hint api-status-text">{{ apiStatusText }}</p>
+        <div class="top-settings-modal-head-actions">
+          <div class="api-status-box">
+            <p class="hint api-status-text">{{ apiStatusText }}</p>
+          </div>
+          <button class="top-settings-modal-close" type="button" @click="closeTopSettingModal">關閉</button>
         </div>
       </div>
 
@@ -1835,9 +1865,21 @@ function toggleAdvancedPanel(panel) {
   activeAdvancedPanel.value = activeAdvancedPanel.value === panel ? '' : panel
 }
 
+function closeTopSettingModal() {
+  activeTopPanel.value = ''
+  showPriceSettings.value = false
+  showFormatSettings.value = false
+  showQuickRules.value = false
+  showAdvancedSettings.value = false
+  showApiPanel.value = false
+  showScopeManager.value = false
+  showScopeCrudPanel.value = false
+}
 
 function toggleTopPanel(panel) {
-  activeTopPanel.value = activeTopPanel.value === panel ? '' : panel
+  const nextPanel = activeTopPanel.value === panel ? '' : panel
+  closeTopSettingModal()
+  activeTopPanel.value = nextPanel
   showPriceSettings.value = activeTopPanel.value === 'price'
   showFormatSettings.value = activeTopPanel.value === 'format'
   showQuickRules.value = activeTopPanel.value === 'quick'
@@ -1847,14 +1889,7 @@ function toggleTopPanel(panel) {
 
 function toggleScopeManager() {
   const nextVisible = !showScopeManager.value
-
-  activeTopPanel.value = ''
-  showPriceSettings.value = false
-  showFormatSettings.value = false
-  showQuickRules.value = false
-  showAdvancedSettings.value = false
-  showApiPanel.value = false
-
+  closeTopSettingModal()
   showScopeManager.value = nextVisible
 }
 
@@ -2302,16 +2337,15 @@ const sampleText = `💢超性感搖搖馬💢
 
 
 function closeAllTopPanelsForCleanStart() {
-  // 第 018-51 批：每次進入頁面保留乾淨狀態，但固定展開地區機房管理。
-  // 不保留上次展開的金額 / 格式 / 常用 / 進階 / API 面板，避免畫面亂掉。
-  // 地區 / 定點外送 / 機房管理是主要操作入口，預設展開讓使用者一進來就看得到。
+  // 第 018-86 批：頂部設定改成彈窗後，進入頁面先保持乾淨狀態。
+  // 使用者點金額 / 輸出 / 常用 / 進階 / API / 地區機房管理時，再於畫面中央開啟。
   activeTopPanel.value = ''
   showPriceSettings.value = false
   showFormatSettings.value = false
   showQuickRules.value = false
   showAdvancedSettings.value = false
   showApiPanel.value = false
-  showScopeManager.value = true
+  showScopeManager.value = false
   showScopeCrudPanel.value = false
 
   localStorage.removeItem(CLEAN_START_PANEL_STORAGE_KEY)
@@ -6640,6 +6674,152 @@ select:focus, input:focus, textarea:focus {
   margin: 0 0 12px;
   color: #64748b;
   font-weight: 800;
+}
+
+
+/* 第 018-86 批：頂部設定功能改成畫面正中央彈窗 */
+.top-settings-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2100;
+  background: rgba(15, 23, 42, 0.42);
+  backdrop-filter: blur(8px);
+}
+
+.top-settings-modal-card {
+  position: fixed !important;
+  left: 50%;
+  top: 50%;
+  z-index: 2110;
+  width: min(1040px, calc(100vw - 36px));
+  max-height: min(84vh, 860px);
+  margin: 0 !important;
+  padding: 22px !important;
+  overflow: auto;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(148, 163, 184, 0.34) !important;
+  border-radius: 28px !important;
+  background: rgba(255, 255, 255, 0.96) !important;
+  box-shadow: 0 34px 90px rgba(15, 23, 42, 0.34) !important;
+}
+
+.top-settings-modal-head {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 0 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.top-settings-modal-head h2,
+.top-settings-modal-head h3 {
+  margin: 0 0 4px;
+  color: #0f172a;
+}
+
+.top-settings-modal-head p {
+  margin: 0;
+  color: #64748b;
+  font-weight: 700;
+}
+
+.top-settings-modal-head-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.top-settings-modal-close {
+  flex: 0 0 auto;
+  min-width: 76px;
+  border: 1px solid rgba(148, 163, 184, 0.42);
+  border-radius: 999px;
+  padding: 10px 16px;
+  background: #fff;
+  color: #334155;
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+}
+
+.top-settings-modal-close:hover {
+  border-color: rgba(37, 99, 235, 0.55);
+  color: #1d4ed8;
+}
+
+.top-settings-price-modal,
+.top-settings-format-modal {
+  max-width: 900px;
+}
+
+.top-settings-price-modal {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 16px;
+}
+
+.top-settings-format-modal {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.top-settings-quick-modal,
+.top-settings-advanced-modal,
+.top-settings-api-modal,
+.top-settings-scope-modal {
+  width: min(1180px, calc(100vw - 36px));
+}
+
+.top-settings-scope-modal .scope-rule-header {
+  align-items: flex-start;
+}
+
+.top-settings-scope-modal .option-modal-mask {
+  z-index: 2120;
+}
+
+.top-settings-scope-modal .option-modal-card {
+  z-index: 2130;
+}
+
+.top-settings-api-modal.api-panel {
+  display: grid !important;
+  grid-template-columns: 1fr;
+  align-items: stretch;
+}
+
+.top-settings-api-modal .api-clean-header {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 760px) {
+  .top-settings-modal-card {
+    width: calc(100vw - 18px);
+    max-height: 88vh;
+    padding: 18px !important;
+    border-radius: 22px !important;
+  }
+
+  .top-settings-price-modal,
+  .top-settings-format-modal {
+    grid-template-columns: 1fr;
+  }
+
+  .top-settings-modal-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .top-settings-modal-head-actions {
+    justify-content: flex-start;
+  }
 }
 
 .setting-content-block {
