@@ -6677,7 +6677,7 @@ select:focus, input:focus, textarea:focus {
 }
 
 
-/* 第 018-89 批：地區機房管理主要選項單排版（延續第 018-88 批） */
+/* 第 018-90 批：管理清單彈窗高度拉長至大視窗版（延續第 018-89 批） */
 .top-settings-modal-backdrop {
   position: fixed;
   inset: 0;
@@ -9822,6 +9822,67 @@ button:disabled {
 
 .location-modal-grid-room-first .option-manager-panel {
   min-height: 330px;
+}
+
+
+/* 第 018-90 批：管理清單彈窗上下高度拉長，貼近紅框大視窗範圍 */
+.location-manager-modal-card.option-modal-card {
+  width: min(1280px, calc(100vw - 96px));
+  height: min(78vh, 760px);
+  max-height: calc(100vh - 88px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.location-manager-modal-card .option-modal-head {
+  flex: 0 0 auto;
+}
+
+.location-manager-modal-card .location-modal-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  align-items: stretch;
+}
+
+.location-manager-modal-card .location-modal-bottom {
+  flex: 0 0 auto;
+}
+
+.location-manager-modal-card .option-manager-panel {
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.location-manager-modal-card .modal-inline-label {
+  flex: 0 0 auto;
+}
+
+.location-manager-modal-card .city-button-list,
+.location-manager-modal-card .district-button-list {
+  flex: 1 1 auto;
+  min-height: 180px;
+  max-height: none;
+  align-content: flex-start;
+}
+
+@media (max-width: 980px) {
+  .location-manager-modal-card.option-modal-card {
+    width: calc(100vw - 32px);
+    height: min(84vh, 760px);
+    max-height: calc(100vh - 36px);
+  }
+}
+
+@media (max-width: 640px) {
+  .location-manager-modal-card.option-modal-card {
+    width: calc(100vw - 18px);
+    height: calc(100vh - 26px);
+    max-height: calc(100vh - 26px);
+  }
 }
 
 
