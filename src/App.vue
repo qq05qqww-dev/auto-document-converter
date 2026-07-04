@@ -10987,4 +10987,157 @@ button:disabled {
   }
 }
 
+
+
+/* 第 018-93 批：管理清單字體放大，彈窗上下加高置中顯示 */
+.location-manager-modal-card.option-modal-card {
+  width: min(1180px, calc(100vw - 44px)) !important;
+  height: min(86vh, 820px) !important;
+  min-height: min(760px, calc(100vh - 44px)) !important;
+  max-height: calc(100vh - 28px) !important;
+  transform: translate(-50%, -50%) !important;
+  overflow: hidden !important;
+}
+
+.location-manager-modal-card .option-modal-head {
+  padding: 22px 26px 15px !important;
+}
+
+.location-manager-modal-card .option-modal-head h2 {
+  font-size: 28px !important;
+  line-height: 1.18 !important;
+  letter-spacing: 0.02em !important;
+}
+
+.location-manager-modal-card .option-modal-head p {
+  font-size: 15px !important;
+  line-height: 1.55 !important;
+}
+
+.location-manager-modal-card .option-sync-pill {
+  padding: 7px 12px !important;
+  font-size: 13px !important;
+}
+
+.location-manager-modal-card .location-modal-grid,
+.location-manager-modal-card .location-modal-grid.location-modal-grid-room-first {
+  height: 100% !important;
+  padding: 14px 16px !important;
+  gap: 12px !important;
+  align-items: stretch !important;
+}
+
+.location-manager-modal-card .option-manager-panel {
+  padding: 15px !important;
+  border-radius: 18px !important;
+}
+
+.location-manager-modal-card .option-manager-panel h3 {
+  font-size: 18px !important;
+  line-height: 1.25 !important;
+  margin-bottom: 11px !important;
+}
+
+.location-manager-modal-card .modal-inline-label {
+  font-size: 13px !important;
+  line-height: 1.35 !important;
+  margin: 6px 0 7px !important;
+}
+
+.location-manager-modal-card .option-manager-panel input,
+.location-manager-modal-card .option-manager-panel select {
+  min-height: 38px !important;
+  height: 38px !important;
+  font-size: 15px !important;
+  padding: 0 12px !important;
+  border-radius: 12px !important;
+}
+
+.location-manager-modal-card .option-inline-input button,
+.location-manager-modal-card .option-action-row button {
+  min-height: 38px !important;
+  padding: 0 13px !important;
+  font-size: 13px !important;
+}
+
+.location-manager-modal-card .option-current-text,
+.location-manager-modal-card .district-selected-city-note,
+.location-manager-modal-card .district-empty-note {
+  font-size: 14px !important;
+  line-height: 1.45 !important;
+  margin: 8px 0 !important;
+}
+
+.location-manager-modal-card .modal-button-list,
+.location-manager-modal-card .city-button-list,
+.location-manager-modal-card .district-button-list {
+  gap: 7px !important;
+  margin-bottom: 8px !important;
+}
+
+.location-manager-modal-card .modal-select-button {
+  min-height: 30px !important;
+  padding: 0 10px !important;
+  font-size: 12.5px !important;
+  border-radius: 999px !important;
+}
+
+.location-manager-modal-card .drag-handle,
+.location-manager-modal-card .modal-select-button span {
+  width: 16px !important;
+  height: 16px !important;
+  font-size: 11px !important;
+}
+
+.location-manager-modal-card .location-modal-bottom {
+  padding: 12px 26px 18px !important;
+  font-size: 14px !important;
+  line-height: 1.45 !important;
+}
+
+.location-manager-modal-card .location-modal-bottom .restore-btn {
+  padding: 11px 22px !important;
+  font-size: 14px !important;
+}
+
+.location-manager-modal-card .option-modal-close {
+  top: 16px !important;
+  right: 18px !important;
+  font-size: 30px !important;
+  line-height: 1 !important;
+}
+
+@media (max-height: 900px) and (min-width: 921px) {
+  .location-manager-modal-card.option-modal-card {
+    height: calc(100vh - 34px) !important;
+    min-height: calc(100vh - 34px) !important;
+    transform: translate(-50%, -50%) !important;
+  }
+}
+
+@media (max-height: 720px) and (min-width: 921px) {
+  .location-manager-modal-card.option-modal-card {
+    height: calc(100vh - 22px) !important;
+    min-height: calc(100vh - 22px) !important;
+  }
+
+  .location-manager-modal-card .option-modal-head h2 {
+    font-size: 24px !important;
+  }
+
+  .location-manager-modal-card .option-modal-head p {
+    font-size: 13.5px !important;
+  }
+
+  .location-manager-modal-card .option-manager-panel h3 {
+    font-size: 16px !important;
+  }
+
+  .location-manager-modal-card .option-manager-panel input,
+  .location-manager-modal-card .option-manager-panel select {
+    min-height: 34px !important;
+    height: 34px !important;
+  }
+}
+
 </style>
