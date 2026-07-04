@@ -6677,7 +6677,7 @@ select:focus, input:focus, textarea:focus {
 }
 
 
-/* 第 018-88 批：地區機房管理彈窗尺寸修正版（延續第 018-87 批） */
+/* 第 018-89 批：地區機房管理主要選項單排版（延續第 018-88 批） */
 .top-settings-modal-backdrop {
   position: fixed;
   inset: 0;
@@ -6784,12 +6784,24 @@ select:focus, input:focus, textarea:focus {
 }
 
 .top-settings-scope-modal .scope-manager-select-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .top-settings-scope-modal .manager-crud-toggle {
   width: 100%;
   grid-column: 1 / -1;
+}
+
+@media (max-width: 980px) {
+  .top-settings-scope-modal .scope-manager-select-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .top-settings-scope-modal .scope-manager-select-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .top-settings-scope-modal .room-rule-action-row {
