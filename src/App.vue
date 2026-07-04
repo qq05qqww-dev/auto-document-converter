@@ -11175,4 +11175,216 @@ button:disabled {
   }
 }
 
+
+
+/* 第 018-95 批：修正管理清單彈窗加高後 footer 被 grid 擠出，並讓整個彈窗真正往上往下拉長 */
+.option-modal-mask:has(.location-manager-modal-card),
+.top-settings-scope-modal .option-modal-mask:has(.location-manager-modal-card) {
+  position: fixed !important;
+  inset: 0 !important;
+  display: grid !important;
+  place-items: center !important;
+  padding: 28px 18px !important;
+  overflow: hidden !important;
+}
+
+.option-modal-mask .location-manager-modal-card.option-modal-card,
+.top-settings-scope-modal .option-modal-mask .location-manager-modal-card.option-modal-card {
+  position: relative !important;
+  inset: auto !important;
+  left: auto !important;
+  top: auto !important;
+  transform: none !important;
+  margin: 0 auto !important;
+  width: min(1180px, calc(100vw - 54px)) !important;
+  max-width: min(1180px, calc(100vw - 54px)) !important;
+  height: calc(100vh - 80px) !important;
+  min-height: 680px !important;
+  max-height: calc(100vh - 56px) !important;
+  overflow: hidden !important;
+  display: grid !important;
+  grid-template-rows: auto minmax(0, 1fr) auto !important;
+  border-radius: 26px !important;
+}
+
+.location-manager-modal-card .option-modal-head {
+  padding: 26px 30px 18px !important;
+  min-height: auto !important;
+}
+
+.location-manager-modal-card .option-modal-head h2 {
+  font-size: 30px !important;
+  line-height: 1.18 !important;
+}
+
+.location-manager-modal-card .option-modal-head p {
+  font-size: 16px !important;
+  line-height: 1.5 !important;
+}
+
+.location-manager-modal-card .option-sync-pill {
+  font-size: 14px !important;
+  padding: 7px 13px !important;
+}
+
+.location-manager-modal-card .location-modal-grid,
+.location-manager-modal-card .location-modal-grid.location-modal-grid-room-first {
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow: visible !important;
+  box-sizing: border-box !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 0.96fr) minmax(0, 1.04fr) minmax(0, 0.96fr) !important;
+  gap: 14px !important;
+  padding: 18px 18px 12px !important;
+  align-items: stretch !important;
+}
+
+.location-manager-modal-card .option-manager-panel {
+  min-height: 0 !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+  padding: 16px !important;
+}
+
+.location-manager-modal-card .option-manager-panel h3 {
+  font-size: 19px !important;
+}
+
+.location-manager-modal-card .modal-inline-label,
+.location-manager-modal-card .district-selected-city-note,
+.location-manager-modal-card .district-empty-note,
+.location-manager-modal-card .option-current-text {
+  font-size: 14px !important;
+}
+
+.location-manager-modal-card .option-manager-panel input,
+.location-manager-modal-card .option-manager-panel select {
+  min-height: 40px !important;
+  height: 40px !important;
+  font-size: 15px !important;
+}
+
+.location-manager-modal-card .option-inline-input button,
+.location-manager-modal-card .option-action-row button {
+  min-height: 40px !important;
+  font-size: 14px !important;
+}
+
+.location-manager-modal-card .modal-button-list,
+.location-manager-modal-card .city-button-list,
+.location-manager-modal-card .district-button-list {
+  max-height: none !important;
+  overflow: visible !important;
+  gap: 7px !important;
+}
+
+.location-manager-modal-card .modal-select-button {
+  min-height: 32px !important;
+  font-size: 13px !important;
+  padding: 0 10px !important;
+}
+
+.location-manager-modal-card .location-modal-bottom {
+  display: flex !important;
+  justify-content: flex-end !important;
+  align-items: center !important;
+  padding: 16px 30px 24px !important;
+  min-height: 72px !important;
+  box-sizing: border-box !important;
+}
+
+.location-manager-modal-card .location-modal-bottom .restore-btn {
+  display: inline-flex !important;
+  min-height: 46px !important;
+  padding: 0 26px !important;
+  font-size: 15px !important;
+  align-items: center !important;
+}
+
+.location-manager-modal-card .option-modal-close {
+  top: 18px !important;
+  right: 20px !important;
+  z-index: 4 !important;
+}
+
+@media (max-height: 820px) and (min-width: 921px) {
+  .option-modal-mask .location-manager-modal-card.option-modal-card,
+  .top-settings-scope-modal .option-modal-mask .location-manager-modal-card.option-modal-card {
+    height: calc(100vh - 36px) !important;
+    min-height: 0 !important;
+    max-height: calc(100vh - 36px) !important;
+  }
+
+  .location-manager-modal-card .option-modal-head {
+    padding: 22px 26px 14px !important;
+  }
+
+  .location-manager-modal-card .option-modal-head h2 {
+    font-size: 27px !important;
+  }
+
+  .location-manager-modal-card .option-modal-head p {
+    font-size: 14.5px !important;
+  }
+
+  .location-manager-modal-card .location-modal-grid,
+  .location-manager-modal-card .location-modal-grid.location-modal-grid-room-first {
+    padding: 12px 14px 8px !important;
+    gap: 10px !important;
+  }
+
+  .location-manager-modal-card .option-manager-panel {
+    padding: 12px !important;
+  }
+
+  .location-manager-modal-card .option-manager-panel h3 {
+    font-size: 17px !important;
+    margin-bottom: 8px !important;
+  }
+
+  .location-manager-modal-card .option-manager-panel input,
+  .location-manager-modal-card .option-manager-panel select {
+    min-height: 34px !important;
+    height: 34px !important;
+    font-size: 14px !important;
+    margin-bottom: 6px !important;
+  }
+
+  .location-manager-modal-card .option-inline-input button,
+  .location-manager-modal-card .option-action-row button {
+    min-height: 34px !important;
+    font-size: 12.5px !important;
+  }
+
+  .location-manager-modal-card .modal-select-button {
+    min-height: 27px !important;
+    font-size: 11.5px !important;
+  }
+
+  .location-manager-modal-card .location-modal-bottom {
+    min-height: 58px !important;
+    padding: 10px 24px 16px !important;
+  }
+}
+
+@media (max-width: 920px) {
+  .option-modal-mask .location-manager-modal-card.option-modal-card,
+  .top-settings-scope-modal .option-modal-mask .location-manager-modal-card.option-modal-card {
+    width: calc(100vw - 24px) !important;
+    max-width: calc(100vw - 24px) !important;
+    height: calc(100vh - 24px) !important;
+    max-height: calc(100vh - 24px) !important;
+    min-height: 0 !important;
+    overflow: auto !important;
+  }
+
+  .location-manager-modal-card .location-modal-grid,
+  .location-manager-modal-card .location-modal-grid.location-modal-grid-room-first {
+    grid-template-columns: 1fr !important;
+  }
+}
+
 </style>
