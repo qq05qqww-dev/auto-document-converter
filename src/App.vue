@@ -6677,7 +6677,7 @@ select:focus, input:focus, textarea:focus {
 }
 
 
-/* 第 018-87 批：地區機房管理彈窗縮小置中版（延續第 018-86 批） */
+/* 第 018-88 批：地區機房管理彈窗尺寸修正版（延續第 018-87 批） */
 .top-settings-modal-backdrop {
   position: fixed;
   inset: 0;
@@ -6776,8 +6776,11 @@ select:focus, input:focus, textarea:focus {
   width: min(1180px, calc(100vw - 36px));
 }
 
-.top-settings-scope-modal {
-  width: min(880px, calc(100vw - 42px));
+.top-settings-scope-modal,
+.top-settings-scope-modal.scope-manager-card {
+  width: min(1180px, calc(100vw - 64px)) !important;
+  max-width: min(1180px, calc(100vw - 64px)) !important;
+  max-height: min(82vh, 820px);
 }
 
 .top-settings-scope-modal .scope-manager-select-grid {
@@ -6826,6 +6829,12 @@ select:focus, input:focus, textarea:focus {
 @media (max-width: 760px) {
   .top-settings-scope-modal .scope-manager-select-grid {
     grid-template-columns: 1fr;
+  }
+
+  .top-settings-scope-modal,
+  .top-settings-scope-modal.scope-manager-card {
+    width: calc(100vw - 18px) !important;
+    max-width: calc(100vw - 18px) !important;
   }
 
   .top-settings-modal-card {
