@@ -1207,6 +1207,7 @@
 </template>
 
 <script setup>
+// 第 018-96 批：服務同義詞大小寫／全形半形正規化＋全區段套用。
 // 第 018-82 批：媒體燈箱加入左右切換、張數指示、鍵盤方向鍵與手機滑動；延續 018-81 全媒體縮圖。
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { isSupabaseConfigured, supabase } from './supabaseClient'
@@ -4448,24 +4449,39 @@ function hasMinimumRecordFields(text) {
 function extractServices(block) {
   const found = new Set()
   const order = parseList(serviceOrderText.value)
-  const aliases = parseAliasRules(aliasRulesText.value)
+  const aliases = getServiceAliasRulesForMatching()
     .sort((a, b) => String(b[0]).length - String(a[0]).length)
   const extra = parseList(extraKeepText.value)
+  const sourceText = String(block || '')
+  const normalizedSourceText = normalizeServiceMatchText(sourceText)
 
   aliases.forEach(([from, to]) => {
     if (!from || !to) return
-    if (block.includes(from)) {
-      to.split(/\s+/).filter(Boolean).forEach(item => found.add(item))
+
+    const normalizedFrom = normalizeServiceMatchText(from)
+    if (!normalizedFrom) return
+
+    // 第 018-96 批：服務同義詞改用正規化比對。
+    // 可處理 2+1s / 2+1S / 2＋1Ｓ、全形數字、空白、斜線與大小寫差異。
+    if (normalizedSourceText.includes(normalizedFrom)) {
+      to.split(/\s+/)
+        .map(item => normalizeServiceOutputLabel(item))
+        .filter(Boolean)
+        .forEach(item => found.add(item))
     }
   })
 
   extra.forEach(item => {
-    if (item && block.includes(item)) found.add(item)
+    if (!item) return
+    const normalizedItem = normalizeServiceMatchText(item)
+    if (normalizedItem && normalizedSourceText.includes(normalizedItem)) {
+      found.add(normalizeServiceOutputLabel(item))
+    }
   })
 
   normalizeOverlappingServices(found)
 
-  const orderIndex = new Map(order.map((item, index) => [item, index]))
+  const orderIndex = new Map(order.map((item, index) => [normalizeServiceOutputLabel(item), index]))
   return Array.from(found).sort((a, b) => {
     const ai = getServiceOrderIndex(a, orderIndex)
     const bi = getServiceOrderIndex(b, orderIndex)
@@ -4475,8 +4491,68 @@ function extractServices(block) {
   })
 }
 
+function getServiceAliasRulesForMatching() {
+  const rules = parseAliasRules(aliasRulesText.value)
+
+  // 第 018-96 批：重要服務同義詞作為內建保底規則。
+  // 避免舊 localStorage 規則沒有新預設值，或使用者只設定其中一種大小寫／全形寫法。
+  const requiredRules = [
+    ['買2節送1S', '2+1s'],
+    ['買2節送1s', '2+1s'],
+    ['買２節送１S', '2+1s'],
+    ['買２節送１ｓ', '2+1s'],
+    ['買2節送１S', '2+1s'],
+    ['買2節送１ｓ', '2+1s'],
+    ['買兩節送1S', '2+1s'],
+    ['買兩節送1s', '2+1s'],
+    ['買兩節送１S', '2+1s'],
+    ['買兩節送１ｓ', '2+1s'],
+    ['買2節/3S', '2+1s'],
+    ['買2節/3s', '2+1s'],
+    ['買２節／３S', '2+1s'],
+    ['買２節／３ｓ', '2+1s']
+  ]
+
+  const map = new Map()
+
+  requiredRules.forEach(([from, to]) => {
+    if (from && to) map.set(normalizeServiceMatchText(from), [from, to])
+  })
+
+  rules.forEach(([from, to]) => {
+    if (!from || !to) return
+    // 使用者自訂同義詞仍保有最高優先權。
+    map.set(normalizeServiceMatchText(from), [from, normalizeServiceOutputLabel(to)])
+  })
+
+  return Array.from(map.values())
+}
+
+function normalizeServiceMatchText(value) {
+  return normalizeDigits(String(value || ''))
+    .replace(/＋/g, '+')
+    .replace(/[／⁄]/g, '/')
+    .replace(/[Ｓｓ]/g, 'S')
+    .replace(/[　\s]+/g, '')
+    .replace(/[｜|]/g, '/')
+    .toLowerCase()
+}
+
+function normalizeServiceOutputLabel(value) {
+  const text = String(value || '').trim()
+  const normalized = normalizeServiceMatchText(text)
+
+  // 使用者這批明確希望「買2節送1S」穩定輸出成 2+1s。
+  if (/^(2\+1s|買2節送1s|買兩節送1s|買2節\/3s|買兩節\/3s)$/.test(normalized)) {
+    return '2+1s'
+  }
+
+  return text
+}
+
 function getServiceOrderIndex(item, orderIndex) {
-  if (orderIndex.has(item)) return orderIndex.get(item)
+  const normalizedItem = normalizeServiceOutputLabel(item)
+  if (orderIndex.has(normalizedItem)) return orderIndex.get(normalizedItem)
 
   // 如果使用者把 2節3S 改顯示成 2+1s，
   // 但服務固定排序仍寫 2節3S，就讓 2+1s 使用 2節3S 的排序位置。
@@ -4485,8 +4561,8 @@ function getServiceOrderIndex(item, orderIndex) {
     ['2+1S', '2節3S']
   ])
 
-  const mapped = aliasOrderMap.get(item)
-  if (mapped && orderIndex.has(mapped)) return orderIndex.get(mapped)
+  const mapped = aliasOrderMap.get(normalizedItem) || aliasOrderMap.get(item)
+  if (mapped && orderIndex.has(normalizeServiceOutputLabel(mapped))) return orderIndex.get(normalizeServiceOutputLabel(mapped))
 
   return Number.MAX_SAFE_INTEGER
 }
@@ -11184,7 +11260,7 @@ button:disabled {
   inset: 0 !important;
   display: grid !important;
   place-items: center !important;
-  padding: 8px 18px !important;
+  padding: 28px 18px !important;
   overflow: hidden !important;
 }
 
@@ -11198,9 +11274,9 @@ button:disabled {
   margin: 0 auto !important;
   width: min(1180px, calc(100vw - 54px)) !important;
   max-width: min(1180px, calc(100vw - 54px)) !important;
-  height: calc(100vh - 16px) !important;
-  min-height: min(760px, calc(100vh - 16px)) !important;
-  max-height: calc(100vh - 16px) !important;
+  height: calc(100vh - 80px) !important;
+  min-height: 680px !important;
+  max-height: calc(100vh - 56px) !important;
   overflow: hidden !important;
   display: grid !important;
   grid-template-rows: auto minmax(0, 1fr) auto !important;
@@ -11232,7 +11308,7 @@ button:disabled {
   height: auto !important;
   min-height: 0 !important;
   max-height: none !important;
-  overflow: auto !important;
+  overflow: visible !important;
   box-sizing: border-box !important;
   display: grid !important;
   grid-template-columns: minmax(0, 0.96fr) minmax(0, 1.04fr) minmax(0, 0.96fr) !important;
@@ -11243,7 +11319,7 @@ button:disabled {
 
 .location-manager-modal-card .option-manager-panel {
   min-height: 0 !important;
-  height: 100% !important;
+  height: auto !important;
   max-height: none !important;
   overflow: visible !important;
   padding: 16px !important;
