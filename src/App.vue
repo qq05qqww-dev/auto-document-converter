@@ -92,7 +92,7 @@
       </div>
 
       <div
-        v-if="activeTopPanel || showScopeManager"
+        v-if="activeTopPanel"
         class="top-settings-modal-backdrop"
         @click.self="closeTopSettingModal"
       ></div>
@@ -191,6 +191,14 @@
             <h3>我的地區 / 定點外送 / 機房管理</h3>
             <p>{{ currentStaffName }} 的個人管理清單；新增、修改、刪除只影響目前登入的員工。</p>
           </div>
+          <div class="selected-scope-preview scope-manager-preview-bar scope-manager-preview-head">
+            目前選擇：
+            <strong>{{ managerSelectedCity || '未選縣市' }}</strong>
+            <span>→</span>
+            <strong>{{ managerSelectedDistrict || '未選地區' }}</strong>
+            <span>→</span>
+            <strong>{{ managerSelectedType || '未選定點/外送' }}</strong>
+          </div>
           <div class="top-settings-modal-head-actions">
             <div class="scope-status-pill">{{ currentStaffName }} 已建立：{{ locationCities.length }} 縣市 / {{ totalDistrictCount }} 地區 / {{ totalRoomCount }} 機房</div>
             <button class="top-settings-modal-close" type="button" @click="closeTopSettingModal">關閉</button>
@@ -236,47 +244,41 @@
             </button>
           </div>
 
-          <div class="selected-scope-preview scope-manager-preview-bar">
-            目前選擇：
-            <strong>{{ managerSelectedCity || '未選縣市' }}</strong>
-            <span>→</span>
-            <strong>{{ managerSelectedDistrict || '未選地區' }}</strong>
-            <span>→</span>
-            <strong>{{ managerSelectedType || '未選定點/外送' }}</strong>
-          </div>
         </div>
 
         <div class="room-rule-action-row scope-manager-action-shell">
-          <div class="room-rule-current">
-            <div>目前規則範圍：<strong>{{ currentRuleScopeLabel }}</strong></div>
-            <span>有效來源：{{ effectiveRuleSourceLabel }}</span>
+          <div class="room-rule-topline">
+            <div class="room-rule-current">
+              <div>目前規則範圍：<strong>{{ currentRuleScopeLabel }}</strong></div>
+              <span>有效來源：{{ effectiveRuleSourceLabel }}</span>
+            </div>
+            <div class="room-rule-buttons">
+              <button
+                class="primary-btn"
+                type="button"
+                :disabled="isSavingScopeRules || isLoadingScopeRules"
+                @click="saveCurrentScopeRules"
+              >
+                {{ isSavingScopeRules ? '儲存中...' : '儲存目前機房規則' }}
+              </button>
+              <button
+                class="ghost-btn"
+                type="button"
+                :disabled="isSavingScopeRules || isLoadingScopeRules"
+                @click="loadCurrentScopeRules"
+              >
+                {{ isLoadingScopeRules ? '讀取中...' : '讀取目前機房規則' }}
+              </button>
+            </div>
+            <p class="room-rule-feedback" :class="`is-${roomRuleStatusType}`">
+              <span></span>
+              {{ roomRuleStatusText }}
+            </p>
           </div>
-          <div class="room-rule-buttons">
-            <button
-              class="primary-btn"
-              type="button"
-              :disabled="isSavingScopeRules || isLoadingScopeRules"
-              @click="saveCurrentScopeRules"
-            >
-              {{ isSavingScopeRules ? '儲存中...' : '儲存目前機房規則' }}
-            </button>
-            <button
-              class="ghost-btn"
-              type="button"
-              :disabled="isSavingScopeRules || isLoadingScopeRules"
-              @click="loadCurrentScopeRules"
-            >
-              {{ isLoadingScopeRules ? '讀取中...' : '讀取目前機房規則' }}
-            </button>
-          </div>
-
-          <p class="room-rule-feedback" :class="`is-${roomRuleStatusType}`">
-            <span></span>
-            {{ roomRuleStatusText }}
-          </p>
         </div>
 
-        <div v-if="showScopeCrudPanel" class="option-modal-mask" @click.self="showScopeCrudPanel = false">
+        <Teleport to="body">
+        <div v-if="showScopeCrudPanel" class="option-modal-mask location-manager-overlay" @click.self="showScopeCrudPanel = false">
           <section class="option-modal-card location-manager-modal-card">
             <button class="option-modal-close" type="button" @click="showScopeCrudPanel = false">×</button>
 
@@ -409,6 +411,7 @@
             </div>
           </section>
         </div>
+        </Teleport>
 
       </section>
 
@@ -1207,7 +1210,6 @@
 </template>
 
 <script setup>
-// 第 018-96 批：服務同義詞大小寫／全形半形正規化＋全區段套用。
 // 第 018-82 批：媒體燈箱加入左右切換、張數指示、鍵盤方向鍵與手機滑動；延續 018-81 全媒體縮圖。
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { isSupabaseConfigured, supabase } from './supabaseClient'
@@ -2034,6 +2036,8 @@ const defaultAliasRules = [
   '買三送一=3+1',
   '買5送3=5+3',
   '買五送三=5+3',
+  '買5節送3節=5+3',
+  '買五節送三節=5+3',
   '2+1s=2節3S',
   '2+1S=2節3S',
   '2節3s=2節3S',
@@ -4449,39 +4453,26 @@ function hasMinimumRecordFields(text) {
 function extractServices(block) {
   const found = new Set()
   const order = parseList(serviceOrderText.value)
-  const aliases = getServiceAliasRulesForMatching()
+  const aliases = parseAliasRules(aliasRulesText.value)
     .sort((a, b) => String(b[0]).length - String(a[0]).length)
   const extra = parseList(extraKeepText.value)
-  const sourceText = String(block || '')
-  const normalizedSourceText = normalizeServiceMatchText(sourceText)
+  const searchableBlock = normalizeServiceAliasMatchText(block)
 
   aliases.forEach(([from, to]) => {
     if (!from || !to) return
-
-    const normalizedFrom = normalizeServiceMatchText(from)
-    if (!normalizedFrom) return
-
-    // 第 018-96 批：服務同義詞改用正規化比對。
-    // 可處理 2+1s / 2+1S / 2＋1Ｓ、全形數字、空白、斜線與大小寫差異。
-    if (normalizedSourceText.includes(normalizedFrom)) {
-      to.split(/\s+/)
-        .map(item => normalizeServiceOutputLabel(item))
-        .filter(Boolean)
-        .forEach(item => found.add(item))
+    const isMatched = block.includes(from) || searchableBlock.includes(normalizeServiceAliasMatchText(from))
+    if (isMatched) {
+      to.split(/\s+/).filter(Boolean).forEach(item => found.add(item))
     }
   })
 
   extra.forEach(item => {
-    if (!item) return
-    const normalizedItem = normalizeServiceMatchText(item)
-    if (normalizedItem && normalizedSourceText.includes(normalizedItem)) {
-      found.add(normalizeServiceOutputLabel(item))
-    }
+    if (item && block.includes(item)) found.add(item)
   })
 
   normalizeOverlappingServices(found)
 
-  const orderIndex = new Map(order.map((item, index) => [normalizeServiceOutputLabel(item), index]))
+  const orderIndex = new Map(order.map((item, index) => [item, index]))
   return Array.from(found).sort((a, b) => {
     const ai = getServiceOrderIndex(a, orderIndex)
     const bi = getServiceOrderIndex(b, orderIndex)
@@ -4491,68 +4482,8 @@ function extractServices(block) {
   })
 }
 
-function getServiceAliasRulesForMatching() {
-  const rules = parseAliasRules(aliasRulesText.value)
-
-  // 第 018-96 批：重要服務同義詞作為內建保底規則。
-  // 避免舊 localStorage 規則沒有新預設值，或使用者只設定其中一種大小寫／全形寫法。
-  const requiredRules = [
-    ['買2節送1S', '2+1s'],
-    ['買2節送1s', '2+1s'],
-    ['買２節送１S', '2+1s'],
-    ['買２節送１ｓ', '2+1s'],
-    ['買2節送１S', '2+1s'],
-    ['買2節送１ｓ', '2+1s'],
-    ['買兩節送1S', '2+1s'],
-    ['買兩節送1s', '2+1s'],
-    ['買兩節送１S', '2+1s'],
-    ['買兩節送１ｓ', '2+1s'],
-    ['買2節/3S', '2+1s'],
-    ['買2節/3s', '2+1s'],
-    ['買２節／３S', '2+1s'],
-    ['買２節／３ｓ', '2+1s']
-  ]
-
-  const map = new Map()
-
-  requiredRules.forEach(([from, to]) => {
-    if (from && to) map.set(normalizeServiceMatchText(from), [from, to])
-  })
-
-  rules.forEach(([from, to]) => {
-    if (!from || !to) return
-    // 使用者自訂同義詞仍保有最高優先權。
-    map.set(normalizeServiceMatchText(from), [from, normalizeServiceOutputLabel(to)])
-  })
-
-  return Array.from(map.values())
-}
-
-function normalizeServiceMatchText(value) {
-  return normalizeDigits(String(value || ''))
-    .replace(/＋/g, '+')
-    .replace(/[／⁄]/g, '/')
-    .replace(/[Ｓｓ]/g, 'S')
-    .replace(/[　\s]+/g, '')
-    .replace(/[｜|]/g, '/')
-    .toLowerCase()
-}
-
-function normalizeServiceOutputLabel(value) {
-  const text = String(value || '').trim()
-  const normalized = normalizeServiceMatchText(text)
-
-  // 使用者這批明確希望「買2節送1S」穩定輸出成 2+1s。
-  if (/^(2\+1s|買2節送1s|買兩節送1s|買2節\/3s|買兩節\/3s)$/.test(normalized)) {
-    return '2+1s'
-  }
-
-  return text
-}
-
 function getServiceOrderIndex(item, orderIndex) {
-  const normalizedItem = normalizeServiceOutputLabel(item)
-  if (orderIndex.has(normalizedItem)) return orderIndex.get(normalizedItem)
+  if (orderIndex.has(item)) return orderIndex.get(item)
 
   // 如果使用者把 2節3S 改顯示成 2+1s，
   // 但服務固定排序仍寫 2節3S，就讓 2+1s 使用 2節3S 的排序位置。
@@ -4561,8 +4492,8 @@ function getServiceOrderIndex(item, orderIndex) {
     ['2+1S', '2節3S']
   ])
 
-  const mapped = aliasOrderMap.get(normalizedItem) || aliasOrderMap.get(item)
-  if (mapped && orderIndex.has(normalizeServiceOutputLabel(mapped))) return orderIndex.get(normalizeServiceOutputLabel(mapped))
+  const mapped = aliasOrderMap.get(item)
+  if (mapped && orderIndex.has(mapped)) return orderIndex.get(mapped)
 
   return Number.MAX_SAFE_INTEGER
 }
@@ -4656,6 +4587,13 @@ function cleanName(value) {
 
 function normalizeDigits(text) {
   return String(text).replace(/０/g, '0').replace(/１/g, '1').replace(/２/g, '2').replace(/３/g, '3').replace(/４/g, '4').replace(/５/g, '5').replace(/６/g, '6').replace(/７/g, '7').replace(/８/g, '8').replace(/９/g, '9')
+}
+
+function normalizeServiceAliasMatchText(text) {
+  return normalizeDigits(String(text || ''))
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/\s+/g, '')
 }
 
 
@@ -4822,6 +4760,11 @@ function parseAliasRules(text) {
   })
 
   return Array.from(map.entries())
+}
+
+function mergeAliasRulesWithDefaults(text) {
+  const saved = String(text || '').trim()
+  return [defaultAliasRules.join('\n'), saved].filter(Boolean).join('\n')
 }
 
 function escapeRegExp(text) {
@@ -6054,7 +5997,7 @@ function applyRuleData(data, options = {}) {
   countryAliasText.value = data.countryAliasText ?? countryAliasText.value
   amountTransformRules.value = normalizeAmountRules(data.amountTransformRules ?? data.amountTransformRulesText ?? amountTransformRules.value)
   serviceOrderText.value = data.serviceOrderText ?? serviceOrderText.value
-  aliasRulesText.value = data.aliasRulesText ?? aliasRulesText.value
+  aliasRulesText.value = mergeAliasRulesWithDefaults(data.aliasRulesText ?? aliasRulesText.value)
   removeWordsText.value = data.removeWordsText ?? removeWordsText.value
   extraKeepText.value = data.extraKeepText ?? extraKeepText.value
   countryFieldRulesText.value = data.countryFieldRulesText ?? countryFieldRulesText.value
@@ -6854,18 +6797,35 @@ select:focus, input:focus, textarea:focus {
 
 .top-settings-scope-modal,
 .top-settings-scope-modal.scope-manager-card {
-  width: min(1180px, calc(100vw - 64px)) !important;
-  max-width: min(1180px, calc(100vw - 64px)) !important;
-  max-height: min(82vh, 820px);
+  position: static !important;
+  inset: auto !important;
+  left: auto !important;
+  top: auto !important;
+  transform: none !important;
+  width: 100% !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 18px 0 0 !important;
+  overflow: visible !important;
+  z-index: auto !important;
 }
 
 .top-settings-scope-modal .scope-manager-select-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns:
+    minmax(160px, 1fr)
+    minmax(160px, 1fr)
+    minmax(160px, 1fr)
+    minmax(160px, 1fr)
+    minmax(132px, 0.34fr);
+  align-items: end;
 }
 
 .top-settings-scope-modal .manager-crud-toggle {
   width: 100%;
-  grid-column: 1 / -1;
+  min-width: 132px;
+  min-height: 44px;
+  padding-inline: 18px;
+  align-self: end;
 }
 
 @media (max-width: 980px) {
@@ -6894,6 +6854,9 @@ select:focus, input:focus, textarea:focus {
 
 .top-settings-scope-modal .scope-rule-header {
   align-items: flex-start;
+  display: grid !important;
+  grid-template-columns: minmax(260px, 1fr) minmax(420px, 0.9fr) auto;
+  gap: 18px;
 }
 
 .top-settings-scope-modal .option-modal-mask {
@@ -9382,15 +9345,19 @@ select:focus, input:focus, textarea:focus {
 
 
 .room-rule-action-row {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 12px;
-  align-items: center;
+  display: block;
   margin-top: 12px;
   padding: 12px;
   border-radius: 18px;
   background: rgba(248, 250, 252, 0.88);
   border: 1px solid rgba(148, 163, 184, 0.28);
+}
+
+.room-rule-topline {
+  display: grid;
+  grid-template-columns: minmax(300px, auto) auto minmax(360px, 1fr);
+  gap: 14px;
+  align-items: start;
 }
 
 .room-rule-current {
@@ -9412,66 +9379,94 @@ select:focus, input:focus, textarea:focus {
 .room-rule-buttons {
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 8px;
 }
 
 .room-rule-feedback {
-  grid-column: 1 / -1;
   margin: 0;
-  padding: 10px 12px;
+  justify-self: end;
+  width: min(660px, 100%);
+  min-height: 44px;
+  padding: 10px 16px;
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  border-radius: 13px;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  border-radius: 999px;
   border: 1px solid rgba(59, 130, 246, 0.2);
   background: #eff6ff;
   color: #1e40af;
-  font-size: 13px;
-  font-weight: 900;
+  font-size: 15px;
+  font-weight: 950;
   line-height: 1.45;
+  letter-spacing: 0;
+  box-shadow: 0 14px 34px rgba(15, 118, 110, 0.1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.room-rule-feedback::before {
+  content: '同步狀態';
+  flex: 0 0 auto;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.78);
+  color: #0f766e;
+  font-size: 13px;
+  font-weight: 950;
+  box-shadow: inset 0 0 0 1px rgba(20, 184, 166, 0.16);
 }
 
 .room-rule-feedback > span {
-  width: 9px;
-  height: 9px;
-  margin-top: 5px;
+  width: 10px;
+  height: 10px;
   flex: 0 0 auto;
   border-radius: 999px;
   background: currentColor;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.14), 0 0 18px currentColor;
 }
 
 .room-rule-feedback.is-pending {
-  background: #fff7ed;
-  border-color: #fdba74;
+  background: linear-gradient(135deg, #fff7ed 0%, #fef3c7 100%);
+  border-color: #fbbf24;
   color: #9a3412;
 }
 
 .room-rule-feedback.is-success {
-  background: #ecfdf5;
-  border-color: #86efac;
-  color: #166534;
+  background: linear-gradient(135deg, #ecfdf5 0%, #dcfce7 45%, #eff6ff 100%);
+  border-color: rgba(34, 197, 94, 0.5);
+  color: #14532d;
+  box-shadow: 0 14px 36px rgba(22, 163, 74, 0.16), inset 0 0 0 1px rgba(255, 255, 255, 0.74);
 }
 
 .room-rule-feedback.is-warning {
-  background: #fffbeb;
-  border-color: #fcd34d;
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+  border-color: #f59e0b;
   color: #92400e;
 }
 
 .room-rule-feedback.is-error {
-  background: #fef2f2;
-  border-color: #fca5a5;
+  background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+  border-color: #f87171;
   color: #b91c1c;
 }
 
 @media (max-width: 980px) {
-  .room-rule-action-row {
+  .top-settings-scope-modal .scope-rule-header,
+  .room-rule-topline {
     grid-template-columns: 1fr;
   }
 
   .room-rule-buttons {
     justify-content: flex-start;
+  }
+
+  .room-rule-feedback {
+    justify-self: stretch;
+    width: 100%;
+    white-space: normal;
   }
 }
 
@@ -9555,6 +9550,13 @@ button:disabled {
 .scope-manager-preview-bar {
   margin-top: 0;
   min-height: 46px;
+}
+
+.scope-manager-preview-head {
+  align-self: center;
+  min-height: 40px;
+  padding: 8px 14px;
+  justify-content: center;
 }
 
 .scope-manager-action-shell {
@@ -11255,16 +11257,19 @@ button:disabled {
 
 /* 第 018-95 批：修正管理清單彈窗加高後 footer 被 grid 擠出，並讓整個彈窗真正往上往下拉長 */
 .option-modal-mask:has(.location-manager-modal-card),
+.location-manager-overlay,
 .top-settings-scope-modal .option-modal-mask:has(.location-manager-modal-card) {
   position: fixed !important;
   inset: 0 !important;
+  z-index: 9999 !important;
   display: grid !important;
   place-items: center !important;
-  padding: 28px 18px !important;
+  padding: 8px 18px !important;
   overflow: hidden !important;
 }
 
 .option-modal-mask .location-manager-modal-card.option-modal-card,
+.location-manager-overlay .location-manager-modal-card.option-modal-card,
 .top-settings-scope-modal .option-modal-mask .location-manager-modal-card.option-modal-card {
   position: relative !important;
   inset: auto !important;
@@ -11274,9 +11279,10 @@ button:disabled {
   margin: 0 auto !important;
   width: min(1180px, calc(100vw - 54px)) !important;
   max-width: min(1180px, calc(100vw - 54px)) !important;
-  height: calc(100vh - 80px) !important;
-  min-height: 680px !important;
-  max-height: calc(100vh - 56px) !important;
+  z-index: 10000 !important;
+  height: 80vh !important;
+  min-height: min(720px, calc(100vh - 48px)) !important;
+  max-height: calc(100vh - 48px) !important;
   overflow: hidden !important;
   display: grid !important;
   grid-template-rows: auto minmax(0, 1fr) auto !important;
@@ -11319,7 +11325,7 @@ button:disabled {
 
 .location-manager-modal-card .option-manager-panel {
   min-height: 0 !important;
-  height: auto !important;
+  height: 100% !important;
   max-height: none !important;
   overflow: visible !important;
   padding: 16px !important;
@@ -11367,8 +11373,8 @@ button:disabled {
   display: flex !important;
   justify-content: flex-end !important;
   align-items: center !important;
-  padding: 16px 30px 24px !important;
-  min-height: 72px !important;
+  padding: 12px 30px 18px !important;
+  min-height: 60px !important;
   box-sizing: border-box !important;
 }
 
@@ -11388,10 +11394,11 @@ button:disabled {
 
 @media (max-height: 820px) and (min-width: 921px) {
   .option-modal-mask .location-manager-modal-card.option-modal-card,
+  .location-manager-overlay .location-manager-modal-card.option-modal-card,
   .top-settings-scope-modal .option-modal-mask .location-manager-modal-card.option-modal-card {
-    height: calc(100vh - 36px) !important;
+    height: 80vh !important;
     min-height: 0 !important;
-    max-height: calc(100vh - 36px) !important;
+    max-height: calc(100vh - 48px) !important;
   }
 
   .location-manager-modal-card .option-modal-head {
@@ -11448,6 +11455,7 @@ button:disabled {
 
 @media (max-width: 920px) {
   .option-modal-mask .location-manager-modal-card.option-modal-card,
+  .location-manager-overlay .location-manager-modal-card.option-modal-card,
   .top-settings-scope-modal .option-modal-mask .location-manager-modal-card.option-modal-card {
     width: calc(100vw - 24px) !important;
     max-width: calc(100vw - 24px) !important;
