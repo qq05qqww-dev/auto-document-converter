@@ -10990,12 +10990,13 @@ button:disabled {
 
 
 /* 第 018-93 批：管理清單字體放大，彈窗上下加高置中顯示 */
+/* 第 018-94 批：修正 018-93 誤把 grid 置中的管理清單套用 translate，造成畫面往左上偏移裁切 */
 .location-manager-modal-card.option-modal-card {
   width: min(1180px, calc(100vw - 44px)) !important;
   height: min(86vh, 820px) !important;
   min-height: min(760px, calc(100vh - 44px)) !important;
   max-height: calc(100vh - 28px) !important;
-  transform: translate(-50%, -50%) !important;
+  transform: none !important;
   overflow: hidden !important;
 }
 
@@ -11111,7 +11112,7 @@ button:disabled {
   .location-manager-modal-card.option-modal-card {
     height: calc(100vh - 34px) !important;
     min-height: calc(100vh - 34px) !important;
-    transform: translate(-50%, -50%) !important;
+    transform: none !important;
   }
 }
 
@@ -11137,6 +11138,40 @@ button:disabled {
   .location-manager-modal-card .option-manager-panel select {
     min-height: 34px !important;
     height: 34px !important;
+  }
+}
+
+
+/* 第 018-94 批：管理清單彈窗置中修正版。option-modal-card 由遮罩 grid 置中，不能再套用 translate。 */
+.option-modal-mask .location-manager-modal-card.option-modal-card {
+  position: relative !important;
+  left: auto !important;
+  top: auto !important;
+  margin: 0 auto !important;
+  transform: none !important;
+  justify-self: center !important;
+  align-self: center !important;
+  max-width: min(1180px, calc(100vw - 44px)) !important;
+  width: min(1180px, calc(100vw - 44px)) !important;
+  height: min(86vh, 820px) !important;
+  min-height: min(760px, calc(100vh - 44px)) !important;
+}
+
+@media (max-height: 760px) {
+  .option-modal-mask .location-manager-modal-card.option-modal-card {
+    height: calc(100vh - 28px) !important;
+    min-height: calc(100vh - 28px) !important;
+  }
+}
+
+@media (max-width: 920px) {
+  .option-modal-mask .location-manager-modal-card.option-modal-card {
+    width: calc(100vw - 24px) !important;
+    max-width: calc(100vw - 24px) !important;
+    min-height: 0 !important;
+    height: auto !important;
+    max-height: calc(100vh - 24px) !important;
+    overflow: auto !important;
   }
 }
 
