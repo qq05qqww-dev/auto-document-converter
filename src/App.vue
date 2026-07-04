@@ -6677,7 +6677,7 @@ select:focus, input:focus, textarea:focus {
 }
 
 
-/* 第 018-86 批：頂部設定功能改成畫面正中央彈窗 */
+/* 第 018-87 批：地區機房管理彈窗縮小置中版（延續第 018-86 批） */
 .top-settings-modal-backdrop {
   position: fixed;
   inset: 0;
@@ -6772,9 +6772,33 @@ select:focus, input:focus, textarea:focus {
 
 .top-settings-quick-modal,
 .top-settings-advanced-modal,
-.top-settings-api-modal,
-.top-settings-scope-modal {
+.top-settings-api-modal {
   width: min(1180px, calc(100vw - 36px));
+}
+
+.top-settings-scope-modal {
+  width: min(880px, calc(100vw - 42px));
+}
+
+.top-settings-scope-modal .scope-manager-select-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.top-settings-scope-modal .manager-crud-toggle {
+  width: 100%;
+  grid-column: 1 / -1;
+}
+
+.top-settings-scope-modal .room-rule-action-row {
+  grid-template-columns: 1fr;
+}
+
+.top-settings-scope-modal .room-rule-buttons {
+  justify-content: flex-start;
+}
+
+.top-settings-scope-modal .top-settings-modal-head-actions {
+  justify-content: flex-end;
 }
 
 .top-settings-scope-modal .scope-rule-header {
@@ -6800,6 +6824,10 @@ select:focus, input:focus, textarea:focus {
 }
 
 @media (max-width: 760px) {
+  .top-settings-scope-modal .scope-manager-select-grid {
+    grid-template-columns: 1fr;
+  }
+
   .top-settings-modal-card {
     width: calc(100vw - 18px);
     max-height: 88vh;
