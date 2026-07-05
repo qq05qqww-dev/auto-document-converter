@@ -1,5 +1,6 @@
 <!-- 第 018-107 批：地區機房管理記住最後機房與定點預設版（依第 018-106 批延續） -->
 <template>
+  <!-- 第 018-109 批：待上傳縮圖區禁止拖放版 -->
   <!-- batch018-76-employee-rules-semantic-verify-fix -->
   <main v-if="!authReady" class="login-page-shell">
     <section class="login-card">
@@ -983,7 +984,14 @@
               {{ isSingleLadyCentralSyncing ? '同步中央網站中...' : '重新同步目前小姐到中央網站' }}
             </button>
 
-            <div class="media-upload-selected-panel">
+            <div
+              class="media-upload-selected-panel"
+              :class="{ 'is-drop-blocked': isPendingMediaDropBlocked }"
+              @dragenter.stop.prevent="handlePendingMediaDropBlock"
+              @dragover.stop.prevent="handlePendingMediaDropBlock"
+              @dragleave.stop.prevent="clearPendingMediaDropBlock"
+              @drop.stop.prevent="handlePendingMediaDropBlockedDrop"
+            >
               <div class="selected-panel-title">
                 <strong>待上傳縮圖</strong>
                 <span>{{ mediaUploadFiles.length }} 個檔案</span>
@@ -1042,7 +1050,7 @@
               </div>
 
               <div v-else class="selected-media-empty">
-                尚未選擇檔案，拖拉圖片/影片到上方即可加入。
+                此區僅顯示待上傳縮圖，不能拖放檔案；請拖到上方「拖拉圖片 / 影片到這裡」。
               </div>
             </div>
           </div>
@@ -1320,6 +1328,7 @@ const mediaUploadType = ref('image')
 const mediaUploadNote = ref('')
 const mediaUploadFiles = ref([])
 const isMediaDragging = ref(false)
+const isPendingMediaDropBlocked = ref(false)
 const mediaUploadStatusText = ref('尚未上傳媒體。')
 const isMediaUploading = ref(false)
 const mediaUploadProgressMap = ref({})
@@ -2956,6 +2965,51 @@ async function deleteLadyMedia(media, lady) {
   }
 }
 
+
+let pendingMediaDropBlockTimer = null
+
+function setDataTransferDropEffect(event, dropEffect = 'none') {
+  try {
+    if (event?.dataTransfer) {
+      event.dataTransfer.dropEffect = dropEffect
+    }
+  } catch (error) {
+    // 瀏覽器安全限制下忽略 dropEffect 設定失敗。
+  }
+}
+
+function handlePendingMediaDropBlock(event) {
+  setDataTransferDropEffect(event, 'none')
+  isPendingMediaDropBlocked.value = true
+
+  if (pendingMediaDropBlockTimer) {
+    clearTimeout(pendingMediaDropBlockTimer)
+  }
+}
+
+function clearPendingMediaDropBlock() {
+  if (pendingMediaDropBlockTimer) {
+    clearTimeout(pendingMediaDropBlockTimer)
+  }
+
+  pendingMediaDropBlockTimer = setTimeout(() => {
+    isPendingMediaDropBlocked.value = false
+  }, 120)
+}
+
+function handlePendingMediaDropBlockedDrop(event) {
+  setDataTransferDropEffect(event, 'none')
+  isPendingMediaDropBlocked.value = true
+  mediaUploadStatusText.value = '待上傳縮圖區不能拖放檔案，請拖到上方「拖拉圖片 / 影片到這裡」。'
+
+  if (pendingMediaDropBlockTimer) {
+    clearTimeout(pendingMediaDropBlockTimer)
+  }
+
+  pendingMediaDropBlockTimer = setTimeout(() => {
+    isPendingMediaDropBlocked.value = false
+  }, 1800)
+}
 
 function getUploadFilePreviewUrl(file) {
   if (!file) return ''
@@ -12119,6 +12173,49 @@ button:disabled {
   font-weight: 950;
   box-shadow: 0 10px 20px rgba(15, 118, 110, 0.22);
   pointer-events: none;
+}
+
+
+/* 第 018-109 批：待上傳縮圖區禁止拖放，避免媒體丟錯區域 */
+.media-upload-selected-panel {
+  position: relative;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.media-upload-selected-panel::after {
+  content: '此區僅供預覽，請拖到上方上傳區';
+  position: absolute;
+  inset: 10px;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  border: 1px dashed rgba(239, 68, 68, 0.72);
+  border-radius: 16px;
+  background: rgba(255, 247, 247, 0.94);
+  color: #b91c1c;
+  font-size: 13px;
+  font-weight: 950;
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.985);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.media-upload-selected-panel.is-drop-blocked {
+  border-color: rgba(239, 68, 68, 0.54) !important;
+  background: linear-gradient(180deg, rgba(255, 247, 247, 0.98), rgba(248, 250, 252, 0.98)) !important;
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.12) !important;
+  cursor: not-allowed;
+}
+
+.media-upload-selected-panel.is-drop-blocked::after {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.selected-media-empty {
+  line-height: 1.55;
 }
 
 </style>
