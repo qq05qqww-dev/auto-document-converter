@@ -1,4 +1,4 @@
-<!-- 第 018-100 批：底價兩位數正確轉百元版（依第 018-99 批延續） -->
+<!-- 第 018-101 批：服務同義詞自動去重版（依第 018-100 批延續） -->
 <template>
   <!-- batch018-76-employee-rules-semantic-verify-fix -->
   <main v-if="!authReady" class="login-page-shell">
@@ -2090,6 +2090,8 @@ const defaultAliasRules = [
   '8小時不限時段=5+3',
   '攝影露臉+1000=攝影露臉+1000',
   '攝影+1000=攝影露臉+1000',
+  '深喉嚨=深喉',
+  '深喉咙=深喉',
   '深喉=深喉',
   '豪邁吃屌=豪邁吃屌',
   '不嫌視野愛愛=不嫌視野愛愛',
@@ -4606,6 +4608,24 @@ function normalizeOverlappingServices(found) {
     const hasPaidVersion = paid.some(item => found.has(item))
     if (!hasPaidVersion) return
     base.forEach(item => found.delete(item))
+  })
+
+  // 第 018-101 批：服務同義詞自動去重。
+  // 例如同一筆同時抓到「深喉嚨」與「深喉」時，輸出只保留標準詞「深喉」。
+  const equivalentServiceRules = [
+    { canonical: '深喉', aliases: ['深喉嚨', '深喉咙', '深喉服務'] },
+    { canonical: '自慰秀', aliases: ['自衛秀'] },
+    { canonical: '自慰秀+500', aliases: ['自衛秀+500'] },
+    { canonical: '顏射+500', aliases: ['射顏+500'] }
+  ]
+
+  equivalentServiceRules.forEach(({ canonical, aliases }) => {
+    const tokens = [canonical, ...aliases].map(item => normalizeServiceAliasMatchText(item)).filter(Boolean)
+    const matchedItems = Array.from(found).filter(item => tokens.includes(normalizeServiceAliasMatchText(item)))
+    if (!matchedItems.length) return
+
+    matchedItems.forEach(item => found.delete(item))
+    found.add(canonical)
   })
 }
 
