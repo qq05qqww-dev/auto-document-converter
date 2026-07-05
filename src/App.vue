@@ -1,4 +1,4 @@
-<!-- 第 018-86 批：頂部設定功能改成畫面中央彈窗版 -->
+<!-- 第 018-99 批：加價服務優先去重版（依第 018-98 批延續） -->
 <template>
   <!-- batch018-76-employee-rules-semantic-verify-fix -->
   <main v-if="!authReady" class="login-page-shell">
@@ -4194,6 +4194,15 @@ function normalizeHeaderText(line) {
 
 function isNotHeaderLine(line) {
   const value = String(line || '')
+  const serviceAliasValue = normalizeServiceAliasMatchText(value)
+
+  // 第 018-98 批：避免「買2節送1S」這種短服務行被當成無國籍小姐名。
+  // 舊版 name-only 切筆會往後看 10 行，如果下一位小姐的身材/價格剛好在範圍內，
+  // 服務行就會變成假的切筆點，導致上一位小姐漏掉 2+1s / 3+1 / 5+3。
+  const buyGiftServiceMatched = /買\d+節送\d+(?:節|s)?/i.test(serviceAliasValue)
+    || /買\d+送\d+(?:節|s)?/i.test(serviceAliasValue)
+    || /買\d+節\/\d+s/i.test(serviceAliasValue)
+  if (buyGiftServiceMatched) return true
 
   const baseMatched = /\d{2,3}\s*(?:分鐘|分)|\d{3}\s*\/\s*\d{2}|回\s*\d{3,5}|[0-9]{3,5}$|國家|國籍|服務|套餐|超值|升級|共浴|無套吹|品鮑|按摩|舌吻|絲襪|情趣|口爆|吞精|顏射|自慰|短鍾|短鐘|長鍾|長鐘|底|雙飛|深喉|豪邁|吃屌|不嫌|視野|愛愛|需|請自備|禁止|酒客|入珠|吸毒|生客|包夜|不限時段|模式|送一節|次數|攝影|露臉/.test(value)
   if (baseMatched) return true
@@ -4458,21 +4467,64 @@ function extractServices(block) {
   const extra = parseList(extraKeepText.value)
   const searchableBlock = normalizeServiceAliasMatchText(block)
 
+  // 第 018-96 批：服務同義詞比對改成「全形半形 / 大小寫 / 中文數字」正規化後比對，
+  // 並套用在整筆小姐資料區塊，避免「買2節送1S」有些小姐有出現、有些沒出現。
   aliases.forEach(([from, to]) => {
     if (!from || !to) return
-    const isMatched = block.includes(from) || searchableBlock.includes(normalizeServiceAliasMatchText(from))
+    const normalizedFrom = normalizeServiceAliasMatchText(from)
+    const isMatched = block.includes(from) || (normalizedFrom && searchableBlock.includes(normalizedFrom))
     if (isMatched) {
-      to.split(/\s+/).filter(Boolean).forEach(item => found.add(item))
+      to.split(/\s+/).filter(Boolean).forEach(item => found.add(normalizeServiceOutputToken(item)))
+    }
+  })
+
+  // 第 018-96 批：特別補強常見買節贈送寫法。
+  // 即使規則內有全形 / 小寫 / 中文數字，也會穩定轉出 2+1s。
+  const forcedServiceAliases = [
+    ['買2節送1s', '2+1s'],
+    ['買2節送一s', '2+1s'],
+    ['買二節送一s', '2+1s'],
+    ['買兩節送一s', '2+1s'],
+    ['買兩節送1s', '2+1s'],
+    ['買2節/3s', '2+1s'],
+    ['買二節/三s', '2+1s'],
+    ['買兩節/三s', '2+1s']
+  ]
+
+  forcedServiceAliases.forEach(([from, to]) => {
+    const normalizedFrom = normalizeServiceAliasMatchText(from)
+    if (normalizedFrom && searchableBlock.includes(normalizedFrom)) {
+      found.add(to)
+    }
+  })
+
+  // 第 018-97 批：補強「買幾節送幾節 / S」服務。
+  // 舊邏輯在贈送文字分成多行時，可能只吃到第一個同義詞；
+  // 這裡直接掃整筆小姐區塊的正規化文字，無論同一行或分行都會穩定輸出。
+  const compactServiceText = searchableBlock
+  const forcedBuyGiftPatterns = [
+    { output: '2+1s', patterns: [/買2節送1s/g, /買2節送1節/g, /買2節\/3s/g] },
+    { output: '3+1', patterns: [/買3節送1節(?!\d+分)/g, /買3送1(?!\d+分)/g] },
+    { output: '5+3', patterns: [/買5節送3節(?!\d+分)/g, /買5送3(?!\d+分)/g] }
+  ]
+
+  forcedBuyGiftPatterns.forEach(rule => {
+    if (rule.patterns.some(pattern => pattern.test(compactServiceText))) {
+      found.add(rule.output)
     }
   })
 
   extra.forEach(item => {
-    if (item && block.includes(item)) found.add(item)
+    if (!item) return
+    const normalizedItem = normalizeServiceAliasMatchText(item)
+    if (block.includes(item) || (normalizedItem && searchableBlock.includes(normalizedItem))) {
+      found.add(normalizeServiceOutputToken(item))
+    }
   })
 
   normalizeOverlappingServices(found)
 
-  const orderIndex = new Map(order.map((item, index) => [item, index]))
+  const orderIndex = new Map(order.map((item, index) => [normalizeServiceOutputToken(item), index]))
   return Array.from(found).sort((a, b) => {
     const ai = getServiceOrderIndex(a, orderIndex)
     const bi = getServiceOrderIndex(b, orderIndex)
@@ -4514,6 +4566,26 @@ function normalizeOverlappingServices(found) {
     if (found.has(longer) && found.has(shorter)) {
       found.delete(shorter)
     }
+  })
+
+  // 第 018-99 批：加價版服務優先。
+  // 同一筆小姐同時有「自慰秀+500」與「自慰秀」時，只保留加價版；
+  // 沒有加價版時，普通版仍正常保留。
+  const paidServiceBaseRules = [
+    { paid: ['2S+1000', '2S+500'], base: ['2S', '2s'] },
+    { paid: ['口爆+500', '口爆+1000'], base: ['口爆'] },
+    { paid: ['吞精+500', '吞精+1000'], base: ['吞精'] },
+    { paid: ['顏射+500', '射顏+500'], base: ['顏射', '射顏'] },
+    { paid: ['自慰秀+500', '自衛秀+500'], base: ['自慰秀', '自衛秀'] },
+    { paid: ['情趣用品+500'], base: ['情趣用品'] },
+    { paid: ['艷舞+500', '豔舞+500'], base: ['艷舞', '豔舞', '艷舞秀', '豔舞秀'] },
+    { paid: ['絲襪+100'], base: ['絲襪'] }
+  ]
+
+  paidServiceBaseRules.forEach(({ paid, base }) => {
+    const hasPaidVersion = paid.some(item => found.has(item))
+    if (!hasPaidVersion) return
+    base.forEach(item => found.delete(item))
   })
 }
 
@@ -4593,7 +4665,26 @@ function normalizeServiceAliasMatchText(text) {
   return normalizeDigits(String(text || ''))
     .normalize('NFKC')
     .toLowerCase()
+    .replace(/[＋]/g, '+')
+    .replace(/[／]/g, '/')
+    .replace(/兩/g, '2')
+    .replace(/二/g, '2')
+    .replace(/三/g, '3')
+    .replace(/一/g, '1')
+    .replace(/壹/g, '1')
+    .replace(/貳/g, '2')
+    .replace(/參/g, '3')
     .replace(/\s+/g, '')
+}
+
+function normalizeServiceOutputToken(text) {
+  const value = String(text || '').trim()
+  if (!value) return ''
+
+  // 第 018-96 批：2+1s 統一小寫 s，避免排序與去重時變成 2+1S / 2+1s 兩種。
+  if (/^2\+1s$/i.test(value)) return '2+1s'
+
+  return value
 }
 
 
