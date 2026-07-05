@@ -1,4 +1,4 @@
-<!-- 第 018-106 批：地區機房管理登入後固定展開版（依第 018-105 批延續） -->
+<!-- 第 018-107 批：地區機房管理記住最後機房與定點預設版（依第 018-106 批延續） -->
 <template>
   <!-- batch018-76-employee-rules-semantic-verify-fix -->
   <main v-if="!authReady" class="login-page-shell">
@@ -198,6 +198,8 @@
             <strong>{{ managerSelectedDistrict || '未選地區' }}</strong>
             <span>→</span>
             <strong>{{ managerSelectedType || '未選定點/外送' }}</strong>
+            <span>→</span>
+            <strong>{{ ruleScopeRoom || '未選機房' }}</strong>
           </div>
           <div class="top-settings-modal-head-actions">
             <div class="scope-status-pill">{{ currentStaffName }} 已建立：{{ locationCities.length }} 縣市 / {{ totalDistrictCount }} 地區 / {{ totalRoomCount }} 機房</div>
@@ -1239,7 +1241,7 @@
 </template>
 
 <script setup>
-// 第 018-106 批：登入後預設展開地區機房管理區塊；延續 018-105 媒體上傳進度與選中小姐亮起版。
+// 第 018-107 批：登入後預設展開地區機房管理，並記住最後使用的縣市 / 地區 / 定點外送 / 機房。
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { isSupabaseConfigured, supabase } from './supabaseClient'
 
@@ -1251,8 +1253,10 @@ const SOURCE_STORAGE_KEY = 'auto-document-converter-source-current'
 const RESULT_STORAGE_KEY = 'auto-document-converter-result-current'
 const RULE_SCOPE_STORAGE_KEY = 'auto-document-converter-scope-rules-current'
 const LOCATION_SCOPE_STORAGE_KEY = 'auto-document-converter-location-room-options-current'
+const LAST_SCOPE_SELECTION_STORAGE_KEY = 'auto-document-converter-last-scope-selection-current'
+const DEFAULT_MANAGER_SCOPE_TYPE = '定點'
 const CLEAN_START_PANEL_STORAGE_KEY = 'auto-document-converter-clean-start-panel-always-clean-home'
-const ONLINE_READY_VERSION_LABEL = '第 018-106 批：地區機房管理登入後固定展開版'
+const ONLINE_READY_VERSION_LABEL = '第 018-107 批：地區機房管理記住最後機房與定點預設版'
 const PROTECTED_GLOBAL_RULE_NOTICE = '公版規則已固定保護，不會被清除；若遺失會自動補回預設公版。'
 const SOURCE_SLASH_SPACE_NOTICE = '文件1已啟用斜線自動轉空格，貼上後 / 與 ／ 會自動變成空格。'
 const STAFF_PROFILE_STORAGE_KEY = 'auto-document-converter-current-staff-profile'
@@ -1868,13 +1872,13 @@ async function switchStaffProfile() {
 
   managerSelectedCity.value = ''
   managerSelectedDistrict.value = ''
-  managerSelectedType.value = ''
+  managerSelectedType.value = DEFAULT_MANAGER_SCOPE_TYPE
   roomManagerSelectedCity.value = ''
   roomManagerSelectedDistrict.value = ''
-  roomManagerSelectedType.value = ''
+  roomManagerSelectedType.value = DEFAULT_MANAGER_SCOPE_TYPE
   ruleScopeCity.value = ''
   ruleScopeDistrict.value = ''
-  ruleScopeType.value = ''
+  ruleScopeType.value = DEFAULT_MANAGER_SCOPE_TYPE
   ruleScopeRoom.value = ''
   ruleScopeLevel.value = 'global'
 
@@ -1904,7 +1908,7 @@ const activeAdvancedPanel = ref('country-map')
 const ruleScopeLevel = ref('global')
 const ruleScopeCity = ref('')
 const ruleScopeDistrict = ref('')
-const ruleScopeType = ref('')
+const ruleScopeType = ref(DEFAULT_MANAGER_SCOPE_TYPE)
 const ruleScopeRoom = ref('')
 const showScopeManager = ref(true)
 const showEmployeeManager = ref(false)
@@ -1916,12 +1920,13 @@ const newLocationTypeName = ref('')
 const newRoomName = ref('')
 const managerSelectedCity = ref('')
 const managerSelectedDistrict = ref('')
-const managerSelectedType = ref('')
+const managerSelectedType = ref(DEFAULT_MANAGER_SCOPE_TYPE)
 const roomManagerSelectedCity = ref('')
 const roomManagerSelectedDistrict = ref('')
-const roomManagerSelectedType = ref('')
+const roomManagerSelectedType = ref(DEFAULT_MANAGER_SCOPE_TYPE)
 const dragCityName = ref('')
 const dragDistrictName = ref('')
+let isRestoringLastScopeSelection = false
 
 function toggleAdvancedPanel(panel) {
   activeAdvancedPanel.value = activeAdvancedPanel.value === panel ? '' : panel
@@ -2409,7 +2414,7 @@ const sampleText = `💢超性感搖搖馬💢
 
 
 function closeAllTopPanelsForCleanStart() {
-  // 第 018-106 批：登入後預設固定展開地區機房管理，避免每次都要再點上方按鈕。
+  // 第 018-107 批：登入後預設固定展開地區機房管理；選擇欄位由最後機房範圍 / 定點預設帶入。
   // 其他設定彈窗仍維持收合；若使用者手動按「關閉」，只會暫時收合目前畫面。
   activeTopPanel.value = ''
   showPriceSettings.value = false
@@ -5247,6 +5252,117 @@ const roomManagerRooms = computed(() => {
 const totalDistrictCount = computed(() => Object.values(locationOptions.value.districts || {}).reduce((sum, list) => sum + (Array.isArray(list) ? list.length : 0), 0))
 const totalRoomCount = computed(() => Object.values(locationOptions.value.rooms || {}).reduce((sum, list) => sum + (Array.isArray(list) ? list.length : 0), 0))
 
+function getDefaultManagerScopeType() {
+  const types = Array.isArray(locationOptions.value?.types) ? locationOptions.value.types : []
+  if (types.includes(DEFAULT_MANAGER_SCOPE_TYPE)) return DEFAULT_MANAGER_SCOPE_TYPE
+  return cleanScopeText(types[0]) || DEFAULT_MANAGER_SCOPE_TYPE
+}
+
+function normalizeLastScopeSelection(value = {}) {
+  if (!value || typeof value !== 'object') return null
+
+  const city = cleanScopeText(value.city)
+  const district = cleanScopeText(value.district)
+  const type = cleanScopeText(value.type || value.mode) || getDefaultManagerScopeType()
+  const room = cleanScopeText(value.room)
+  const savedAt = cleanScopeText(value.savedAt) || ''
+
+  if (!city && !district && !type && !room) return null
+
+  return { city, district, type, room, savedAt }
+}
+
+function readLastScopeSelection() {
+  try {
+    return normalizeLastScopeSelection(JSON.parse(localStorage.getItem(getStaffScopedStorageKey(LAST_SCOPE_SELECTION_STORAGE_KEY)) || 'null'))
+  } catch {
+    return null
+  }
+}
+
+function writeLastScopeSelection(scope, options = {}) {
+  const normalized = normalizeLastScopeSelection(scope)
+  if (!normalized) return null
+
+  const payload = {
+    ...normalized,
+    savedAt: options.keepSavedAt && normalized.savedAt ? normalized.savedAt : new Date().toISOString()
+  }
+  localStorage.setItem(getStaffScopedStorageKey(LAST_SCOPE_SELECTION_STORAGE_KEY), JSON.stringify(payload))
+  return payload
+}
+
+function getCurrentScopeSelectionSnapshot() {
+  return normalizeLastScopeSelection({
+    city: ruleScopeCity.value || managerSelectedCity.value,
+    district: ruleScopeDistrict.value || managerSelectedDistrict.value,
+    type: ruleScopeType.value || managerSelectedType.value || getDefaultManagerScopeType(),
+    room: ruleScopeRoom.value
+  })
+}
+
+function rememberCurrentScopeSelection(options = {}) {
+  const snapshot = getCurrentScopeSelectionSnapshot()
+  if (!snapshot?.city || !snapshot?.district || !snapshot?.type || !snapshot?.room) return null
+
+  const saved = writeLastScopeSelection(snapshot)
+  if (saved && options.syncOnline && isOnlineWorkspaceReady()) {
+    void saveLocationOptionsOnline(locationOptions.value, { silent: true })
+  }
+  return saved
+}
+
+function resolveStoredScopeSelection(scope) {
+  const normalized = normalizeLastScopeSelection(scope)
+  const type = normalized?.type || getDefaultManagerScopeType()
+  const city = normalized?.city || ''
+  const district = normalized?.district || ''
+  const room = normalized?.room || ''
+
+  const validCity = city && locationCities.value.includes(city) ? city : ''
+  const validDistrict = validCity && (locationOptions.value.districts?.[validCity] || []).includes(district) ? district : ''
+  const validType = locationTypes.value.includes(type) ? type : getDefaultManagerScopeType()
+  const roomKey = `${validCity}__${validDistrict}__${validType}`
+  const validRoom = validCity && validDistrict && validType && (locationOptions.value.rooms?.[roomKey] || []).includes(room) ? room : ''
+
+  return {
+    city: validCity,
+    district: validDistrict,
+    type: validType,
+    room: validRoom
+  }
+}
+
+function applyScopeSelection(scope) {
+  const resolved = resolveStoredScopeSelection(scope)
+  isRestoringLastScopeSelection = true
+  try {
+    managerSelectedCity.value = resolved.city
+    managerSelectedDistrict.value = resolved.district
+    managerSelectedType.value = resolved.type
+    ruleScopeCity.value = resolved.city
+    ruleScopeDistrict.value = resolved.district
+    ruleScopeType.value = resolved.type
+    ruleScopeRoom.value = resolved.room
+    syncRuleScopeLevelFromSelection()
+  } finally {
+    isRestoringLastScopeSelection = false
+  }
+  return resolved
+}
+
+function applyLastScopeSelection(options = {}) {
+  const saved = readLastScopeSelection()
+  const resolved = applyScopeSelection(saved || { type: getDefaultManagerScopeType() })
+
+  if (!options.silent && saved?.city) {
+    const label = [resolved.city, resolved.district, resolved.type, resolved.room].filter(Boolean).join(' / ')
+    statusMessage.value = label ? `已帶入最後使用的機房範圍：${label}` : '已套用定點預設；尚未找到上一個機房範圍。'
+  }
+
+  return resolved
+}
+
 function saveLocationOptions(options = locationOptions.value) {
   locationOptions.value = normalizeLocationOptions(options)
   writeLocationOptions(locationOptions.value)
@@ -5261,7 +5377,8 @@ function buildOnlineOptionsPayload(options = locationOptions.value) {
   return {
     kind: ONLINE_OPTIONS_KIND,
     savedAt: new Date().toISOString(),
-    options: normalizeLocationOptions(options)
+    options: normalizeLocationOptions(options),
+    lastScope: readLastScopeSelection()
   }
 }
 
@@ -5312,6 +5429,11 @@ async function loadLocationOptionsOnline(opts = {}) {
   }
 
   const onlineOptions = data?.rules?.options
+  const onlineLastScope = normalizeLastScopeSelection(data?.rules?.lastScope)
+  if (onlineLastScope) {
+    writeLastScopeSelection(onlineLastScope, { keepSavedAt: true })
+  }
+
   if (onlineOptions && typeof onlineOptions === 'object') {
     locationOptions.value = normalizeLocationOptions(onlineOptions)
     writeLocationOptions(locationOptions.value)
@@ -5326,6 +5448,7 @@ async function loadLocationOptionsOnline(opts = {}) {
 
 async function loadOnlineWorkspace(opts = {}) {
   await loadLocationOptionsOnline({ silent: true })
+  applyLastScopeSelection({ silent: true })
   repairProtectedGlobalRules()
   await loadCurrentScopeRules({ silent: true, preferOnline: true })
   if (!opts.silent) statusMessage.value = '已同步線上個人工作區。'
@@ -5338,6 +5461,7 @@ const BACKUP_STORAGE_KEYS = [
   RESULT_STORAGE_KEY,
   RULE_SCOPE_STORAGE_KEY,
   LOCATION_SCOPE_STORAGE_KEY,
+  LAST_SCOPE_SELECTION_STORAGE_KEY,
   'auto-document-converter-api-base-url',
   STAFF_PROFILE_STORAGE_KEY
 ]
@@ -5782,23 +5906,31 @@ function renameLocationRoom(room) {
 }
 
 watch(managerSelectedCity, value => {
+  if (isRestoringLastScopeSelection) return
   ruleScopeCity.value = value
   managerSelectedDistrict.value = ''
   ruleScopeDistrict.value = ''
-  ruleScopeType.value = managerSelectedType.value
+  ruleScopeType.value = managerSelectedType.value || getDefaultManagerScopeType()
   ruleScopeRoom.value = ''
   syncRuleScopeLevelFromSelection()
 })
 
 watch(managerSelectedDistrict, value => {
+  if (isRestoringLastScopeSelection) return
   ruleScopeDistrict.value = value
-  ruleScopeType.value = managerSelectedType.value
+  ruleScopeType.value = managerSelectedType.value || getDefaultManagerScopeType()
   ruleScopeRoom.value = ''
   syncRuleScopeLevelFromSelection()
 })
 
 watch(managerSelectedType, value => {
-  ruleScopeType.value = value
+  if (isRestoringLastScopeSelection) return
+  const nextType = value || getDefaultManagerScopeType()
+  if (!value && managerSelectedType.value !== nextType) {
+    managerSelectedType.value = nextType
+    return
+  }
+  ruleScopeType.value = nextType
   ruleScopeRoom.value = ''
   syncRuleScopeLevelFromSelection()
 })
@@ -5819,7 +5951,7 @@ watch(ruleScopeRoom, async value => {
 
 watch(roomManagerSelectedCity, () => {
   roomManagerSelectedDistrict.value = ''
-  roomManagerSelectedType.value = roomManagerSelectedType.value || ''
+  roomManagerSelectedType.value = roomManagerSelectedType.value || getDefaultManagerScopeType()
   ruleScopeRoom.value = ''
 })
 
@@ -6186,6 +6318,7 @@ async function saveCurrentScopeRules() {
     }
 
     if (!isOnlineWorkspaceReady()) {
+      rememberCurrentScopeSelection()
       const message = `已儲存「${currentRuleScopeLabel.value}」本機規則；尚未登入線上帳號，無法同步。`
       setRoomRuleFeedback(message, 'warning', { toast: true })
       return true
@@ -6194,6 +6327,7 @@ async function saveCurrentScopeRules() {
     const verifiedRule = await saveOnlineRuleForCurrentRoom(data)
     const verifiedStore = setRuleDataToScope(readScopeRuleStore(), 'room', key, verifiedRule)
     writeScopeRuleStore(verifiedStore)
+    rememberCurrentScopeSelection({ syncOnline: true })
 
     const message = `已確認線上儲存「${currentRuleScopeLabel.value}」規則；重新登入或換電腦後也會讀得到。`
     setRoomRuleFeedback(message, 'success', { toast: true })
