@@ -1,4 +1,4 @@
-<!-- 第 018-104 批：NS 方案節數保留版（依第 018-103 批延續） -->
+<!-- 第 018-106 批：地區機房管理登入後固定展開版（依第 018-105 批延續） -->
 <template>
   <!-- batch018-76-employee-rules-semantic-verify-fix -->
   <main v-if="!authReady" class="login-page-shell">
@@ -1239,7 +1239,7 @@
 </template>
 
 <script setup>
-// 第 018-105 批：媒體上傳加入總進度／單檔狀態，選擇小姐時右側卡片自動定位並亮起；延續 018-104 NS 方案節數保留版。
+// 第 018-106 批：登入後預設展開地區機房管理區塊；延續 018-105 媒體上傳進度與選中小姐亮起版。
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { isSupabaseConfigured, supabase } from './supabaseClient'
 
@@ -1252,7 +1252,7 @@ const RESULT_STORAGE_KEY = 'auto-document-converter-result-current'
 const RULE_SCOPE_STORAGE_KEY = 'auto-document-converter-scope-rules-current'
 const LOCATION_SCOPE_STORAGE_KEY = 'auto-document-converter-location-room-options-current'
 const CLEAN_START_PANEL_STORAGE_KEY = 'auto-document-converter-clean-start-panel-always-clean-home'
-const ONLINE_READY_VERSION_LABEL = '第 018-105 批：媒體上傳進度與選中小姐亮起版'
+const ONLINE_READY_VERSION_LABEL = '第 018-106 批：地區機房管理登入後固定展開版'
 const PROTECTED_GLOBAL_RULE_NOTICE = '公版規則已固定保護，不會被清除；若遺失會自動補回預設公版。'
 const SOURCE_SLASH_SPACE_NOTICE = '文件1已啟用斜線自動轉空格，貼上後 / 與 ／ 會自動變成空格。'
 const STAFF_PROFILE_STORAGE_KEY = 'auto-document-converter-current-staff-profile'
@@ -1906,7 +1906,7 @@ const ruleScopeCity = ref('')
 const ruleScopeDistrict = ref('')
 const ruleScopeType = ref('')
 const ruleScopeRoom = ref('')
-const showScopeManager = ref(false)
+const showScopeManager = ref(true)
 const showEmployeeManager = ref(false)
 const showScopeCrudPanel = ref(false)
 const backupImportInput = ref(null)
@@ -2409,15 +2409,15 @@ const sampleText = `💢超性感搖搖馬💢
 
 
 function closeAllTopPanelsForCleanStart() {
-  // 第 018-86 批：頂部設定改成彈窗後，進入頁面先保持乾淨狀態。
-  // 使用者點金額 / 輸出 / 常用 / 進階 / API / 地區機房管理時，再於畫面中央開啟。
+  // 第 018-106 批：登入後預設固定展開地區機房管理，避免每次都要再點上方按鈕。
+  // 其他設定彈窗仍維持收合；若使用者手動按「關閉」，只會暫時收合目前畫面。
   activeTopPanel.value = ''
   showPriceSettings.value = false
   showFormatSettings.value = false
   showQuickRules.value = false
   showAdvancedSettings.value = false
   showApiPanel.value = false
-  showScopeManager.value = false
+  showScopeManager.value = true
   showScopeCrudPanel.value = false
 
   localStorage.removeItem(CLEAN_START_PANEL_STORAGE_KEY)
