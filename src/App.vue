@@ -1,4 +1,4 @@
-<!-- 第 018-103 批：2+1s 優先去重版（依第 018-102 批延續） -->
+<!-- 第 018-104 批：NS 方案節數保留版（依第 018-103 批延續） -->
 <template>
   <!-- batch018-76-employee-rules-semantic-verify-fix -->
   <main v-if="!authReady" class="login-page-shell">
@@ -3735,14 +3735,17 @@ async function submitDocument4ToApi() {
 }
 
 function parsePriceTextToObject(priceText) {
-  const match = String(priceText || '').match(/^([0-9]+(?:\.[0-9]+)?)K\/(\d+)\/(\d+)S$/i)
+  const match = String(priceText || '').match(/^([0-9]+(?:\.[0-9]+)?)K\/(\d+)\/(NS|\d+S)$/i)
   if (!match) return null
+
+  const sessionLabel = normalizePriceSessionLabel(match[3])
 
   return {
     priceText,
     price: Math.round(Number(match[1]) * 1000),
     minutes: Number(match[2]),
-    sessions: Number(match[3])
+    sessions: sessionLabel === 'NS' ? null : Number(sessionLabel.replace(/S$/i, '')),
+    sessionLabel
   }
 }
 
@@ -4353,6 +4356,33 @@ function parseBottomPriceAmount(value) {
 }
 
 
+function normalizePriceSessionLabel(value) {
+  const text = String(value || '').trim().toUpperCase().replace(/\s+/g, '')
+  if (text === 'NS' || text === 'N/S') return 'NS'
+
+  const numericMatch = text.match(/^(\d+)S?$/i)
+  if (numericMatch) return `${Number(numericMatch[1])}S`
+
+  return '1S'
+}
+
+function getPriceSessionSortValue(sessionLabel) {
+  if (sessionLabel === 'NS') return 999
+  const match = String(sessionLabel || '').match(/^(\d+)S$/i)
+  return match ? Number(match[1]) : 1
+}
+
+function extractPriceSessionLabel(line) {
+  const normalized = String(line || '').toUpperCase().replace(/ＮＳ/g, 'NS')
+  const nsMatch = normalized.match(/(?:^|[^A-Z0-9])N\s*\/?\s*S(?=$|[^A-Z0-9])/i)
+  if (nsMatch) return 'NS'
+
+  const sessionMatch = normalized.match(/(?:^|[^A-Z0-9])(\d+)\s*S(?=$|[^A-Z0-9])/i)
+  if (sessionMatch) return `${Number(sessionMatch[1])}S`
+
+  return '1S'
+}
+
 function parsePrices(text, increase) {
   const results = []
   const seen = new Set()
@@ -4360,21 +4390,23 @@ function parsePrices(text, increase) {
 
   const pushPrice = (minutes, sessionCount, amount) => {
     const min = Number(minutes)
-    const sessions = Number(sessionCount || 1)
+    const sessionLabel = normalizePriceSessionLabel(sessionCount || '1S')
     const rawAmount = Number(amount || 0)
-    if (!min || !sessions || !rawAmount) return
+    if (!min || !sessionLabel || !rawAmount) return
 
     // 第 009-9-7-6-9：
     // 以前只用 minutes 去重，會造成 60/1S 出現後 60/2S 被跳過。
     // 現在改成「分鐘 + 節數」去重，60/1S 與 60/2S 會同時保留。
-    const key = `${min}/${sessions}S`
+    // 第 018-104 批：NS 是獨立節數標籤，不能被預設成 1S。
+    const key = `${min}/${sessionLabel}`
     if (seen.has(key)) return
     seen.add(key)
 
     results.push({
       minutes: min,
-      sessions,
-      text: `${formatAmount(applyMinutePriceAdd(resolveFinalAmount(rawAmount, increase), min))}/${min}/${sessions}S`
+      sessionSort: getPriceSessionSortValue(sessionLabel),
+      sessionLabel,
+      text: `${formatAmount(applyMinutePriceAdd(resolveFinalAmount(rawAmount, increase), min))}/${min}/${sessionLabel}`
     })
   }
 
@@ -4394,12 +4426,12 @@ function parsePrices(text, increase) {
     // 原本只有「20分/1.5K」或「20分/1.5底」能被辨識，
     // 分鐘後直接接 1S、價格又帶 K底時會整筆解析失敗。
     const labeledKBottomMatch = normalized.match(
-      /(?:快餐|短[鐘鍾]|長[鐘鍾])?\s*(\d{2,3})\s*(?:分鐘|分)\s*(?:(\d+)\s*S)?\s*([0-9]+(?:\.[0-9]+)?)\s*[kK]\s*底?/i
+      /(?:快餐|短[鐘鍾]|長[鐘鍾])?\s*(\d{2,3})\s*(?:分鐘|分)\s*(?:(NS|\d+\s*S))?\s*([0-9]+(?:\.[0-9]+)?)\s*[kK]\s*底?/i
     )
 
     if (labeledKBottomMatch) {
       const minutes = Number(labeledKBottomMatch[1])
-      const sessionCount = Number(labeledKBottomMatch[2] || 1)
+      const sessionCount = labeledKBottomMatch[2] || '1S'
       const kAmount = Number(labeledKBottomMatch[3])
 
       if (minutes && sessionCount && kAmount) {
@@ -4417,9 +4449,7 @@ function parsePrices(text, increase) {
       // 第 018-75-1 批：
       // 同時支援「30分/2.5底」與「短鐘 30分 2.5底」。
       // 「長2S 60分 3.3底」會從同一行抓到 2S；未標節數時維持 1S。
-      const sessionMatch = normalized.match(/(?:長|短)?\s*(\d+)\s*S\b/i)
-        || normalized.match(/\/\s*(\d+)\s*S\b/i)
-      const sessionCount = sessionMatch ? Number(sessionMatch[1]) : 1
+      const sessionCount = extractPriceSessionLabel(normalized)
 
       // batch018-47：
       // 「20分/1300底」的 1300 是實際金額，不可以再 *1000，
@@ -4431,12 +4461,12 @@ function parsePrices(text, increase) {
       return
     }
 
-    // 支援 2/30/1S、2.2/30/1S、2200/40/1S、3300/60/2S
-    const compactAmountMatch = normalized.match(/^([0-9]+(?:\.[0-9]+)?)\s*\/\s*(\d{2,3})\s*\/\s*(\d+)\s*S?/i)
+    // 支援 2/30/1S、2.2/30/1S、2200/40/1S、3300/60/2S、6.6/90/NS
+    const compactAmountMatch = normalized.match(/^([0-9]+(?:\.[0-9]+)?)\s*\/\s*(\d{2,3})\s*\/\s*(NS|\d+\s*S?)/i)
     if (compactAmountMatch) {
       const rawAmountNumber = Number(compactAmountMatch[1])
       const minutes = Number(compactAmountMatch[2])
-      const sessionCount = Number(compactAmountMatch[3] || 1)
+      const sessionCount = compactAmountMatch[3] || '1S'
       if (!rawAmountNumber || !minutes) return
 
       const amount = rawAmountNumber < 100 ? rawAmountNumber * 1000 : rawAmountNumber
@@ -4444,10 +4474,10 @@ function parsePrices(text, increase) {
       return
     }
 
-    const kMatch = normalized.match(/(\d{2,3})\s*(?:分鐘|分)\s*\/\s*(\d+)\s*S?\s*([0-9.]+)\s*[kK]/i)
+    const kMatch = normalized.match(/(\d{2,3})\s*(?:分鐘|分)\s*\/\s*(NS|\d+\s*S?)\s*([0-9.]+)\s*[kK]/i)
     if (kMatch) {
       const minutes = Number(kMatch[1])
-      const sessionCount = Number(kMatch[2] || 1)
+      const sessionCount = kMatch[2] || '1S'
       const kAmount = Number(kMatch[3])
       if (!minutes || !kAmount) return
       pushPrice(minutes, sessionCount, kAmount * 1000)
@@ -4459,8 +4489,7 @@ function parsePrices(text, increase) {
     const minutes = Number(minuteMatch[1])
     if (!minutes) return
 
-    const sessionMatch = normalized.match(/\/\s*(\d+)\s*S/i)
-    const sessionCount = sessionMatch ? Number(sessionMatch[1]) : 1
+    const sessionCount = extractPriceSessionLabel(normalized)
 
     const amountCandidates = [...normalized.matchAll(/([0-9]{3,5})/g)]
       .map(match => Number(match[1]))
@@ -4474,7 +4503,7 @@ function parsePrices(text, increase) {
   return results
     .sort((a, b) => {
       if (a.minutes !== b.minutes) return a.minutes - b.minutes
-      return a.sessions - b.sessions
+      return a.sessionSort - b.sessionSort
     })
     .map(item => item.text)
 }
