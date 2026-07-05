@@ -1,4 +1,4 @@
-<!-- 第 018-101 批：服務同義詞自動去重版（依第 018-100 批延續） -->
+<!-- 第 018-102 批：深喉嚨同義詞保留完整名稱版（依第 018-101 批延續） -->
 <template>
   <!-- batch018-76-employee-rules-semantic-verify-fix -->
   <main v-if="!authReady" class="login-page-shell">
@@ -1977,7 +1977,7 @@ const defaultServiceOrder = [
   '攝影露臉+1000',
   '不嫌視野愛愛',
   '豪邁吃屌',
-  '深喉',
+  '深喉嚨',
   '5+3'
 ]
 
@@ -2090,9 +2090,9 @@ const defaultAliasRules = [
   '8小時不限時段=5+3',
   '攝影露臉+1000=攝影露臉+1000',
   '攝影+1000=攝影露臉+1000',
-  '深喉嚨=深喉',
-  '深喉咙=深喉',
-  '深喉=深喉',
+  '深喉嚨=深喉嚨',
+  '深喉咙=深喉嚨',
+  '深喉=深喉嚨',
   '豪邁吃屌=豪邁吃屌',
   '不嫌視野愛愛=不嫌視野愛愛',
   '需=需',
@@ -2235,7 +2235,7 @@ const defaultRemoveWords = [
   '健康膚色.無生過.藝術刺青.無牙套.有修毛',
 ]
 
-const defaultExtraKeep = ['吞精+1000', '無套內射+1000', '後門+1000', '高跟鞋', '雙飛', '2+1', '攝影露臉+1000', '深喉', '豪邁吃屌', '不嫌視野愛愛']
+const defaultExtraKeep = ['吞精+1000', '無套內射+1000', '後門+1000', '高跟鞋', '雙飛', '2+1', '攝影露臉+1000', '深喉嚨', '豪邁吃屌', '不嫌視野愛愛']
 
 const defaultCountryFieldRules = [
   '國家:馬來=馬來',
@@ -4563,7 +4563,8 @@ function getServiceOrderIndex(item, orderIndex) {
   // 但服務固定排序仍寫 2節3S，就讓 2+1s 使用 2節3S 的排序位置。
   const aliasOrderMap = new Map([
     ['2+1s', '2節3S'],
-    ['2+1S', '2節3S']
+    ['2+1S', '2節3S'],
+    ['深喉嚨', '深喉']
   ])
 
   const mapped = aliasOrderMap.get(item)
@@ -4610,10 +4611,10 @@ function normalizeOverlappingServices(found) {
     base.forEach(item => found.delete(item))
   })
 
-  // 第 018-101 批：服務同義詞自動去重。
-  // 例如同一筆同時抓到「深喉嚨」與「深喉」時，輸出只保留標準詞「深喉」。
+  // 第 018-102 批：服務同義詞自動去重時，保留完整服務名稱。
+  // 例如同一筆同時抓到「深喉嚨」與「深喉」時，輸出只保留完整詞「深喉嚨」。
   const equivalentServiceRules = [
-    { canonical: '深喉', aliases: ['深喉嚨', '深喉咙', '深喉服務'] },
+    { canonical: '深喉嚨', aliases: ['深喉', '深喉咙', '深喉服務'] },
     { canonical: '自慰秀', aliases: ['自衛秀'] },
     { canonical: '自慰秀+500', aliases: ['自衛秀+500'] },
     { canonical: '顏射+500', aliases: ['射顏+500'] }
