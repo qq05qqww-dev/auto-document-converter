@@ -1,4 +1,4 @@
-<!-- 第 018-99 批：加價服務優先去重版（依第 018-98 批延續） -->
+<!-- 第 018-100 批：底價兩位數正確轉百元版（依第 018-99 批延續） -->
 <template>
   <!-- batch018-76-employee-rules-semantic-verify-fix -->
   <main v-if="!authReady" class="login-page-shell">
@@ -4326,6 +4326,25 @@ function normalizeBodyText(text) {
 }
 
 
+
+function parseBottomPriceAmount(value) {
+  const rawText = String(value || '').trim()
+  const rawAmount = Number(rawText)
+  if (!rawAmount) return 0
+
+  // 第 018-100 批：底價縮寫補正。
+  // 1.5底 / 2.5底：小數 K 寫法，乘 1000。
+  // 15底 / 19底 / 22底：兩位數百元寫法，乘 100。
+  // 1500底 / 1900底：已是實際金額，原樣保留。
+  if (rawAmount >= 1000) return rawAmount
+  if (rawText.includes('.')) return rawAmount * 1000
+  if (rawAmount >= 10 && rawAmount < 100) return rawAmount * 100
+  if (rawAmount > 0 && rawAmount < 10) return rawAmount * 1000
+
+  return rawAmount
+}
+
+
 function parsePrices(text, increase) {
   const results = []
   const seen = new Set()
@@ -4397,8 +4416,9 @@ function parsePrices(text, increase) {
       // batch018-47：
       // 「20分/1300底」的 1300 是實際金額，不可以再 *1000，
       // 否則會變成 1300.5K/20/1S。
-      // 只有「20分/1.3底」「30分/2.5底」這種 K 縮寫才轉成 1300 / 2500。
-      const amount = base < 100 ? base * 1000 : base
+      // 第 018-100 批：補正店家常見兩位數底價。
+      // 例：「20分 15底」代表 1500，不是 15000；「40分 19底」代表 1900。
+      const amount = parseBottomPriceAmount(oldMatch[2])
       pushPrice(minutes, sessionCount, amount)
       return
     }
