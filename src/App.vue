@@ -4239,7 +4239,12 @@ function parseRecord(block) {
   const header = findHeaderInBlock(block) || parseNameOnlyRecord(block)
   const explicitCountry = extractCountryFromBlock(block)
   const finalCountry = explicitCountry || header?.country || '馬來'
-  const body = parseBody(block)
+  const parsedBody = parseBody(block)
+  const headerAge = extractAgeFromHeaderLines(block, header, finalCountry)
+  const body = parsedBody ? {
+    ...parsedBody,
+    age: parsedBody.age || headerAge
+  } : null
   const prices = parsePrices(block, getAppliedIncrease(finalCountry))
   const services = extractServices(block)
 
@@ -4299,6 +4304,33 @@ function findHeaderInBlock(block) {
   return null
 }
 
+function extractAgeFromHeaderLines(block, header, country = '') {
+  if (!header) return ''
+
+  const name = String(header.name || '').trim()
+  const fixedCountry = normalizeCountry(country || header.country || '')
+  const countryAliases = getCountryKeys().filter(item => normalizeCountry(item) === fixedCountry)
+  const lines = normalizeDigits(String(block || ''))
+    .split('\n')
+    .map(line => normalizeHeaderText(line))
+    .filter(Boolean)
+
+  for (const line of lines.slice(0, 12)) {
+    const ageMatch = line.match(/(?:^|\s)(\d{2})\s*(?:歲|y|Y)(?=$|\s|[^A-Za-z0-9])/)
+    if (!ageMatch) continue
+
+    const includesName = name && line.includes(name)
+    const includesCountry = countryAliases.some(alias => alias && line.includes(alias))
+    const hasBody = /\d{3}\s*[/ .．]?\s*\d{2}\s*[/ .．]?\s*(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)?[A-Za-z]/i.test(line)
+
+    // 第 018-108 批：支援「名字 國籍 年齡」與下一行「國籍 身高 體重 胸部」合併。
+    // 只從標題/國籍線補年齡，避免從服務備註或價格行誤抓。
+    if (includesName || includesCountry || hasBody) return `${ageMatch[1]}y`
+  }
+
+  return ''
+}
+
 
 
 function parseHeaderLine(line) {
@@ -4348,13 +4380,23 @@ function pickHeaderName(beforeCountry, afterCountry) {
   const after = removeHeaderNoise(afterCountry)
 
   // 「小魚兒 越南新妹」這種，國籍後面只是新妹/新人等說明，名稱要取國籍前面。
-  if (before && (!after || isCountrySuffixOnly(after) || isBodySuffixOnly(afterCountry))) return before
-  if (after) return after
+  // 第 018-108 批：支援「雨嫣 馬來 23歲」這種標題，國籍後面只有年齡時，名稱仍取國籍前面。
+  if (before && (!after || isCountrySuffixOnly(after) || isBodySuffixOnly(afterCountry) || isAgeSuffixOnly(afterCountry))) return before
+  if (after && !isAgeSuffixOnly(afterCountry)) return after
   return before
 }
 
 function isCountrySuffixOnly(text) {
   return /^(新妹|新茶|新人|嫩妹|妹妹|妹|漂亮|正妹|可愛|甜美|外送妹)$/.test(String(text || '').trim())
+}
+
+function isAgeSuffixOnly(text) {
+  const value = normalizeDigits(String(text || ''))
+    .replace(/[.．,，。:：;；/\\_-]/g, ' ')
+    .replace(/\s+/g, '')
+    .trim()
+
+  return /^\d{2}(?:歲|y|Y)?$/.test(value)
 }
 
 function isBodySuffixOnly(text) {
