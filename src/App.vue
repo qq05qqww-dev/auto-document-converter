@@ -966,9 +966,9 @@
             </div>
 
             <div class="media-upload-actions">
-              <button class="ghost-btn" type="button" @click="clearMediaUploadFiles">清空待上傳</button>
-              <button class="primary-btn media-upload-btn" type="button" @click="uploadLadyMedia">
-                上傳 {{ mediaUploadFiles.length || '' }} 個圖片/影片
+              <button class="ghost-btn" type="button" :disabled="isMediaUploading" @click="clearMediaUploadFiles">清空待上傳</button>
+              <button class="primary-btn media-upload-btn" type="button" :disabled="isMediaUploading" @click="uploadLadyMedia">
+                {{ isMediaUploading ? '上傳中...' : `上傳 ${mediaUploadFiles.length || ''} 個圖片/影片` }}
               </button>
             </div>
 
@@ -985,6 +985,17 @@
               <div class="selected-panel-title">
                 <strong>待上傳縮圖</strong>
                 <span>{{ mediaUploadFiles.length }} 個檔案</span>
+              </div>
+
+              <div v-if="mediaUploadProgressVisible" class="media-upload-progress-box" :class="{ 'is-uploading': isMediaUploading }">
+                <div class="media-upload-progress-head">
+                  <span>總上傳進度</span>
+                  <strong>{{ mediaUploadOverallPercent }}%</strong>
+                </div>
+                <div class="media-upload-progress-track">
+                  <i :style="{ width: `${mediaUploadOverallPercent}%` }"></i>
+                </div>
+                <p>{{ mediaUploadProgressSummary }}</p>
               </div>
 
               <div v-if="mediaUploadFiles.length" class="selected-media-thumb-grid">
@@ -1014,6 +1025,17 @@
                     <strong>{{ file.name }}</strong>
                     <span>{{ formatUploadFileSize(file) }}</span>
                   </div>
+
+                  <div
+                    v-if="isMediaUploading || getMediaUploadFileState(file).status !== 'waiting'"
+                    class="thumb-upload-state"
+                    :class="`is-${getMediaUploadFileState(file).status}`"
+                  >
+                    <span>{{ getMediaUploadFileState(file).label }}</span>
+                    <div class="thumb-upload-bar">
+                      <i :style="{ width: `${getMediaUploadFileState(file).percent}%` }"></i>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -1032,7 +1054,14 @@
           </div>
 
           <div v-if="filteredFrontendLadies.length" class="lady-card-grid compact-right-lady-grid">
-            <article v-for="lady in filteredFrontendLadies" :key="lady.id" class="lady-card compact-right-lady-card">
+            <article
+              v-for="lady in filteredFrontendLadies"
+              :key="lady.id"
+              class="lady-card compact-right-lady-card"
+              :class="{ 'is-selected-upload-lady': isSelectedUploadLady(lady) }"
+              :data-preview-lady-id="String(lady.id || '')"
+            >
+              <span v-if="isSelectedUploadLady(lady)" class="selected-upload-lady-badge">目前選擇</span>
               <div class="lady-cover-box">
                 <template v-if="getLadyCoverMedia(lady)">
                   <button
@@ -1210,8 +1239,8 @@
 </template>
 
 <script setup>
-// 第 018-82 批：媒體燈箱加入左右切換、張數指示、鍵盤方向鍵與手機滑動；延續 018-81 全媒體縮圖。
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+// 第 018-105 批：媒體上傳加入總進度／單檔狀態，選擇小姐時右側卡片自動定位並亮起；延續 018-104 NS 方案節數保留版。
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { isSupabaseConfigured, supabase } from './supabaseClient'
 
 // 第 009-7 批開始固定使用這兩個正式儲存位置。
@@ -1223,7 +1252,7 @@ const RESULT_STORAGE_KEY = 'auto-document-converter-result-current'
 const RULE_SCOPE_STORAGE_KEY = 'auto-document-converter-scope-rules-current'
 const LOCATION_SCOPE_STORAGE_KEY = 'auto-document-converter-location-room-options-current'
 const CLEAN_START_PANEL_STORAGE_KEY = 'auto-document-converter-clean-start-panel-always-clean-home'
-const ONLINE_READY_VERSION_LABEL = '第 018-82 批：媒體燈箱左右切換版'
+const ONLINE_READY_VERSION_LABEL = '第 018-105 批：媒體上傳進度與選中小姐亮起版'
 const PROTECTED_GLOBAL_RULE_NOTICE = '公版規則已固定保護，不會被清除；若遺失會自動補回預設公版。'
 const SOURCE_SLASH_SPACE_NOTICE = '文件1已啟用斜線自動轉空格，貼上後 / 與 ／ 會自動變成空格。'
 const STAFF_PROFILE_STORAGE_KEY = 'auto-document-converter-current-staff-profile'
@@ -1288,6 +1317,11 @@ const mediaUploadNote = ref('')
 const mediaUploadFiles = ref([])
 const isMediaDragging = ref(false)
 const mediaUploadStatusText = ref('尚未上傳媒體。')
+const isMediaUploading = ref(false)
+const mediaUploadProgressMap = ref({})
+const mediaUploadCurrentFileName = ref('')
+const mediaUploadCompletedCount = ref(0)
+const mediaUploadFailedCount = ref(0)
 const isSingleLadyCentralSyncing = ref(false)
 const mediaViewerItem = ref(null)
 const mediaViewerItems = ref([])
@@ -1300,6 +1334,31 @@ const mediaViewerTotal = computed(() => mediaViewerItems.value.length)
 const mediaViewerPositionText = computed(() => {
   if (!mediaViewerItem.value || !mediaViewerTotal.value) return ''
   return `${mediaViewerIndex.value + 1} / ${mediaViewerTotal.value}`
+})
+
+const mediaUploadTotalCount = computed(() => mediaUploadFiles.value.length)
+const mediaUploadOverallPercent = computed(() => {
+  const total = mediaUploadTotalCount.value
+  if (!total) return 0
+
+  const sum = mediaUploadFiles.value.reduce((acc, file) => {
+    const state = getMediaUploadFileState(file)
+    return acc + Number(state.percent || 0)
+  }, 0)
+
+  return Math.max(0, Math.min(100, Math.round(sum / total)))
+})
+const mediaUploadProgressVisible = computed(() => isMediaUploading.value || mediaUploadFiles.value.some(file => {
+  const state = getMediaUploadFileState(file)
+  return state.status !== 'waiting'
+}))
+const mediaUploadProgressSummary = computed(() => {
+  if (!mediaUploadTotalCount.value) return '尚未選擇檔案'
+  if (isMediaUploading.value) {
+    const fileName = mediaUploadCurrentFileName.value || '準備中'
+    return `目前上傳：${fileName}｜已完成 ${mediaUploadCompletedCount.value} / ${mediaUploadTotalCount.value}｜失敗 ${mediaUploadFailedCount.value}`
+  }
+  return `已完成 ${mediaUploadCompletedCount.value} / ${mediaUploadTotalCount.value}｜失敗 ${mediaUploadFailedCount.value}`
 })
 const confirmedText = ref('')
 const statusMessage = ref('等待貼上資料。')
@@ -2690,6 +2749,14 @@ watch(mediaUploadLadyOptions, (ladies) => {
   }
 }, { immediate: true })
 
+watch(mediaUploadLadyId, () => {
+  scrollSelectedMediaUploadLadyIntoView()
+})
+
+watch(filteredFrontendLadies, () => {
+  scrollSelectedMediaUploadLadyIntoView()
+})
+
 function isCurrentDocumentPreviewLadyId(id) {
   return String(id || '').startsWith('current-document-')
 }
@@ -2919,6 +2986,9 @@ function addMediaUploadFiles(fileList) {
   })
 
   mediaUploadFiles.value = [...mediaUploadFiles.value, ...uniqueIncoming]
+  if (uniqueIncoming.length) {
+    resetMediaUploadProgress()
+  }
 }
 
 function handleMediaFileChange(event) {
@@ -2931,11 +3001,16 @@ function handleMediaDrop(event) {
 }
 
 function removeMediaUploadFile(index) {
+  if (isMediaUploading.value) return
   mediaUploadFiles.value = mediaUploadFiles.value.filter((_, fileIndex) => fileIndex !== index)
+  resetMediaUploadProgress()
 }
 
 function clearMediaUploadFiles() {
+  if (isMediaUploading.value) return
+
   mediaUploadFiles.value = []
+  resetMediaUploadProgress()
 
   const fileInput = document.querySelector('#lady-media-file-input')
   if (fileInput) fileInput.value = ''
@@ -2946,6 +3021,105 @@ function formatUploadFileSize(file) {
   if (size >= 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`
   if (size >= 1024) return `${(size / 1024).toFixed(1)} KB`
   return `${size} B`
+}
+
+function getUploadFileKey(file) {
+  return `${file?.name || 'file'}-${file?.size || 0}-${file?.lastModified || 0}`
+}
+
+function makeMediaUploadState(status = 'waiting', percent = 0, label = '等待中') {
+  return {
+    status,
+    percent: Math.max(0, Math.min(100, Math.round(Number(percent || 0)))),
+    label
+  }
+}
+
+function getMediaUploadFileState(file) {
+  return mediaUploadProgressMap.value[getUploadFileKey(file)] || makeMediaUploadState()
+}
+
+function setMediaUploadFileState(file, nextState = {}) {
+  const key = getUploadFileKey(file)
+  const currentState = getMediaUploadFileState(file)
+  mediaUploadProgressMap.value = {
+    ...mediaUploadProgressMap.value,
+    [key]: { ...currentState, ...nextState }
+  }
+}
+
+function resetMediaUploadProgress() {
+  mediaUploadProgressMap.value = {}
+  mediaUploadCurrentFileName.value = ''
+  mediaUploadCompletedCount.value = 0
+  mediaUploadFailedCount.value = 0
+}
+
+function initializeMediaUploadProgress() {
+  const nextMap = {}
+  mediaUploadFiles.value.forEach(file => {
+    nextMap[getUploadFileKey(file)] = makeMediaUploadState()
+  })
+  mediaUploadProgressMap.value = nextMap
+  mediaUploadCurrentFileName.value = ''
+  mediaUploadCompletedCount.value = 0
+  mediaUploadFailedCount.value = 0
+}
+
+function uploadMediaFileWithProgress(formData, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+
+    xhr.upload.onprogress = event => {
+      if (!event.lengthComputable) return
+      const percent = Math.max(0, Math.min(99, Math.round((event.loaded / event.total) * 100)))
+      onProgress(percent)
+    }
+
+    xhr.onload = () => {
+      const text = xhr.responseText || ''
+      let data = {}
+      try {
+        data = text ? JSON.parse(text) : {}
+      } catch {
+        data = {}
+      }
+
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(new Error(data.message || `HTTP ${xhr.status}`))
+        return
+      }
+
+      onProgress(100)
+      resolve(data)
+    }
+
+    xhr.onerror = () => reject(new Error('網路連線中斷，媒體上傳失敗。'))
+    xhr.onabort = () => reject(new Error('媒體上傳已中止。'))
+    xhr.open('POST', `${apiBaseUrl.value}/api/ladies/media/upload`)
+    xhr.send(formData)
+  })
+}
+
+function isSelectedUploadLady(lady) {
+  return String(lady?.id || '') === String(mediaUploadLadyId.value || '')
+}
+
+async function scrollSelectedMediaUploadLadyIntoView() {
+  const targetId = String(mediaUploadLadyId.value || '')
+  if (!targetId || typeof document === 'undefined') return
+
+  await nextTick()
+
+  const cards = Array.from(document.querySelectorAll('[data-preview-lady-id]'))
+  const targetCard = cards.find(card => String(card?.dataset?.previewLadyId || '') === targetId)
+  if (!targetCard) return
+
+  targetCard.scrollIntoView({
+    behavior: 'smooth',
+    block: 'nearest',
+    inline: 'center'
+  })
 }
 
 async function uploadLadyMedia() {
@@ -2968,32 +3142,37 @@ async function uploadLadyMedia() {
 
   let successCount = 0
   let failCount = 0
+  let currentFile = null
+
+  initializeMediaUploadProgress()
+  isMediaUploading.value = true
 
   try {
     for (const file of mediaUploadFiles.value) {
+      currentFile = file
+      mediaUploadCurrentFileName.value = file.name
+      setMediaUploadFileState(file, makeMediaUploadState('uploading', 0, '上傳中 0%'))
+
       const formData = new FormData()
       formData.append('file', file)
       formData.append('ladyId', String(mediaUploadLadyId.value))
       formData.append('mediaType', file.type.startsWith('video/') ? 'video' : 'image')
       formData.append('note', '')
 
-      const response = await fetch(`${apiBaseUrl.value}/api/ladies/media/upload`, {
-        method: 'POST',
-        body: formData
+      await uploadMediaFileWithProgress(formData, percent => {
+        setMediaUploadFileState(file, makeMediaUploadState('uploading', percent, `上傳中 ${percent}%`))
+        mediaUploadStatusText.value = `正在上傳「${file.name}」：${percent}%。已完成 ${successCount} / ${mediaUploadFiles.value.length} 個檔案。`
       })
 
-      const data = await response.json().catch(() => ({}))
-
-      if (!response.ok) {
-        failCount += 1
-        throw new Error(data.message || `HTTP ${response.status}`)
-      }
-
       successCount += 1
+      mediaUploadCompletedCount.value = successCount
+      setMediaUploadFileState(file, makeMediaUploadState('done', 100, '已完成'))
       mediaUploadStatusText.value = `上傳中：已完成 ${successCount} / ${mediaUploadFiles.value.length} 個檔案。`
     }
 
+    mediaUploadCurrentFileName.value = ''
     mediaUploadStatusText.value = `媒體疊加上傳完成：成功 ${successCount} 個，失敗 ${failCount} 個。`
+    isMediaUploading.value = false
     clearMediaUploadFiles()
 
     await loadFrontendLadies({ refresh: true })
@@ -3010,6 +3189,13 @@ async function uploadLadyMedia() {
       mediaUploadStatusText.value = `媒體已上傳到資料庫，但中央網站同步失敗：${syncError.message || syncError}。圖片仍已保留，可按「重新同步目前小姐到中央網站」再次同步。`
     }
   } catch (error) {
+    isMediaUploading.value = false
+    failCount += failCount ? 0 : 1
+    mediaUploadFailedCount.value = failCount
+    if (currentFile) {
+      setMediaUploadFileState(currentFile, makeMediaUploadState('failed', getMediaUploadFileState(currentFile).percent || 0, '上傳失敗'))
+    }
+    mediaUploadCurrentFileName.value = ''
     mediaUploadStatusText.value = `媒體上傳中斷：成功 ${successCount} 個，失敗 ${failCount || 1} 個。錯誤：${error.message || error}`
     await loadFrontendLadies({ refresh: true })
   }
@@ -11648,6 +11834,115 @@ button:disabled {
   .location-manager-modal-card .location-modal-grid.location-modal-grid-room-first {
     grid-template-columns: 1fr !important;
   }
+}
+
+
+
+/* 第 018-105 批：媒體上傳進度條與目前選擇小姐亮起 */
+.media-upload-progress-box {
+  border: 1px solid rgba(59, 130, 246, 0.22);
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(239, 246, 255, 0.96), rgba(236, 253, 245, 0.92));
+  padding: 10px;
+  display: grid;
+  gap: 7px;
+}
+
+.media-upload-progress-box.is-uploading {
+  border-color: rgba(14, 165, 233, 0.48);
+  box-shadow: 0 12px 28px rgba(37, 99, 235, 0.12);
+}
+
+.media-upload-progress-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.media-upload-progress-head strong {
+  color: #0f766e;
+}
+
+.media-upload-progress-track,
+.thumb-upload-bar {
+  width: 100%;
+  height: 9px;
+  border-radius: 999px;
+  background: rgba(203, 213, 225, 0.72);
+  overflow: hidden;
+}
+
+.media-upload-progress-track i,
+.thumb-upload-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2563eb, #0891b2, #10b981);
+  transition: width 0.18s ease;
+}
+
+.media-upload-progress-box p {
+  margin: 0;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.45;
+}
+
+.thumb-upload-state {
+  padding: 0 6px 7px;
+  display: grid;
+  gap: 4px;
+}
+
+.thumb-upload-state span {
+  color: #475569;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.thumb-upload-state.is-done span {
+  color: #047857;
+}
+
+.thumb-upload-state.is-failed span {
+  color: #b91c1c;
+}
+
+.thumb-upload-state.is-failed .thumb-upload-bar i {
+  background: linear-gradient(90deg, #ef4444, #f97316);
+}
+
+.compact-right-lady-card {
+  position: relative;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+.compact-right-lady-card.is-selected-upload-lady {
+  border-color: rgba(20, 184, 166, 0.95) !important;
+  background: linear-gradient(180deg, rgba(240, 253, 250, 0.98), #ffffff) !important;
+  box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.22), 0 18px 38px rgba(15, 118, 110, 0.18) !important;
+  transform: translateY(-3px) scale(1.015);
+  z-index: 2;
+}
+
+.selected-upload-lady-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 5;
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: linear-gradient(135deg, #0f766e, #2563eb);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 950;
+  box-shadow: 0 10px 20px rgba(15, 118, 110, 0.22);
+  pointer-events: none;
 }
 
 </style>
