@@ -920,6 +920,16 @@
             {{ databaseSubmitButtonText }}
           </button>
 
+          <button
+            v-if="centralWebsiteSyncNeedsRetry"
+            class="ghost-btn central-retry-btn"
+            type="button"
+            :disabled="isDatabaseSubmitting"
+            @click="retryCentralWebsiteSync"
+          >
+            重新同步中央站
+          </button>
+
           <button class="primary-btn frontend-load-btn" type="button" @click="loadFrontendLadies({ refresh: true })">重新讀取前台資料</button>
 
           <label>
@@ -1380,6 +1390,8 @@ const isLoadingScopeRules = ref(false)
 const roomRuleStatusText = ref('選到完整機房後會自動讀取既有規則；修改後請按「儲存目前機房規則」。')
 const roomRuleStatusType = ref('info')
 const isDatabaseSubmitting = ref(false)
+const centralWebsiteSyncNeedsRetry = ref(false)
+const centralWebsiteSyncRetryText = ref('')
 const databaseSubmitStatusText = ref('尚未送出本次文件3。')
 const databaseSubmitStatusType = ref('info')
 const actionToastVisible = ref(false)
@@ -3628,8 +3640,12 @@ async function testDatabaseConnection() {
 
 
 async function ensureAppendImportBackendReady() {
-  const response = await fetch(`${apiBaseUrl.value}/api/version`)
-  const data = await response.json().catch(() => ({}))
+  const { response, data } = await fetchJsonWithTimeout(
+    `${apiBaseUrl.value}/api/version`,
+    {},
+    DATABASE_IMPORT_TIMEOUT_MS,
+    '後端版本檢查失敗'
+  )
 
   if (!response.ok) {
     throw new Error(`後端版本檢查失敗：HTTP ${response.status}`)
@@ -3642,12 +3658,40 @@ async function ensureAppendImportBackendReady() {
   return data
 }
 
-// 第 018-85 批：媒體上傳／刪除只同步目前小姐，避免單次操作重送全部資料。
-const CENTRAL_WEBSITE_SYNC_TIMEOUT_MS = 20000
-const CENTRAL_WEBSITE_SINGLE_SYNC_ATTEMPTS = 3
+// 第 018-110 批：文件3儲存與中央網站同步拆開，避免小批資料被整批同步拖慢。
+const DATABASE_IMPORT_TIMEOUT_MS = 15000
+const CENTRAL_WEBSITE_SYNC_TIMEOUT_MS = 12000
+const CENTRAL_WEBSITE_SINGLE_SYNC_ATTEMPTS = 2
 
 function waitCentralWebsiteSyncRetry(milliseconds) {
   return new Promise(resolve => window.setTimeout(resolve, milliseconds))
+}
+
+function formatNetworkError(error, fallback = '連線失敗') {
+  const raw = String(error?.message || error || '').trim()
+  if (error?.name === 'AbortError') return `${fallback}：API 等待逾時，請稍後按「重新同步中央站」。`
+  if (!raw || /failed to fetch/i.test(raw) || /networkerror/i.test(raw)) {
+    return `${fallback}：API 無回應或網路連線被中斷，文件3已保留，可稍後重新同步。`
+  }
+  return `${fallback}：${raw}`
+}
+
+async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 12000, fallback = 'API 請求失敗') {
+  const controller = new AbortController()
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal
+    })
+    const data = await response.json().catch(() => ({}))
+    return { response, data }
+  } catch (error) {
+    throw new Error(formatNetworkError(error, fallback))
+  } finally {
+    window.clearTimeout(timeoutId)
+  }
 }
 
 function getCurrentDocumentPreviewLady(item) {
@@ -3715,24 +3759,24 @@ async function postCentralWebsiteSyncItems(items, options = {}) {
   let lastError = null
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const controller = new AbortController()
-    const timeoutId = window.setTimeout(() => controller.abort(), CENTRAL_WEBSITE_SYNC_TIMEOUT_MS)
-
     try {
-      const response = await fetch(`${CENTRAL_WEBSITE_API_BASE_URL}/api/integrations/converter/central-listings/import`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-          'X-Converter-Apikey': SUPABASE_PUBLIC_API_KEY
+      const { response, data } = await fetchJsonWithTimeout(
+        `${CENTRAL_WEBSITE_API_BASE_URL}/api/integrations/converter/central-listings/import`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+            'X-Converter-Apikey': SUPABASE_PUBLIC_API_KEY
+          },
+          body: JSON.stringify({ items: syncItems })
         },
-        body: JSON.stringify({ items: syncItems }),
-        signal: controller.signal
-      })
-      const data = await response.json().catch(() => ({}))
+        Number(options.timeoutMs || CENTRAL_WEBSITE_SYNC_TIMEOUT_MS),
+        '中央網站同步失敗'
+      )
 
       if (!response.ok) {
-        const error = new Error(data.message || data.error || `網站同步失敗：HTTP ${response.status}`)
+        const error = new Error(data.message || data.error || `中央網站同步失敗：HTTP ${response.status}`)
         error.status = response.status
         throw error
       }
@@ -3755,9 +3799,7 @@ async function postCentralWebsiteSyncItems(items, options = {}) {
         })
       }
 
-      await waitCentralWebsiteSyncRetry(Math.min(3000, 600 * attempt))
-    } finally {
-      window.clearTimeout(timeoutId)
+      await waitCentralWebsiteSyncRetry(Math.min(2500, 500 * attempt))
     }
   }
 
@@ -3778,8 +3820,20 @@ async function syncSingleLadyToCentralWebsite(ladyId, options = {}) {
   })
 }
 
-async function syncSavedLadiesToCentralWebsite() {
-  // 文件3正式送出仍保留整批同步；媒體上傳與刪除改走 syncSingleLadyToCentralWebsite。
+async function syncSavedLadiesToCentralWebsite(payload = null) {
+  // 第 018-110 批：文件3儲存後只同步本次文件小姐，不再每次重送全站資料。
+  const currentItems = Array.isArray(payload?.items)
+    ? payload.items
+    : getCurrentDocumentItemsForDetailLookup()
+
+  if (currentItems.length) {
+    const syncItems = currentItems.map(item => buildCentralWebsiteSyncItem(item))
+    return postCentralWebsiteSyncItems(syncItems, {
+      maxAttempts: 1,
+      timeoutMs: CENTRAL_WEBSITE_SYNC_TIMEOUT_MS
+    })
+  }
+
   const items = await fetchAllPublicLadies({
     includeInactive: true,
     refresh: true,
@@ -3787,7 +3841,10 @@ async function syncSavedLadiesToCentralWebsite() {
   if (!items.length) throw new Error('資料庫目前沒有可同步到網站的小姐資料。')
 
   const syncItems = items.map(item => buildCentralWebsiteSyncItem(item))
-  return postCentralWebsiteSyncItems(syncItems, { maxAttempts: 1 })
+  return postCentralWebsiteSyncItems(syncItems, {
+    maxAttempts: 1,
+    timeoutMs: CENTRAL_WEBSITE_SYNC_TIMEOUT_MS
+  })
 }
 
 function safeSetStorageValue(key, value) {
@@ -3851,8 +3908,9 @@ async function submitDocument4ToDatabase(options = {}) {
 
     if (!plan.itemsToSubmit.length) {
       databaseSaved = true
-      setDatabaseSubmitFeedback(`本次 ${plan.syncedCount} 筆皆已同步，已略過資料庫寫入；正在確認中央網站同步...`, 'pending')
-      const centralSync = await syncSavedLadiesToCentralWebsite()
+      setDatabaseSubmitFeedback(`本次 ${plan.syncedCount} 筆皆已同步，已略過資料庫寫入；正在同步本次文件到中央網站...`, 'pending')
+      centralWebsiteSyncNeedsRetry.value = false
+      const centralSync = await syncSavedLadiesToCentralWebsite(payload)
       const duplicatePreventedCount = Number(centralSync?.data?.duplicatePreventedCount || 0)
       const message = `確認完成：本次 ${plan.syncedCount} 筆皆已存在，未重複新增；中央網站已同步${duplicatePreventedCount ? `，並攔截 ${duplicatePreventedCount} 筆可能重複資料` : ''}。`
       apiStatusText.value = message
@@ -3874,15 +3932,18 @@ async function submitDocument4ToDatabase(options = {}) {
       items: plan.itemsToSubmit
     }
 
-    const response = await fetch(`${apiBaseUrl.value}/api/ladies/import-db`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
+    const { response, data } = await fetchJsonWithTimeout(
+      `${apiBaseUrl.value}/api/ladies/import-db`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(submissionPayload)
       },
-      body: JSON.stringify(submissionPayload)
-    })
-
-    const data = await response.json().catch(() => ({}))
+      DATABASE_IMPORT_TIMEOUT_MS,
+      '資料庫寫入失敗'
+    )
     if (!response.ok) {
       throw new Error(data.message || `HTTP ${response.status}`)
     }
@@ -3903,7 +3964,8 @@ async function submitDocument4ToDatabase(options = {}) {
       await loadFrontendLadies({ silent: true, refresh: true })
     }
 
-    const centralSync = await syncSavedLadiesToCentralWebsite()
+    centralWebsiteSyncNeedsRetry.value = false
+    const centralSync = await syncSavedLadiesToCentralWebsite(payload)
     const duplicatePreventedCount = Number(centralSync?.data?.duplicatePreventedCount || 0)
     const suspectedDuplicateCount = Number(centralSync?.data?.suspectedDuplicateCount || 0)
     const successMessage = [
@@ -3924,12 +3986,20 @@ async function submitDocument4ToDatabase(options = {}) {
     setDatabaseSubmitFeedback(successMessage, suspectedDuplicateCount ? 'warning' : 'success', { toast: true })
     return true
   } catch (error) {
+    const detailMessage = databaseSaved
+      ? formatNetworkError(error, '中央站同步失敗')
+      : formatNetworkError(error, '送出資料庫失敗')
     const message = databaseSaved
-      ? `資料已存在或已寫入 converter 資料庫，但同步中央網站失敗：${error.message || error}`
-      : `送出資料庫失敗：${error.message || error}`
+      ? `文件3已保存到 converter 資料庫，但中央網站同步未完成：${detailMessage.replace(/^中央站同步失敗：/, '')}`
+      : detailMessage
+
+    if (databaseSaved) {
+      centralWebsiteSyncNeedsRetry.value = true
+      centralWebsiteSyncRetryText.value = message
+    }
 
     apiStatusText.value = databaseSaved
-      ? `${message}。請確認網站 Worker 已部署後再重試送出。`
+      ? `${message}。不用重存文件3，可按「重新同步中央站」。`
       : message
 
     setDatabaseSubmitFeedback(message, databaseSaved ? 'warning' : 'error', { toast: true })
@@ -6804,11 +6874,57 @@ async function saveConfirmedText(options = {}) {
   localStorage.setItem(CONFIRMED_STORAGE_KEY, confirmedText.value)
   updateJsonPreview()
   if (!options.silent) {
-    statusMessage.value = '文件3已儲存，正在自動送出到資料庫...'
-    const savedToDatabase = await submitDocument4ToDatabase({ clearDocuments: false, reloadFrontendLadies: true })
-    statusMessage.value = savedToDatabase
-      ? '文件3已儲存並完成防重同步；下方顯示本次已同步小姐。'
-      : '文件3已儲存，但自動送出資料庫失敗，請查看 API 狀態訊息。'
+    statusMessage.value = '文件3已儲存；資料庫寫入與中央站同步會在背景處理。'
+    setDatabaseSubmitFeedback('文件3已快速儲存，正在背景寫入資料庫...', 'pending')
+
+    window.setTimeout(() => {
+      submitDocument4ToDatabase({ clearDocuments: false, reloadFrontendLadies: true })
+        .then(savedToDatabase => {
+          statusMessage.value = savedToDatabase
+            ? '文件3已儲存；資料庫已保存，中央站同步狀態請看下方提示。'
+            : '文件3已儲存，但自動送出資料庫失敗，請查看 API 狀態訊息。'
+        })
+        .catch(error => {
+          const message = formatNetworkError(error, '背景送出失敗')
+          statusMessage.value = message
+          setDatabaseSubmitFeedback(message, 'error', { toast: true })
+          isDatabaseSubmitting.value = false
+        })
+    }, 0)
+  }
+}
+
+async function retryCentralWebsiteSync() {
+  if (isDatabaseSubmitting.value) return false
+
+  const payload = parseConfirmedTextToJson(confirmedText.value)
+  if (!payload.items.length) {
+    const message = '文件3目前沒有可重新同步中央站的資料。'
+    setDatabaseSubmitFeedback(message, 'warning', { toast: true })
+    return false
+  }
+
+  isDatabaseSubmitting.value = true
+  centralWebsiteSyncNeedsRetry.value = false
+
+  try {
+    setDatabaseSubmitFeedback('正在重新同步本次文件到中央網站...', 'pending')
+    const centralSync = await syncSavedLadiesToCentralWebsite(payload)
+    const duplicatePreventedCount = Number(centralSync?.data?.duplicatePreventedCount || 0)
+    const message = `中央網站重新同步完成${duplicatePreventedCount ? `，並攔截 ${duplicatePreventedCount} 筆可能重複資料` : ''}。`
+    apiStatusText.value = message
+    setDatabaseSubmitFeedback(message, 'success', { toast: true })
+    await loadFrontendLadies({ silent: true, refresh: true })
+    return true
+  } catch (error) {
+    const message = formatNetworkError(error, '中央站重新同步失敗')
+    centralWebsiteSyncNeedsRetry.value = true
+    centralWebsiteSyncRetryText.value = message
+    apiStatusText.value = `${message}。文件3已保留，可稍後再按「重新同步中央站」。`
+    setDatabaseSubmitFeedback(message, 'warning', { toast: true })
+    return false
+  } finally {
+    isDatabaseSubmitting.value = false
   }
 }
 
@@ -7529,6 +7645,7 @@ select:focus, input:focus, textarea:focus {
 
   .preview-tools .database-submit-feedback,
   .preview-tools .preview-database-btn,
+  .preview-tools .central-retry-btn,
   .preview-tools .frontend-load-btn,
   .preview-tools label {
     width: 100%;
@@ -7849,8 +7966,18 @@ select:focus, input:focus, textarea:focus {
   color: #b91c1c;
 }
 
-.frontend-load-btn {
+.frontend-load-btn,
+.central-retry-btn {
   white-space: nowrap;
+}
+
+.central-retry-btn {
+  min-height: 42px;
+  padding-inline: 18px;
+  border-color: rgba(245, 158, 11, 0.45);
+  background: #fffbeb;
+  color: #92400e;
+  font-weight: 900;
 }
 
 
