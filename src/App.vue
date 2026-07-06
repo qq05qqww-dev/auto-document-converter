@@ -1,4 +1,4 @@
-<!-- 第 018-111 批：隱藏自動解析規則強化版（依第 018-110 批延續） -->
+<!-- 第 018-113 批：攝影不露臉優先去重版（依第 018-112 批延續） -->
 <template>
   <!-- 第 018-109 批：待上傳縮圖區禁止拖放版 -->
   <!-- batch018-76-employee-rules-semantic-verify-fix -->
@@ -2047,7 +2047,7 @@ const defaultAmountTransformRules = [
   { from: 3200, to: 3700 }
 ]
 
-// 第 018-112 批：同義詞防重貼與買2節3S統一2+1s版。
+// 第 018-113 批：攝影不露臉優先去重版。
 const defaultServiceOrder = [
   '共浴', '無套吹', '輕功', '挑逗', '69', '品鮑', '小親親', '奶炮',
   '舔蛋', '按摩', '舌吻', '冰火', '毒龍', '波推', '胸推', '臀推',
@@ -2180,6 +2180,11 @@ const defaultAliasRules = [
   '包夜買5送3=5+3',
   '包夜買5送3 8小時不限時段=5+3',
   '8小時不限時段=5+3',
+  '攝影不露臉+1000=攝影不露臉+1000',
+  '攝影不露臉=攝影不露臉+1000',
+  '攝影+1000不露臉=攝影不露臉+1000',
+  '攝影不露臉+1000=攝影不露臉+1000',
+  '不露臉攝影+1000=攝影不露臉+1000',
   '攝影露臉+1000=攝影露臉+1000',
   '攝影+1000=攝影露臉+1000',
   '深喉嚨=深喉嚨',
@@ -2327,7 +2332,7 @@ const defaultRemoveWords = [
   '健康膚色.無生過.藝術刺青.無牙套.有修毛',
 ]
 
-const defaultExtraKeep = ['吞精+1000', '無套內射+1000', '後門+1000', '高跟鞋', '雙飛', '2+1', '攝影露臉+1000', '深喉嚨', '豪邁吃屌', '不嫌視野愛愛']
+const defaultExtraKeep = ['吞精+1000', '無套內射+1000', '後門+1000', '高跟鞋', '雙飛', '2+1', '攝影不露臉+1000', '攝影露臉+1000', '深喉嚨', '豪邁吃屌', '不嫌視野愛愛']
 
 const defaultCountryFieldRules = [
   '國家:馬來=馬來',
@@ -4960,6 +4965,13 @@ function extractServices(block) {
     }
   })
 
+  // 第 018-113 批：同一行或同一筆資料出現「攝影 + 不露臉」時，
+  // 明確視為「攝影不露臉+1000」，避免「攝影+1000」先被同義詞轉成「攝影露臉+1000」。
+  if (shouldPreferNoFacePhotography(block)) {
+    found.delete('攝影露臉+1000')
+    found.add('攝影不露臉+1000')
+  }
+
   normalizeOverlappingServices(found)
 
   const orderIndex = new Map(order.map((item, index) => [normalizeServiceOutputToken(item), index]))
@@ -4990,6 +5002,11 @@ function getServiceOrderIndex(item, orderIndex) {
 }
 
 function normalizeOverlappingServices(found) {
+  // 第 018-113 批：有「攝影不露臉+1000」時，不能同時保留「攝影露臉+1000」。
+  if (found.has('攝影不露臉+1000') && found.has('攝影露臉+1000')) {
+    found.delete('攝影露臉+1000')
+  }
+
   // 不再硬性把 2+1s 改回 2節3S。
   // 使用者在「同義詞規則」右邊寫什麼，文件2 就以那個輸出為準。
 
@@ -5045,7 +5062,8 @@ function normalizeOverlappingServices(found) {
     { canonical: '深喉嚨', aliases: ['深喉', '深喉咙', '深喉服務'] },
     { canonical: '自慰秀', aliases: ['自衛秀'] },
     { canonical: '自慰秀+500', aliases: ['自衛秀+500'] },
-    { canonical: '顏射+500', aliases: ['射顏+500'] }
+    { canonical: '顏射+500', aliases: ['射顏+500'] },
+    { canonical: '攝影不露臉+1000', aliases: ['攝影不露臉', '不露臉攝影+1000', '攝影+1000不露臉'] }
   ]
 
   equivalentServiceRules.forEach(({ canonical, aliases }) => {
@@ -5128,6 +5146,14 @@ function cleanName(value) {
 
 function normalizeDigits(text) {
   return String(text).replace(/０/g, '0').replace(/１/g, '1').replace(/２/g, '2').replace(/３/g, '3').replace(/４/g, '4').replace(/５/g, '5').replace(/６/g, '6').replace(/７/g, '7').replace(/８/g, '8').replace(/９/g, '9')
+}
+
+function shouldPreferNoFacePhotography(text) {
+  const value = normalizeServiceAliasMatchText(text)
+  if (!value) return false
+
+  return /攝影(?:\+?\d+)?不露臉/.test(value)
+    || /不露臉(?:攝影)?(?:\+?\d+)?/.test(value)
 }
 
 function normalizeServiceAliasMatchText(text) {
