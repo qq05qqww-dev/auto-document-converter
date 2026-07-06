@@ -1,4 +1,4 @@
-<!-- 第 018-121 批：媒體上傳直接綁定中央網站正確 ID 版（依第 018-120 批延續） -->
+<!-- 第 018-122 批：媒體防重複上傳與正式刪除版（依第 018-121 批延續） -->
 <template>
   <!-- 第 018-109 批：待上傳縮圖區禁止拖放版 -->
   <!-- batch018-76-employee-rules-semantic-verify-fix -->
@@ -3019,6 +3019,111 @@ function mergeMediaRecords(existing = [], incoming = []) {
   return merged
 }
 
+
+// 第 018-122 批：媒體重複判斷。
+// 同一位小姐重複上傳同一張圖 / 同一支影片時，先用檔名、caption、URL 檔名擋掉，避免前台輪播越疊越多。
+function normalizeMediaDuplicateToken(value) {
+  const text = String(value || '')
+    .trim()
+    .replace(/\+/g, '/')
+    .split('?')[0]
+    .split('#')[0]
+  if (!text) return ''
+
+  const tail = text.includes('/') ? text.split('/').filter(Boolean).pop() : text
+  let decoded = tail || text
+  try {
+    decoded = decodeURIComponent(decoded)
+  } catch (_error) {
+    decoded = tail || text
+  }
+
+  return String(decoded || '')
+    .toLowerCase()
+    .replace(/\s+/g, '')
+}
+
+function getMediaDuplicateTokens(media) {
+  const tokens = []
+  ;[
+    media?.url,
+    media?.caption,
+    media?.note,
+    media?.name,
+    media?.fileName,
+    media?.filename
+  ].forEach(value => {
+    const token = normalizeMediaDuplicateToken(value)
+    if (token) tokens.push(token)
+  })
+  return Array.from(new Set(tokens))
+}
+
+function getLadyAllMediaForDuplicateCheck(lady) {
+  const currentMedia = Array.isArray(lady?.media) ? lady.media : []
+  const localMedia = getLocalUploadedMediaForLady(lady, Number(lady?.id || 0))
+  return mergeMediaRecords(currentMedia, localMedia)
+}
+
+function isMediaUploadFileAlreadyBoundToLady(file, lady) {
+  if (!file || !lady) return false
+  const fileNameToken = normalizeMediaDuplicateToken(file.name)
+  if (!fileNameToken) return false
+
+  const existingMedia = getLadyAllMediaForDuplicateCheck(lady)
+  return existingMedia.some(media => {
+    const mediaTokens = getMediaDuplicateTokens(media)
+    return mediaTokens.some(token => (
+      token === fileNameToken ||
+      token.endsWith(fileNameToken) ||
+      token.includes(fileNameToken)
+    ))
+  })
+}
+
+function removeMediaFromLocalPreview(ladyOrId, mediaToRemove, previewLady = null) {
+  const removeId = String(mediaToRemove?.id || mediaToRemove?.mediaId || mediaToRemove?.media_id || '')
+  const removeUrl = String(mediaToRemove?.url || mediaToRemove?.publicUrl || mediaToRemove?.public_url || '').trim()
+  if (!removeId && !removeUrl) return
+
+  const shouldKeep = item => {
+    const itemId = String(item?.id || item?.mediaId || item?.media_id || '')
+    const itemUrl = String(item?.url || item?.publicUrl || item?.public_url || '').trim()
+    if (removeId && itemId && itemId === removeId) return false
+    if (removeUrl && itemUrl && itemUrl === removeUrl) return false
+    return true
+  }
+
+  const targetLady = typeof ladyOrId === 'object'
+    ? ladyOrId
+    : (
+        previewLady ||
+        frontendLadies.value.find(item => String(item?.id || '') === String(ladyOrId || '')) ||
+        currentDocumentPreviewLadies.value.find(item => String(item?.id || '') === String(ladyOrId || '')) ||
+        null
+      )
+
+  const keys = targetLady
+    ? getLocalUploadedMediaKeysForLady(targetLady, Number(ladyOrId || 0))
+    : [`id:${ladyOrId}`]
+
+  const next = { ...localUploadedMediaByLadyId.value }
+  keys.forEach(key => {
+    if (!Array.isArray(next[key])) return
+    next[key] = next[key].filter(shouldKeep)
+  })
+  localUploadedMediaByLadyId.value = next
+
+  const targetId = Number(ladyOrId || targetLady?.id || 0)
+  if (targetId) {
+    frontendLadies.value = frontendLadies.value.map(item => {
+      if (Number(item?.id || 0) !== targetId) return item
+      const media = Array.isArray(item.media) ? item.media.filter(shouldKeep) : []
+      return { ...item, media, mediaCount: media.length }
+    })
+  }
+}
+
 function mergeUploadedMediaIntoLocalPreview(ladyOrId, mediaItems = [], previewLady = null) {
   const normalizedItems = (Array.isArray(mediaItems) ? mediaItems : [])
     .map(item => normalizeMediaRecordForPreview(item, { isLocalUploadBound: true }))
@@ -3082,6 +3187,8 @@ function buildFallbackUploadedMediaFromResponse(data, file, index = 0) {
   const uniqueRows = mergeMediaRecords([], rows)
   if (uniqueRows.length) return uniqueRows.map((item, itemIndex) => ({
     ...item,
+    note: item.note || item.caption || file?.name || '',
+    caption: item.caption || item.note || file?.name || '',
     sortOrder: Number(item.sortOrder || index + itemIndex + 1),
     isCover: Boolean(item.isCover || (index === 0 && itemIndex === 0))
   }))
@@ -3414,9 +3521,10 @@ function formatAdminUpdatedTime(item) {
 }
 
 async function deleteLadyMedia(media, lady) {
-  const mediaId = Number(media?.id || 0)
-  if (!mediaId) {
-    frontendStatusText.value = '找不到要刪除的媒體編號。'
+  const mediaIdText = String(media?.id || media?.mediaId || media?.media_id || '').trim()
+  const mediaUrl = String(media?.url || media?.publicUrl || media?.public_url || '').trim()
+  if (!mediaIdText && !mediaUrl) {
+    frontendStatusText.value = '找不到要刪除的媒體編號或網址。'
     return
   }
 
@@ -3425,38 +3533,56 @@ async function deleteLadyMedia(media, lady) {
 
   saveApiBaseUrl()
 
-  try {
-    const response = await fetch(`${apiBaseUrl.value}/api/ladies/media/${mediaId}`, {
-      method: 'DELETE'
-    })
-    const data = await response.json().catch(() => ({}))
+  const targetLadyId = Number(lady?.id || media?.listingId || media?.listing_id || 0)
+  const previewLady = currentDocumentPreviewLadies.value.find(item => String(item?.id || '') === String(lady?.id || '')) || lady || null
 
-    if (!response.ok) {
-      throw new Error(data.message || `HTTP ${response.status}`)
+  try {
+    const accessToken = await getCentralWebsiteAccessToken()
+    let detail = null
+    if (targetLadyId) {
+      detail = await fetchPublicLadyDetail(targetLadyId, { refresh: true }).catch(() => null)
+    }
+    const syncItem = buildCentralWebsiteSyncItem(detail || lady || {}, previewLady)
+    const { response, data } = await fetchJsonWithTimeout(
+      `${CENTRAL_WEBSITE_API_BASE_URL}/api/integrations/converter/central-listings/media/delete`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'X-Converter-Apikey': SUPABASE_PUBLIC_API_KEY
+        },
+        body: JSON.stringify({
+          item: syncItem,
+          sourceIdentity: syncItem.sourceIdentity || syncItem.sourceId || lady?.sourceIdentity || '',
+          mediaId: mediaIdText,
+          mediaUrl,
+          listingId: syncItem.centralListingId || syncItem.listingId || ''
+        })
+      },
+      15000,
+      '中央網站媒體正式刪除失敗'
+    )
+
+    if (!response.ok || data.ok === false) {
+      throw new Error(data.message || data.error || `HTTP ${response.status}`)
     }
 
-    if (Number(mediaViewerItem.value?.id || 0) === mediaId) {
+    removeMediaFromLocalPreview(targetLadyId || lady, media, previewLady)
+    if (
+      (mediaViewerItem.value?.id && mediaViewerItem.value.id === media?.id) ||
+      (mediaViewerItem.value?.url && mediaViewerItem.value.url === mediaUrl)
+    ) {
       closeMediaViewer()
     }
 
-    frontendStatusText.value = data.message || '媒體已刪除。'
     await loadFrontendLadies({ refresh: true })
-    try {
-      const targetLadyId = Number(data?.ladyId || lady?.id || 0)
-      await syncSingleLadyToCentralWebsite(targetLadyId, {
-        maxAttempts: 3,
-        onRetry: ({ nextAttempt, maxAttempts }) => {
-          frontendStatusText.value = `${data.message || '媒體已刪除。'} 中央網站同步暫時失敗，正在進行第 ${nextAttempt} / ${maxAttempts} 次重試...`
-        }
-      })
-      frontendStatusText.value = `${data.message || '媒體已刪除。'} 中央網站已同步。`
-    } catch (syncError) {
-      frontendStatusText.value = `${data.message || '媒體已刪除。'} 但中央網站同步失敗：${syncError.message || syncError}`
-    }
+    frontendStatusText.value = data.message || '媒體已從中央網站正式刪除。'
   } catch (error) {
     frontendStatusText.value = `刪除媒體失敗：${error.message || error}`
   }
 }
+
 
 
 let pendingMediaDropBlockTimer = null
@@ -3702,10 +3828,12 @@ async function uploadLadyMedia() {
 
   let successCount = 0
   let failCount = 0
+  let skippedDuplicateCount = 0
   let currentFile = null
   const uploadedCentralMediaItems = []
   const uploadTargetLadyId = Number(mediaUploadLadyId.value || 0)
   const uploadTargetPreviewLady = currentDocumentPreviewLadies.value.find(lady => String(lady.id || '') === String(mediaUploadLadyId.value || '')) || null
+  const uploadDuplicateCheckLady = uploadTargetPreviewLady || frontendLadies.value.find(lady => Number(lady?.id || 0) === uploadTargetLadyId) || null
 
   initializeMediaUploadProgress()
   isMediaUploading.value = true
@@ -3714,13 +3842,21 @@ async function uploadLadyMedia() {
     for (const file of mediaUploadFiles.value) {
       currentFile = file
       mediaUploadCurrentFileName.value = file.name
+
+      if (isMediaUploadFileAlreadyBoundToLady(file, uploadDuplicateCheckLady)) {
+        skippedDuplicateCount += 1
+        setMediaUploadFileState(file, makeMediaUploadState('skipped', 100, '略過重複'))
+        mediaUploadStatusText.value = `略過重複媒體「${file.name}」。成功 ${successCount}、略過重複 ${skippedDuplicateCount}、失敗 ${failCount}。`
+        continue
+      }
+
       setMediaUploadFileState(file, makeMediaUploadState('uploading', 0, '上傳中 0%'))
 
       const formData = new FormData()
       formData.append('file', file)
       formData.append('ladyId', String(mediaUploadLadyId.value))
       formData.append('mediaType', file.type.startsWith('video/') ? 'video' : 'image')
-      formData.append('note', '')
+      formData.append('note', file.name)
 
       const uploadResult = await uploadMediaFileWithProgress(formData, percent => {
         setMediaUploadFileState(file, makeMediaUploadState('uploading', percent, `上傳中 ${percent}%`))
@@ -3740,7 +3876,7 @@ async function uploadLadyMedia() {
     }
 
     mediaUploadCurrentFileName.value = ''
-    mediaUploadStatusText.value = `媒體疊加上傳完成：成功 ${successCount} 個，失敗 ${failCount} 個。`
+    mediaUploadStatusText.value = `媒體疊加上傳完成：成功 ${successCount} 個，略過重複 ${skippedDuplicateCount} 個，失敗 ${failCount} 個。`
     isMediaUploading.value = false
     clearMediaUploadFiles()
 
@@ -3751,6 +3887,11 @@ async function uploadLadyMedia() {
     await loadFrontendLadies({ refresh: true })
     if (uploadedCentralMediaItems.length) {
       mergeUploadedMediaIntoLocalPreview(uploadTargetLadyId || mediaUploadLadyId.value, uploadedCentralMediaItems, uploadTargetPreviewLady)
+    }
+
+    if (!successCount && skippedDuplicateCount) {
+      mediaUploadStatusText.value = `媒體上傳已完成：成功 0 個，略過重複 ${skippedDuplicateCount} 個，失敗 0 個。沒有新增重複媒體。`
+      return
     }
 
     try {
@@ -3774,7 +3915,7 @@ async function uploadLadyMedia() {
         mergeUploadedMediaIntoLocalPreview(targetLadyId, uploadedCentralMediaItems, uploadTargetPreviewLady)
       }
 
-      mediaUploadStatusText.value = `媒體疊加上傳完成：成功 ${successCount} 個，失敗 ${failCount} 個。已直接綁定中央網站正確 ID 並同步目前小姐。`
+      mediaUploadStatusText.value = `媒體疊加上傳完成：成功 ${successCount} 個，略過重複 ${skippedDuplicateCount} 個，失敗 ${failCount} 個。已直接綁定中央網站正確 ID 並同步目前小姐。`
     } catch (syncError) {
       if (uploadedCentralMediaItems.length) {
         mergeUploadedMediaIntoLocalPreview(uploadTargetLadyId || mediaUploadLadyId.value, uploadedCentralMediaItems, uploadTargetPreviewLady)
