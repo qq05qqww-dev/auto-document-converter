@@ -1,4 +1,4 @@
-<!-- 第 018-117 批：前台預覽工具列只保留同步訊息版（依第 018-116 批延續） -->
+<!-- 第 018-121 批：媒體上傳直接綁定中央網站正確 ID 版（依第 018-120 批延續） -->
 <template>
   <!-- 第 018-109 批：待上傳縮圖區禁止拖放版 -->
   <!-- batch018-76-employee-rules-semantic-verify-fix -->
@@ -1238,7 +1238,7 @@
   </main>
 </template>
 
-<!-- batch018-118-room-sync-payload-fix -->
+<!-- batch018-120-sync-id-backfill-media-upload-fix -->
 <script setup>
 // 第 018-107 批：登入後預設展開地區機房管理，並記住最後使用的縣市 / 地區 / 定點外送 / 機房。
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -1246,7 +1246,7 @@ import { isSupabaseConfigured, supabase } from './supabaseClient'
 
 // 第 009-7 批開始固定使用這兩個正式儲存位置。
 // 之後新版不要再改這兩個 Key，避免每次更新檔案後規則消失。
-// 第 018-118 批：文件4 JSON 與中央網站同步 payload 正式帶入目前機房 room，避免後台顯示未設定機房。
+// 第 018-120 批：同步後回傳資料庫 ID，並在媒體上傳前自動補抓真實 ID。
 const RULE_STORAGE_KEY = 'auto-document-converter-rules-current'
 const CONFIRMED_STORAGE_KEY = 'auto-document-converter-confirmed-current'
 const SOURCE_STORAGE_KEY = 'auto-document-converter-source-current'
@@ -1256,7 +1256,7 @@ const LOCATION_SCOPE_STORAGE_KEY = 'auto-document-converter-location-room-option
 const LAST_SCOPE_SELECTION_STORAGE_KEY = 'auto-document-converter-last-scope-selection-current'
 const DEFAULT_MANAGER_SCOPE_TYPE = '定點'
 const CLEAN_START_PANEL_STORAGE_KEY = 'auto-document-converter-clean-start-panel-always-clean-home'
-const ONLINE_READY_VERSION_LABEL = '第 018-117 批：前台預覽工具列只保留同步訊息版'
+const ONLINE_READY_VERSION_LABEL = '第 018-120 批：同步後回傳ID與媒體可上傳修正版'
 const PROTECTED_GLOBAL_RULE_NOTICE = '公版規則已固定保護，不會被清除；若遺失會自動補回預設公版。'
 const SOURCE_SLASH_SPACE_NOTICE = '文件1已啟用斜線自動轉空格，貼上後 / 與 ／ 會自動變成空格。'
 const STAFF_PROFILE_STORAGE_KEY = 'auto-document-converter-current-staff-profile'
@@ -1314,6 +1314,8 @@ const apiStatusText = ref('尚未測試 API。')
 const frontendLadies = ref([])
 const frontendStatusText = ref('尚未讀取前台資料。')
 const frontendLadiesLoaded = ref(false)
+const databaseIdHintByLadyKey = ref({})
+const localUploadedMediaByLadyId = ref({})
 const countryFilter = ref('全部')
 const mediaUploadLadyId = ref('')
 const mediaUploadType = ref('image')
@@ -2099,8 +2101,8 @@ const defaultAliasRules = [
   '免費自慰秀=自慰秀',
   '自慰秀+500=自慰秀+500',
   '艷舞+500=艷舞+500',
-  '買兩節3S=2+1s',
-  '買兩節3s=2+1s',
+  '買兩節3S=買2節3s',
+  '買兩節3s=買2節3s',
   '買2送1=2+1s',
   '買二送一=2+1s',
   '買兩送一=2+1s',
@@ -2115,12 +2117,12 @@ const defaultAliasRules = [
   '買五節送三節=5+3',
   '2+1s=2+1s',
   '2+1S=2+1s',
-  '2節3s=2+1s',
-  '2節3S=2+1s',
-  '買2節3s=2+1s',
-  '買2節3S=2+1s',
-  '買兩節3s=2+1s',
-  '買兩節3S=2+1s',
+  '2節3s=買2節3s',
+  '2節3S=買2節3s',
+  '買2節3s=買2節3s',
+  '買2節3S=買2節3s',
+  '買兩節3s=買2節3s',
+  '買兩節3S=買2節3s',
   '買3節送1節200分=3節送1節200分',
   '買3節送1節200分3s=3節送1節200分3S',
   '買3節送1節200分3S=3節送1節200分3S',
@@ -2140,8 +2142,8 @@ const defaultAliasRules = [
   '過水=共浴',
   '桑拿按摩=桑拿 按摩',
   '抓龍筋=按摩',
-  '買2節/3s=2+1s',
-  '買2節/3S=2+1s',
+  '買2節/3s=買2節3s',
+  '買2節/3S=買2節3s',
   '買2節送1s=2+1s',
   '買2節送1S=2+1s',
   '買2節以上免費送口爆=口爆+500',
@@ -2640,6 +2642,495 @@ function buildDatabaseSubmissionPlan(payload) {
   }
 }
 
+
+function formatSyncLadyName(item) {
+  const country = String(item?.country || item?.nationality || item?.nation || '').trim()
+  const name = String(item?.name || '').trim()
+  if (country && name) return `${country} ${name}`
+  return name || country || '未命名'
+}
+
+function uniqueDisplayNames(values) {
+  const seen = new Set()
+  return (Array.isArray(values) ? values : [])
+    .map(value => String(value || '').trim())
+    .filter(value => {
+      if (!value || seen.has(value)) return false
+      seen.add(value)
+      return true
+    })
+}
+
+function formatSyncNameList(names) {
+  const rows = uniqueDisplayNames(names)
+  return rows.length ? rows.join('、') : '無'
+}
+
+function getDatabaseIdHintKeys(lady) {
+  const keys = []
+  const pushKey = value => {
+    const key = String(value || '').trim()
+    if (key && !keys.includes(key)) keys.push(key)
+  }
+
+  pushKey(lady?.sourceIdentity)
+  pushKey(lady?.sourceId)
+  pushKey(lady?.centralSourceId)
+  pushKey(lady?.source_id)
+  pushKey(makeStableLadySourceIdentity(lady || {}))
+  pushKey(`name:${makePreviewLadyKey(lady || {})}`)
+
+  return keys
+}
+
+function rememberDatabaseIdHint(lady, id) {
+  const numericId = Number(id || 0)
+  if (!Number.isFinite(numericId) || numericId <= 0) return false
+
+  const keys = getDatabaseIdHintKeys(lady)
+  if (!keys.length) return false
+
+  const nextMap = { ...databaseIdHintByLadyKey.value }
+  keys.forEach(key => {
+    nextMap[key] = numericId
+  })
+  databaseIdHintByLadyKey.value = nextMap
+  return true
+}
+
+function getDatabaseIdHint(lady) {
+  const map = databaseIdHintByLadyKey.value || {}
+  for (const key of getDatabaseIdHintKeys(lady)) {
+    const id = Number(map[key] || 0)
+    if (Number.isFinite(id) && id > 0) return id
+  }
+  return 0
+}
+
+function collectObjectsDeep(value, rows = [], depth = 0) {
+  if (depth > 5 || value == null) return rows
+  if (Array.isArray(value)) {
+    value.forEach(item => collectObjectsDeep(item, rows, depth + 1))
+    return rows
+  }
+  if (typeof value !== 'object') return rows
+  rows.push(value)
+  Object.values(value).forEach(item => {
+    if (item && typeof item === 'object') collectObjectsDeep(item, rows, depth + 1)
+  })
+  return rows
+}
+
+function extractNumericDatabaseId(row) {
+  const candidates = [
+    row?.ladyId,
+    row?.lady_id,
+    row?.databaseId,
+    row?.database_id,
+    row?.dbId,
+    row?.db_id,
+    row?.listingDatabaseId,
+    row?.listing_database_id,
+    row?.id
+  ]
+  for (const value of candidates) {
+    const numericId = Number(value || 0)
+    if (Number.isFinite(numericId) && numericId > 0) return numericId
+  }
+  return 0
+}
+
+function applyDatabaseIdHintsFromResponse(data, payload = null) {
+  const payloadItems = Array.isArray(payload?.items) ? payload.items : []
+  const rows = collectObjectsDeep(data)
+  let appliedCount = 0
+
+  for (const row of rows) {
+    const numericId = extractNumericDatabaseId(row)
+    if (!numericId) continue
+
+    const sourceIdentity = row?.sourceIdentity || row?.sourceId || row?.source_id || row?.centralSourceId || ''
+    const rowKey = makePreviewLadyKey(row)
+    const matchedItem = payloadItems.find(item => {
+      const itemSource = item?.sourceIdentity || item?.sourceId || makeStableLadySourceIdentity(item)
+      if (sourceIdentity && itemSource && String(sourceIdentity) === String(itemSource)) return true
+      return rowKey && makePreviewLadyKey(item) === rowKey
+    })
+
+    if (matchedItem) {
+      if (rememberDatabaseIdHint(matchedItem, numericId)) appliedCount += 1
+    } else if (rowKey) {
+      if (rememberDatabaseIdHint(row, numericId)) appliedCount += 1
+    }
+  }
+
+  return appliedCount
+}
+
+function mergeFrontendLadyItems(items = []) {
+  const nextById = new Map()
+  ;(Array.isArray(frontendLadies.value) ? frontendLadies.value : []).forEach(item => {
+    const id = Number(item?.id || 0)
+    if (id) nextById.set(id, item)
+  })
+  ;(Array.isArray(items) ? items : []).forEach(item => {
+    const id = Number(item?.id || 0)
+    if (id) nextById.set(id, item)
+  })
+  frontendLadies.value = Array.from(nextById.values())
+  if (frontendLadies.value.length) frontendLadiesLoaded.value = true
+}
+
+function getPlanItemNamesByState(plan, states = []) {
+  const targetStates = new Set(states)
+  return (Array.isArray(plan?.rows) ? plan.rows : [])
+    .filter(row => targetStates.has(row?.assessment?.state))
+    .map(row => formatSyncLadyName(row.item))
+}
+
+function getCentralSyncResultNames(centralSync, matcher) {
+  const rows = Array.isArray(centralSync?.data?.results)
+    ? centralSync.data.results
+    : Array.isArray(centralSync?.results)
+      ? centralSync.results
+      : []
+
+  return rows
+    .filter(row => typeof matcher === 'function' ? matcher(row) : false)
+    .map(row => formatSyncLadyName(row))
+}
+
+function buildDetailedDatabaseSyncMessage(plan, centralSync = null) {
+  const createdNames = uniqueDisplayNames([
+    ...getPlanItemNamesByState(plan, ['new']),
+    ...getCentralSyncResultNames(centralSync, row => row?.status === 'created')
+  ])
+  const updatedNames = uniqueDisplayNames([
+    ...getPlanItemNamesByState(plan, ['update']),
+    ...getCentralSyncResultNames(centralSync, row => row?.status === 'updated' && !row?.duplicatePrevented)
+  ])
+  const duplicateNames = uniqueDisplayNames([
+    ...getPlanItemNamesByState(plan, ['suspected']),
+    ...getCentralSyncResultNames(centralSync, row => row?.duplicatePrevented || row?.status === 'suspected-duplicate')
+  ])
+
+  return [
+    `同步完成：新增 ${createdNames.length}、更新 ${updatedNames.length}、重複未建立 ${duplicateNames.length}`,
+    `新增：${formatSyncNameList(createdNames)}`,
+    `更新：${formatSyncNameList(updatedNames)}`,
+    `重複資料未建立：${formatSyncNameList(duplicateNames)}`
+  ].join('\n')
+}
+
+function countCurrentDocumentDatabaseIds(payload = null) {
+  const items = Array.isArray(payload?.items)
+    ? payload.items
+    : getCurrentDocumentItemsForDetailLookup()
+
+  if (!items.length) return { total: 0, ready: 0, missing: 0 }
+
+  const ready = items.filter(item => {
+    const assessment = assessLadyDatabaseSync(item)
+    return Boolean(assessment?.match?.id)
+  }).length
+
+  return {
+    total: items.length,
+    ready,
+    missing: Math.max(0, items.length - ready)
+  }
+}
+
+async function loadFrontendLadiesFullFallbackForCurrentDocument(options = {}) {
+  const items = await fetchAllPublicLadies({ includeInactive: true, refresh: true })
+  frontendLadies.value = items
+  frontendLadiesLoaded.value = true
+  frontendStatusText.value = `已改用完整清單重新讀取 ${items.length} 筆小姐，補抓本次文件的資料庫 ID。`
+  return true
+}
+
+async function fetchPublicLadiesByKeyword(keyword, options = {}) {
+  const text = String(keyword || '').trim()
+  if (!text) return []
+
+  const query = new URLSearchParams({
+    keyword: text,
+    page: '1',
+    pageSize: '60',
+    includeInactive: '1',
+    cacheBust: String(Date.now())
+  })
+
+  const response = await fetch(
+    `${apiBaseUrl.value}/api/public/ladies?${query.toString()}`,
+    { cache: 'no-store' }
+  )
+  const data = await response.json().catch(() => ({}))
+
+  if (!response.ok || data.ok === false) {
+    throw new Error(data.message || `HTTP ${response.status}`)
+  }
+
+  return Array.isArray(data.items) ? data.items : []
+}
+
+async function lookupDatabaseIdForPreviewLady(previewLady, options = {}) {
+  if (!previewLady) return 0
+
+  const hintedId = getDatabaseIdHint(previewLady)
+  if (hintedId) return hintedId
+
+  const key = makePreviewLadyKey(previewLady)
+  const existingMatches = frontendLadies.value.filter(item => makePreviewLadyKey(item) === key)
+  if (existingMatches.length === 1) {
+    const id = Number(existingMatches[0]?.id || 0)
+    if (id) {
+      rememberDatabaseIdHint(previewLady, id)
+      return id
+    }
+  }
+
+  const keywords = uniqueDisplayNames([previewLady.name, `${previewLady.country || previewLady.nationality || ''} ${previewLady.name || ''}`])
+  for (const keyword of keywords) {
+    try {
+      const items = await fetchPublicLadiesByKeyword(keyword, { refresh: true })
+      mergeFrontendLadyItems(items)
+      const matches = items.filter(item => makePreviewLadyKey(item) === key)
+      if (matches.length === 1) {
+        const id = Number(matches[0]?.id || 0)
+        if (id) {
+          rememberDatabaseIdHint(previewLady, id)
+          return id
+        }
+      }
+    } catch (error) {
+      console.warn(`用關鍵字「${keyword}」補抓資料庫 ID 失敗：`, error)
+    }
+  }
+
+  return 0
+}
+
+async function refreshFrontendLadiesUntilDocumentIdsReady(payload = null, options = {}) {
+  const maxAttempts = Math.max(1, Number(options.maxAttempts || 3))
+  const retryDelayMs = Math.max(250, Number(options.retryDelayMs || 700))
+  let lastSummary = countCurrentDocumentDatabaseIds(payload)
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    await loadFrontendLadies({ silent: true, refresh: true })
+    lastSummary = countCurrentDocumentDatabaseIds(payload)
+    if (!lastSummary.missing) return lastSummary
+
+    try {
+      await loadFrontendLadiesFullFallbackForCurrentDocument({ silent: true })
+      lastSummary = countCurrentDocumentDatabaseIds(payload)
+      if (!lastSummary.missing) return lastSummary
+    } catch (error) {
+      console.warn('完整清單補抓本次文件資料庫 ID 失敗：', error)
+    }
+
+    if (attempt < maxAttempts) await new Promise(resolve => window.setTimeout(resolve, retryDelayMs))
+  }
+
+  return lastSummary
+}
+
+async function resolvePreviewLadyToDatabaseId(previewLadyId) {
+  const previewId = String(previewLadyId || '')
+  if (!previewId || !isCurrentDocumentPreviewLadyId(previewId)) return Number(previewLadyId || 0) || 0
+
+  const previewLady = currentDocumentPreviewLadies.value.find(lady => String(lady.id) === previewId)
+  if (!previewLady) return 0
+
+  let matchedId = await lookupDatabaseIdForPreviewLady(previewLady, { refresh: true })
+  if (matchedId) return matchedId
+
+  await refreshFrontendLadiesUntilDocumentIdsReady({ items: [previewLady] }, { maxAttempts: 3, retryDelayMs: 650 })
+  matchedId = await lookupDatabaseIdForPreviewLady(previewLady, { refresh: true })
+  return matchedId || 0
+}
+
+
+function normalizeMediaRecordForPreview(media, fallback = {}) {
+  const url = String(media?.url || media?.publicUrl || media?.public_url || media?.href || '').trim()
+  if (!url) return null
+
+  return {
+    id: media?.id || media?.mediaId || media?.media_id || media?.key || url,
+    url,
+    mediaType: String(media?.mediaType || media?.media_type || fallback.mediaType || 'image').toLowerCase().startsWith('video')
+      ? 'video'
+      : 'image',
+    caption: String(media?.caption || media?.note || media?.name || fallback.caption || '').trim(),
+    note: String(media?.note || media?.caption || media?.name || fallback.caption || '').trim(),
+    sortOrder: Number(media?.sortOrder ?? media?.sort_order ?? fallback.sortOrder ?? 999),
+    isCover: Boolean(media?.isCover ?? media?.is_cover ?? fallback.isCover ?? false),
+    isLocalUploadBound: Boolean(fallback.isLocalUploadBound)
+  }
+}
+
+function getLocalUploadedMediaKeysForLady(lady, hintedDatabaseId = 0) {
+  const keys = []
+  const id = Number(lady?.id || hintedDatabaseId || 0)
+  if (id) keys.push(`id:${id}`)
+
+  const sourceIdentity = lady?.sourceIdentity || lady?.sourceId || makeStableLadySourceIdentity(lady)
+  if (sourceIdentity) keys.push(`source:${sourceIdentity}`)
+
+  const previewKey = makePreviewLadyKey(lady)
+  if (previewKey) keys.push(`key:${previewKey}`)
+
+  return Array.from(new Set(keys.filter(Boolean)))
+}
+
+function getLocalUploadedMediaForLady(lady, hintedDatabaseId = 0) {
+  const keys = getLocalUploadedMediaKeysForLady(lady, hintedDatabaseId)
+  const merged = []
+  const seen = new Set()
+
+  keys.forEach(key => {
+    const items = Array.isArray(localUploadedMediaByLadyId.value[key])
+      ? localUploadedMediaByLadyId.value[key]
+      : []
+    items.forEach(item => {
+      const normalized = normalizeMediaRecordForPreview(item)
+      if (!normalized || seen.has(normalized.url)) return
+      seen.add(normalized.url)
+      merged.push(normalized)
+    })
+  })
+
+  return merged
+}
+
+function mergeMediaRecords(existing = [], incoming = []) {
+  const merged = []
+  const seen = new Set()
+
+  ;[...(Array.isArray(existing) ? existing : []), ...(Array.isArray(incoming) ? incoming : [])]
+    .map(item => normalizeMediaRecordForPreview(item))
+    .filter(Boolean)
+    .forEach(item => {
+      if (seen.has(item.url)) return
+      seen.add(item.url)
+      merged.push(item)
+    })
+
+  return merged
+}
+
+function mergeUploadedMediaIntoLocalPreview(ladyOrId, mediaItems = [], previewLady = null) {
+  const normalizedItems = (Array.isArray(mediaItems) ? mediaItems : [])
+    .map(item => normalizeMediaRecordForPreview(item, { isLocalUploadBound: true }))
+    .filter(Boolean)
+  if (!normalizedItems.length) return 0
+
+  const targetLady = typeof ladyOrId === 'object'
+    ? ladyOrId
+    : (
+        previewLady ||
+        frontendLadies.value.find(item => String(item?.id || '') === String(ladyOrId || '')) ||
+        currentDocumentPreviewLadies.value.find(item => String(item?.id || '') === String(ladyOrId || '')) ||
+        null
+      )
+
+  const keys = targetLady
+    ? getLocalUploadedMediaKeysForLady(targetLady, Number(ladyOrId || 0))
+    : [`id:${ladyOrId}`]
+
+  const next = { ...localUploadedMediaByLadyId.value }
+  keys.forEach(key => {
+    next[key] = mergeMediaRecords(next[key] || [], normalizedItems)
+  })
+  localUploadedMediaByLadyId.value = next
+
+  const targetId = Number(ladyOrId || targetLady?.id || 0)
+  if (targetId) {
+    frontendLadies.value = frontendLadies.value.map(item => {
+      if (Number(item?.id || 0) !== targetId) return item
+      return {
+        ...item,
+        media: mergeMediaRecords(item.media || [], normalizedItems),
+        mediaCount: mergeMediaRecords(item.media || [], normalizedItems).length
+      }
+    })
+  }
+
+  return normalizedItems.length
+}
+
+function collectMediaObjectsFromUploadResponse(value, rows = [], depth = 0) {
+  if (depth > 5 || value == null) return rows
+  if (Array.isArray(value)) {
+    value.forEach(item => collectMediaObjectsFromUploadResponse(item, rows, depth + 1))
+    return rows
+  }
+  if (typeof value !== 'object') return rows
+
+  const normalized = normalizeMediaRecordForPreview(value)
+  if (normalized) rows.push(normalized)
+
+  Object.values(value).forEach(item => {
+    if (item && typeof item === 'object') collectMediaObjectsFromUploadResponse(item, rows, depth + 1)
+  })
+
+  return rows
+}
+
+function buildFallbackUploadedMediaFromResponse(data, file, index = 0) {
+  const rows = collectMediaObjectsFromUploadResponse(data)
+  const uniqueRows = mergeMediaRecords([], rows)
+  if (uniqueRows.length) return uniqueRows.map((item, itemIndex) => ({
+    ...item,
+    sortOrder: Number(item.sortOrder || index + itemIndex + 1),
+    isCover: Boolean(item.isCover || (index === 0 && itemIndex === 0))
+  }))
+
+  return []
+}
+
+async function bindUploadedMediaDirectlyToCentralWebsite(ladyId, mediaItems = [], options = {}) {
+  const id = Number(ladyId || 0)
+  const normalizedMedia = mergeMediaRecords([], mediaItems)
+  if (!id || !normalizedMedia.length) {
+    return { ok: false, skipped: true, message: '沒有可直接綁定中央網站的媒體。' }
+  }
+
+  const detail = await fetchPublicLadyDetail(id, { refresh: true })
+  if (!detail) throw new Error('直接綁定中央網站媒體失敗：讀不到目前小姐完整資料。')
+
+  const previewLady = options.previewLady || currentDocumentPreviewLadies.value.find(lady => String(lady.id || '') === String(id)) || null
+  const syncItem = buildCentralWebsiteSyncItem(detail, previewLady)
+  const accessToken = await getCentralWebsiteAccessToken()
+
+  const { response, data } = await fetchJsonWithTimeout(
+    `${CENTRAL_WEBSITE_API_BASE_URL}/api/integrations/converter/central-listings/media/bind`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        'X-Converter-Apikey': SUPABASE_PUBLIC_API_KEY
+      },
+      body: JSON.stringify({
+        item: syncItem,
+        sourceIdentity: syncItem.sourceIdentity || syncItem.sourceId || '',
+        media: normalizedMedia
+      })
+    },
+    Number(options.timeoutMs || CENTRAL_WEBSITE_SYNC_TIMEOUT_MS),
+    '中央網站媒體直接綁定失敗'
+  )
+
+  if (!response.ok || data.ok === false) {
+    throw new Error(data.message || data.error || `中央網站媒體直接綁定失敗：HTTP ${response.status}`)
+  }
+
+  mergeUploadedMediaIntoLocalPreview(id, normalizedMedia, previewLady)
+  return data
+}
+
+
 const currentDocumentPreviewLadies = computed(() => {
   const text = String(jsonResultText.value || '').trim()
   if (!text) return []
@@ -2651,9 +3142,10 @@ const currentDocumentPreviewLadies = computed(() => {
       const body = item.body || {}
       const assessment = assessLadyDatabaseSync(item)
       const dbLady = assessment.match
+      const hintedDatabaseId = getDatabaseIdHint(item)
 
       return {
-        id: dbLady?.id || `current-document-${index + 1}`,
+        id: dbLady?.id || hintedDatabaseId || `current-document-${index + 1}`,
         isCurrentDocumentPreview: true,
         country: item.country || '',
         name: item.name || '',
@@ -2673,7 +3165,7 @@ const currentDocumentPreviewLadies = computed(() => {
         cup: body.cup || '',
         age: body.age ?? '',
         rawText: item.rawText || '',
-        media: Array.isArray(dbLady?.media) ? dbLady.media : [],
+        media: mergeMediaRecords(Array.isArray(dbLady?.media) ? dbLady.media : [], getLocalUploadedMediaForLady(item, hintedDatabaseId)),
         pricePlans: Array.isArray(item.pricePlans)
           ? item.pricePlans.map((plan, planIndex) => ({
               id: `current-document-${index + 1}-price-${planIndex + 1}`,
@@ -3191,8 +3683,16 @@ async function uploadLadyMedia() {
   }
 
   if (isCurrentDocumentPreviewLadyId(mediaUploadLadyId.value)) {
-    mediaUploadStatusText.value = '這位小姐目前只在文件3 / 文件4預覽，還沒有資料庫 ID。請先送出到資料庫後再上傳媒體。'
-    return
+    mediaUploadStatusText.value = '正在補抓這位小姐的資料庫 ID，請稍候...'
+    const resolvedLadyId = await resolvePreviewLadyToDatabaseId(mediaUploadLadyId.value)
+    if (resolvedLadyId) {
+      mediaUploadLadyId.value = String(resolvedLadyId)
+      await nextTick()
+      mediaUploadStatusText.value = '已補抓到資料庫 ID，可以繼續上傳媒體。'
+    } else {
+      mediaUploadStatusText.value = '這位小姐尚未取得資料庫 ID。系統已重新讀取清單並用姓名關鍵字補抓，但仍找不到同名小姐；請確認文件3送出成功、姓名/國籍沒有被改名，或稍後重新整理再試。'
+      return
+    }
   }
 
   if (!mediaUploadFiles.value.length) {
@@ -3203,6 +3703,9 @@ async function uploadLadyMedia() {
   let successCount = 0
   let failCount = 0
   let currentFile = null
+  const uploadedCentralMediaItems = []
+  const uploadTargetLadyId = Number(mediaUploadLadyId.value || 0)
+  const uploadTargetPreviewLady = currentDocumentPreviewLadies.value.find(lady => String(lady.id || '') === String(mediaUploadLadyId.value || '')) || null
 
   initializeMediaUploadProgress()
   isMediaUploading.value = true
@@ -3219,10 +3722,16 @@ async function uploadLadyMedia() {
       formData.append('mediaType', file.type.startsWith('video/') ? 'video' : 'image')
       formData.append('note', '')
 
-      await uploadMediaFileWithProgress(formData, percent => {
+      const uploadResult = await uploadMediaFileWithProgress(formData, percent => {
         setMediaUploadFileState(file, makeMediaUploadState('uploading', percent, `上傳中 ${percent}%`))
         mediaUploadStatusText.value = `正在上傳「${file.name}」：${percent}%。已完成 ${successCount} / ${mediaUploadFiles.value.length} 個檔案。`
       })
+
+      const uploadedItems = buildFallbackUploadedMediaFromResponse(uploadResult, file, successCount)
+      uploadedCentralMediaItems.push(...uploadedItems)
+      if (uploadedItems.length) {
+        mergeUploadedMediaIntoLocalPreview(uploadTargetLadyId || mediaUploadLadyId.value, uploadedItems, uploadTargetPreviewLady)
+      }
 
       successCount += 1
       mediaUploadCompletedCount.value = successCount
@@ -3235,18 +3744,42 @@ async function uploadLadyMedia() {
     isMediaUploading.value = false
     clearMediaUploadFiles()
 
+    if (uploadedCentralMediaItems.length) {
+      mergeUploadedMediaIntoLocalPreview(uploadTargetLadyId || mediaUploadLadyId.value, uploadedCentralMediaItems, uploadTargetPreviewLady)
+    }
+
     await loadFrontendLadies({ refresh: true })
+    if (uploadedCentralMediaItems.length) {
+      mergeUploadedMediaIntoLocalPreview(uploadTargetLadyId || mediaUploadLadyId.value, uploadedCentralMediaItems, uploadTargetPreviewLady)
+    }
+
     try {
-      const targetLadyId = Number(mediaUploadLadyId.value || 0)
+      const targetLadyId = Number(mediaUploadLadyId.value || uploadTargetLadyId || 0)
       await syncSingleLadyToCentralWebsite(targetLadyId, {
         maxAttempts: 3,
         onRetry: ({ nextAttempt, maxAttempts }) => {
           mediaUploadStatusText.value = `媒體已上傳到資料庫；中央網站同步暫時失敗，正在進行第 ${nextAttempt} / ${maxAttempts} 次重試...`
         }
       })
-      mediaUploadStatusText.value = `媒體疊加上傳完成：成功 ${successCount} 個，失敗 ${failCount} 個。中央網站已同步目前小姐。`
+
+      if (uploadedCentralMediaItems.length) {
+        await bindUploadedMediaDirectlyToCentralWebsite(targetLadyId, uploadedCentralMediaItems, {
+          previewLady: uploadTargetPreviewLady,
+          timeoutMs: 15000
+        })
+      }
+
+      await loadFrontendLadies({ refresh: true })
+      if (uploadedCentralMediaItems.length) {
+        mergeUploadedMediaIntoLocalPreview(targetLadyId, uploadedCentralMediaItems, uploadTargetPreviewLady)
+      }
+
+      mediaUploadStatusText.value = `媒體疊加上傳完成：成功 ${successCount} 個，失敗 ${failCount} 個。已直接綁定中央網站正確 ID 並同步目前小姐。`
     } catch (syncError) {
-      mediaUploadStatusText.value = `媒體已上傳到資料庫，但中央網站同步失敗：${syncError.message || syncError}。圖片仍已保留，可按「重新同步目前小姐到中央網站」再次同步。`
+      if (uploadedCentralMediaItems.length) {
+        mergeUploadedMediaIntoLocalPreview(uploadTargetLadyId || mediaUploadLadyId.value, uploadedCentralMediaItems, uploadTargetPreviewLady)
+      }
+      mediaUploadStatusText.value = `媒體已上傳到資料庫，但中央網站直接綁定或同步失敗：${syncError.message || syncError}。圖片已先保留在目前畫面，可稍後再次同步。`
     }
   } catch (error) {
     isMediaUploading.value = false
@@ -3906,8 +4439,9 @@ async function submitDocument4ToDatabase(options = {}) {
       setDatabaseSubmitFeedback(`本次 ${plan.syncedCount} 筆皆已同步，已略過資料庫寫入；正在同步本次文件到中央網站...`, 'pending')
       centralWebsiteSyncNeedsRetry.value = false
       const centralSync = await syncSavedLadiesToCentralWebsite(payload)
-      const duplicatePreventedCount = Number(centralSync?.data?.duplicatePreventedCount || 0)
-      const message = `確認完成：本次 ${plan.syncedCount} 筆皆已存在，未重複新增；中央網站已同步${duplicatePreventedCount ? `，並攔截 ${duplicatePreventedCount} 筆可能重複資料` : ''}。`
+      applyDatabaseIdHintsFromResponse(centralSync, payload)
+      await refreshFrontendLadiesUntilDocumentIdsReady(payload, { maxAttempts: 2, retryDelayMs: 500 })
+      const message = buildDetailedDatabaseSyncMessage(plan, centralSync)
       apiStatusText.value = message
       setDatabaseSubmitFeedback(message, 'success', { toast: true })
       return true
@@ -3947,6 +4481,8 @@ async function submitDocument4ToDatabase(options = {}) {
       throw new Error('送出成功但回傳不是累加版後端，請確認正式後端是否仍在舊版本。')
     }
 
+    applyDatabaseIdHintsFromResponse(data, submissionPayload)
+
     if (Number(data.afterCount || 0) < Number(data.beforeCount || 0)) {
       throw new Error(`安全檢查失敗：匯入後 ${data.afterCount} 筆小於匯入前 ${data.beforeCount} 筆，已阻擋。`)
     }
@@ -3956,26 +4492,24 @@ async function submitDocument4ToDatabase(options = {}) {
     setDatabaseSubmitFeedback('資料庫儲存成功，正在同步中央網站...', 'pending')
 
     if (shouldReloadFrontendLadies) {
-      await loadFrontendLadies({ silent: true, refresh: true })
+      await refreshFrontendLadiesUntilDocumentIdsReady(payload, { maxAttempts: 2, retryDelayMs: 500 })
     }
 
     centralWebsiteSyncNeedsRetry.value = false
     const centralSync = await syncSavedLadiesToCentralWebsite(payload)
-    const duplicatePreventedCount = Number(centralSync?.data?.duplicatePreventedCount || 0)
+    applyDatabaseIdHintsFromResponse(centralSync, payload)
     const suspectedDuplicateCount = Number(centralSync?.data?.suspectedDuplicateCount || 0)
-    const successMessage = [
-      `同步完成：新增 ${plan.newCount}、更新 ${plan.updateCount}、已同步略過 ${plan.syncedCount}`,
-      duplicatePreventedCount ? `中央網站另攔截 ${duplicatePreventedCount} 筆可能重複資料` : '',
-      suspectedDuplicateCount ? `另有 ${suspectedDuplicateCount} 筆疑似同名資料已停止處理` : '',
-      '未建立重複小姐'
-    ].filter(Boolean).join('；') + '。'
+    const successMessage = buildDetailedDatabaseSyncMessage(plan, centralSync)
+    const idReadySummary = await refreshFrontendLadiesUntilDocumentIdsReady(payload, { maxAttempts: 3, retryDelayMs: 700 })
 
     if (shouldClearDocuments) {
       clearDocumentsAfterDatabaseSubmit()
       apiStatusText.value = `${data.message || `已送出 ${plan.itemsToSubmit.length} 筆到 Supabase PostgreSQL。`} ${centralSync.message || '中央網站同步完成。'} 已清空文件1 / 文件2 / 文件3 / 文件4，本次預覽已歸零，可以開始建立下一批。`
     } else {
       apiStatusText.value = `${data.message || `已送出 ${plan.itemsToSubmit.length} 筆到 Supabase PostgreSQL。`} ${centralSync.message || '中央網站同步完成。'} 本次文件資料已保留，可直接選擇本次已同步小姐上傳媒體。`
-      mediaUploadStatusText.value = '文件3已完成防重比對並送出；下拉選單顯示本次已同步小姐，可以開始上傳媒體。'
+      mediaUploadStatusText.value = idReadySummary.missing
+        ? `文件3已送出；已取得 ${idReadySummary.ready} / ${idReadySummary.total} 位小姐資料庫 ID，尚有 ${idReadySummary.missing} 位正在等待資料庫索引更新。可稍後再選該小姐上傳媒體。`
+        : '文件3已完成防重比對並送出；本次小姐資料庫 ID 已回填，可以開始上傳媒體。'
     }
 
     setDatabaseSubmitFeedback(successMessage, suspectedDuplicateCount ? 'warning' : 'success', { toast: true })
@@ -4960,12 +5494,12 @@ function extractServices(block) {
     ['買二節送一s', '2+1s'],
     ['買兩節送一s', '2+1s'],
     ['買兩節送1s', '2+1s'],
-    ['買2節3s', '2+1s'],
-    ['買二節3s', '2+1s'],
-    ['買兩節3s', '2+1s'],
-    ['買2節/3s', '2+1s'],
-    ['買二節/三s', '2+1s'],
-    ['買兩節/三s', '2+1s']
+    ['買2節3s', '買2節3s'],
+    ['買二節3s', '買2節3s'],
+    ['買兩節3s', '買2節3s'],
+    ['買2節/3s', '買2節3s'],
+    ['買二節/三s', '買2節3s'],
+    ['買兩節/三s', '買2節3s']
   ]
 
   forcedServiceAliases.forEach(([from, to]) => {
@@ -4980,7 +5514,8 @@ function extractServices(block) {
   // 這裡直接掃整筆小姐區塊的正規化文字，無論同一行或分行都會穩定輸出。
   const compactServiceText = searchableBlock
   const forcedBuyGiftPatterns = [
-    { output: '2+1s', patterns: [/買2節送1s/g, /買2節送1節/g, /買2節3s/g, /買2節\/3s/g] },
+    { output: '2+1s', patterns: [/買2節送1s/g, /買2節送1節/g] },
+    { output: '買2節3s', patterns: [/買2節3s/g, /買2節\/3s/g] },
     { output: '3+1', patterns: [/買3節送1節(?!\d+分)/g, /買3送1(?!\d+分)/g] },
     { output: '5+3', patterns: [/買5節送3節(?!\d+分)/g, /買5送3(?!\d+分)/g] }
   ]
@@ -5036,6 +5571,7 @@ function getServiceOrderIndex(item, orderIndex) {
   const aliasOrderMap = new Map([
     ['2+1s', '2節3S'],
     ['2+1S', '2節3S'],
+    ['買2節3s', '2節3S'],
     ['深喉嚨', '深喉'],
     ['口爆', '口爆+500'],
     ['吞精', '吞精+500'],
@@ -5062,8 +5598,8 @@ function normalizeOverlappingServices(found) {
     found.delete('攝影露臉+1000')
   }
 
-  // 不再硬性把 2+1s 改回 2節3S。
-  // 使用者在「同義詞規則」右邊寫什麼，文件2 就以那個輸出為準。
+  // 第 018-119 批：文件1 寫「買2節3s / 買兩節3S」時，輸出以店家原意「買2節3s」為準。
+  // 若舊規則同時抓到 2+1s，會在下方去重移除。
 
   // 長方案出現時，移除被包含的短方案，避免重複。
   // 注意：只做明確長短方案去重，不改使用者指定的輸出名稱。
@@ -5085,9 +5621,11 @@ function normalizeOverlappingServices(found) {
     found.delete('2+1')
   }
 
-  // 第 018-112 批：買2節3S 統一視為 2+1s。
-  // 若同一筆因舊同義詞或重複規則同時抓到 2+1s / 2節3S，只保留 2+1s。
-  if (found.has('2+1s') && found.has('2節3S')) {
+  // 第 018-119 批：買2節3S / 買2節 3s 輸出保留「買2節3s」，並移除舊規則抓到的 2+1s / 2節3S。
+  if (found.has('買2節3s')) {
+    found.delete('2+1s')
+    found.delete('2節3S')
+  } else if (found.has('2+1s') && found.has('2節3S')) {
     found.delete('2節3S')
   }
 
@@ -5326,8 +5864,8 @@ function normalizeServiceOutputToken(text) {
   // 第 018-96 批：2+1s 統一小寫 s，避免排序與去重時變成 2+1S / 2+1s 兩種。
   if (/^2\+1s$/i.test(value)) return '2+1s'
 
-  // 第 018-112 批：舊服務寫法 2節3S 統一轉成 2+1s，避免文件2 出現 2+1s 2節3S。
-  if (/^2節3s$/i.test(value)) return '2+1s'
+  // 第 018-119 批：舊服務寫法 2節3S / 買2節3S 統一顯示為「買2節3s」。
+  if (/^(?:買)?2節3s$/i.test(value)) return '買2節3s'
 
   // 第 018-114 批：豔舞統一顯示成「艷舞」，避免同義詞去重時拆成兩種。
   if (value === '豔舞') return '艷舞'
@@ -7184,6 +7722,7 @@ async function retryCentralWebsiteSync() {
   try {
     setDatabaseSubmitFeedback('正在重新同步本次文件到中央網站...', 'pending')
     const centralSync = await syncSavedLadiesToCentralWebsite(payload)
+    applyDatabaseIdHintsFromResponse(centralSync, payload)
     const duplicatePreventedCount = Number(centralSync?.data?.duplicatePreventedCount || 0)
     const message = `中央網站重新同步完成${duplicatePreventedCount ? `，並攔截 ${duplicatePreventedCount} 筆可能重複資料` : ''}。`
     apiStatusText.value = message
@@ -8037,9 +8576,10 @@ select:focus, input:focus, textarea:focus {
 
 .preview-header {
   display: flex;
-  justify-content: space-between;
-  gap: 18px;
-  align-items: end;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 12px;
+  align-items: flex-start;
   margin-bottom: 12px;
 }
 
@@ -8195,14 +8735,15 @@ select:focus, input:focus, textarea:focus {
 .preview-tools {
   display: flex;
   gap: 12px;
-  align-items: end;
+  align-items: flex-start;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: flex-start;
+  width: 100%;
 }
 
 .database-submit-feedback {
   min-width: 250px;
-  max-width: 430px;
+  max-width: 760px;
   min-height: 42px;
   display: inline-flex;
   align-items: center;
@@ -8214,6 +8755,8 @@ select:focus, input:focus, textarea:focus {
   font-size: 13px;
   font-weight: 900;
   line-height: 1.45;
+  white-space: pre-line;
+  text-align: left;
 }
 
 .database-submit-feedback.is-pending {
