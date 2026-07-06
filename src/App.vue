@@ -1,4 +1,4 @@
-<!-- 第 018-107 批：地區機房管理記住最後機房與定點預設版（依第 018-106 批延續） -->
+<!-- 第 018-111 批：隱藏自動解析規則強化版（依第 018-110 批延續） -->
 <template>
   <!-- 第 018-109 批：待上傳縮圖區禁止拖放版 -->
   <!-- batch018-76-employee-rules-semantic-verify-fix -->
@@ -4360,6 +4360,8 @@ function isNameOnlyHeaderLine(line) {
 }
 
 function parseRecord(block) {
+  // 第 018-111 批：自動解析模式維持隱藏運作，不新增任何畫面選項。
+  // 解析流程會自動合併：一行一位、姓名國籍跨行、年齡跨行補抓、價格分離。
   const header = findHeaderInBlock(block) || parseNameOnlyRecord(block)
   const explicitCountry = extractCountryFromBlock(block)
   const finalCountry = explicitCountry || header?.country || '馬來'
@@ -4794,6 +4796,18 @@ function parsePrices(text, increase) {
       if (minutes && sessionCount && kAmount) {
         pushPrice(minutes, sessionCount, kAmount * 1000)
       }
+      return
+    }
+
+    // 第 018-111 批：隱藏自動解析規則強化。
+    // 支援「30分鐘 1s 25底」「50分鐘 1S 28底」這種節數夾在分鐘與底價中間的格式。
+    // 這是自動判斷模式內建規則，不新增按鈕、不改既有操作流程。
+    const sessionBeforeBottomMatch = normalized.match(/(\d{2,3})\s*(?:分鐘|分)\s*(NS|N\s*\/?\s*S|\d+\s*S)?\s*([0-9]+(?:\.[0-9]+)?)\s*底/i)
+    if (sessionBeforeBottomMatch) {
+      const minutes = Number(sessionBeforeBottomMatch[1])
+      const sessionCount = sessionBeforeBottomMatch[2] || '1S'
+      const amount = parseBottomPriceAmount(sessionBeforeBottomMatch[3])
+      pushPrice(minutes, sessionCount, amount)
       return
     }
 
