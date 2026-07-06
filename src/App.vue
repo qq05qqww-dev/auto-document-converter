@@ -1,4 +1,4 @@
-<!-- 第 018-115 批：服務加價需明確金額版（依第 018-114 批延續） -->
+<!-- 第 018-116 批：地區機房固定顯示與套用前範圍必選版（依第 018-115 批延續） -->
 <template>
   <!-- 第 018-109 批：待上傳縮圖區禁止拖放版 -->
   <!-- batch018-76-employee-rules-semantic-verify-fix -->
@@ -204,7 +204,7 @@
           </div>
           <div class="top-settings-modal-head-actions">
             <div class="scope-status-pill">{{ currentStaffName }} 已建立：{{ locationCities.length }} 縣市 / {{ totalDistrictCount }} 地區 / {{ totalRoomCount }} 機房</div>
-            <button class="top-settings-modal-close" type="button" @click="closeTopSettingModal">關閉</button>
+            <span class="scope-fixed-pill">固定顯示</span>
           </div>
         </div>
 
@@ -834,7 +834,13 @@
         ></textarea>
 
         <div class="button-row">
-          <button class="primary-btn" type="button" @click="convertText">套用模式，產生文件2</button>
+          <button
+            class="primary-btn"
+            :class="{ 'scope-required-action': !isManagerScopeReadyForConvert }"
+            type="button"
+            :title="isManagerScopeReadyForConvert ? '套用目前機房範圍產生文件2' : '請先選完整縣市 / 地區 / 定點外送 / 機房'"
+            @click="convertTextWithScopeGuard"
+          >套用模式，產生文件2</button>
           <button class="ghost-btn" type="button" @click="clearSourceAndResult">清空文件1/2</button>
         </div>
       </article>
@@ -1274,7 +1280,7 @@ const LOCATION_SCOPE_STORAGE_KEY = 'auto-document-converter-location-room-option
 const LAST_SCOPE_SELECTION_STORAGE_KEY = 'auto-document-converter-last-scope-selection-current'
 const DEFAULT_MANAGER_SCOPE_TYPE = '定點'
 const CLEAN_START_PANEL_STORAGE_KEY = 'auto-document-converter-clean-start-panel-always-clean-home'
-const ONLINE_READY_VERSION_LABEL = '第 018-107 批：地區機房管理記住最後機房與定點預設版'
+const ONLINE_READY_VERSION_LABEL = '第 018-116 批：地區機房固定顯示與套用前範圍必選版'
 const PROTECTED_GLOBAL_RULE_NOTICE = '公版規則已固定保護，不會被清除；若遺失會自動補回預設公版。'
 const SOURCE_SLASH_SPACE_NOTICE = '文件1已啟用斜線自動轉空格，貼上後 / 與 ／ 會自動變成空格。'
 const STAFF_PROFILE_STORAGE_KEY = 'auto-document-converter-current-staff-profile'
@@ -1960,7 +1966,8 @@ function closeTopSettingModal() {
   showQuickRules.value = false
   showAdvancedSettings.value = false
   showApiPanel.value = false
-  showScopeManager.value = false
+  // 第 018-116 批：地區機房管理是登入後固定區塊，不再被一般關閉動作收合。
+  showScopeManager.value = true
   showScopeCrudPanel.value = false
 }
 
@@ -1976,9 +1983,9 @@ function toggleTopPanel(panel) {
 }
 
 function toggleScopeManager() {
-  const nextVisible = !showScopeManager.value
+  // 第 018-116 批：此區塊固定顯示；按鈕只負責回到 / 保持顯示，不再切換成隱藏。
   closeTopSettingModal()
-  showScopeManager.value = nextVisible
+  showScopeManager.value = true
 }
 
 function toggleEmployeeManager() {
@@ -4190,6 +4197,45 @@ function updateJsonPreview() {
 function ensureSourceTextBottomBlankLines(text = '') {
   const baseText = String(text || '').replace(/[\s\n]+$/g, '')
   return `${baseText}\n\n`
+}
+
+const isManagerScopeReadyForConvert = computed(() => {
+  return Boolean(
+    cleanScopeText(managerSelectedCity.value) &&
+    cleanScopeText(managerSelectedDistrict.value) &&
+    cleanScopeText(managerSelectedType.value) &&
+    cleanScopeText(ruleScopeRoom.value)
+  )
+})
+
+function getMissingManagerScopePartsForConvert() {
+  const missing = []
+  if (!cleanScopeText(managerSelectedCity.value)) missing.push('縣市')
+  if (!cleanScopeText(managerSelectedDistrict.value)) missing.push('地區')
+  if (!cleanScopeText(managerSelectedType.value)) missing.push('定點 / 外送')
+  if (!cleanScopeText(ruleScopeRoom.value)) missing.push('機房')
+  return missing
+}
+
+function buildManagerScopeRequiredMessage() {
+  const missing = getMissingManagerScopePartsForConvert()
+  return missing.length
+    ? `請先在上方「地區機房管理」選完整範圍：${missing.join('、')}。選好後才能套用模式產生文件2。`
+    : ''
+}
+
+function convertTextWithScopeGuard() {
+  // 第 018-116 批：未選完整縣市 / 地區 / 定點外送 / 機房時，不允許產生文件2，避免套錯規則範圍。
+  if (!isManagerScopeReadyForConvert.value) {
+    const message = buildManagerScopeRequiredMessage()
+    statusMessage.value = message
+    apiStatusText.value = message
+    setRoomRuleFeedback(message, 'error', { toast: true })
+    showScopeManager.value = true
+    return
+  }
+
+  convertText()
 }
 
 function convertText() {
@@ -12583,6 +12629,47 @@ button:disabled {
 
 .selected-media-empty {
   line-height: 1.55;
+}
+
+
+/* 第 018-116 批：地區機房固定顯示，文件1套用前必須先選完整機房範圍。 */
+.scope-fixed-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(50, 120, 210, 0.18);
+  background: linear-gradient(135deg, rgba(236, 245, 255, 0.96), rgba(226, 245, 255, 0.92));
+  color: #245c96;
+  font-weight: 900;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.78), 0 10px 26px rgba(45, 116, 214, 0.12);
+  white-space: nowrap;
+}
+
+.scope-required-action {
+  position: relative;
+  opacity: 0.82;
+  filter: saturate(0.82);
+  box-shadow: 0 10px 24px rgba(255, 96, 96, 0.16), 0 12px 30px rgba(44, 120, 230, 0.15);
+}
+
+.scope-required-action::after {
+  content: '請先選完整機房';
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 7px);
+  transform: translateX(-50%);
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: rgba(255, 245, 245, 0.96);
+  border: 1px solid rgba(239, 68, 68, 0.28);
+  color: #b42318;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 </style>
