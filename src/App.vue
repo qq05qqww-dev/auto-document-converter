@@ -2047,6 +2047,7 @@ const defaultAmountTransformRules = [
   { from: 3200, to: 3700 }
 ]
 
+// 第 018-112 批：同義詞防重貼與買2節3S統一2+1s版。
 const defaultServiceOrder = [
   '共浴', '無套吹', '輕功', '挑逗', '69', '品鮑', '小親親', '奶炮',
   '舔蛋', '按摩', '舌吻', '冰火', '毒龍', '波推', '胸推', '臀推',
@@ -2115,8 +2116,8 @@ const defaultAliasRules = [
   '免費自慰秀=自慰秀',
   '自慰秀+500=自慰秀+500',
   '艷舞+500=艷舞+500',
-  '買兩節3S=2節3S',
-  '買兩節3s=2節3S',
+  '買兩節3S=2+1s',
+  '買兩節3s=2+1s',
   '買2送1=2+1s',
   '買二送一=2+1s',
   '買兩送一=2+1s',
@@ -2129,14 +2130,14 @@ const defaultAliasRules = [
   '買五送三=5+3',
   '買5節送3節=5+3',
   '買五節送三節=5+3',
-  '2+1s=2節3S',
-  '2+1S=2節3S',
-  '2節3s=2節3S',
-  '2節3S=2節3S',
-  '買2節3s=2節3S',
-  '買2節3S=2節3S',
-  '買兩節3s=2節3S',
-  '買兩節3S=2節3S',
+  '2+1s=2+1s',
+  '2+1S=2+1s',
+  '2節3s=2+1s',
+  '2節3S=2+1s',
+  '買2節3s=2+1s',
+  '買2節3S=2+1s',
+  '買兩節3s=2+1s',
+  '買兩節3S=2+1s',
   '買3節送1節200分=3節送1節200分',
   '買3節送1節200分3s=3節送1節200分3S',
   '買3節送1節200分3S=3節送1節200分3S',
@@ -4920,6 +4921,9 @@ function extractServices(block) {
     ['買二節送一s', '2+1s'],
     ['買兩節送一s', '2+1s'],
     ['買兩節送1s', '2+1s'],
+    ['買2節3s', '2+1s'],
+    ['買二節3s', '2+1s'],
+    ['買兩節3s', '2+1s'],
     ['買2節/3s', '2+1s'],
     ['買二節/三s', '2+1s'],
     ['買兩節/三s', '2+1s']
@@ -4937,7 +4941,7 @@ function extractServices(block) {
   // 這裡直接掃整筆小姐區塊的正規化文字，無論同一行或分行都會穩定輸出。
   const compactServiceText = searchableBlock
   const forcedBuyGiftPatterns = [
-    { output: '2+1s', patterns: [/買2節送1s/g, /買2節送1節/g, /買2節\/3s/g] },
+    { output: '2+1s', patterns: [/買2節送1s/g, /買2節送1節/g, /買2節3s/g, /買2節\/3s/g] },
     { output: '3+1', patterns: [/買3節送1節(?!\d+分)/g, /買3送1(?!\d+分)/g] },
     { output: '5+3', patterns: [/買5節送3節(?!\d+分)/g, /買5送3(?!\d+分)/g] }
   ]
@@ -5007,6 +5011,12 @@ function normalizeOverlappingServices(found) {
   // 例：買二送一 100分鐘 3S 被不同規則同時抓成 2+1 / 2+1s 時，只輸出 2+1s。
   if (found.has('2+1s') && found.has('2+1')) {
     found.delete('2+1')
+  }
+
+  // 第 018-112 批：買2節3S 統一視為 2+1s。
+  // 若同一筆因舊同義詞或重複規則同時抓到 2+1s / 2節3S，只保留 2+1s。
+  if (found.has('2+1s') && found.has('2節3S')) {
+    found.delete('2節3S')
   }
 
   // 第 018-99 批：加價版服務優先。
@@ -5142,6 +5152,9 @@ function normalizeServiceOutputToken(text) {
 
   // 第 018-96 批：2+1s 統一小寫 s，避免排序與去重時變成 2+1S / 2+1s 兩種。
   if (/^2\+1s$/i.test(value)) return '2+1s'
+
+  // 第 018-112 批：舊服務寫法 2節3S 統一轉成 2+1s，避免文件2 出現 2+1s 2節3S。
+  if (/^2節3s$/i.test(value)) return '2+1s'
 
   return value
 }
@@ -5310,6 +5323,67 @@ function parseAliasRules(text) {
   })
 
   return Array.from(map.entries())
+}
+
+function normalizeAliasRuleSignature(value) {
+  return normalizeServiceAliasMatchText(value)
+}
+
+function normalizeAliasRuleOutputSignature(value) {
+  return String(value || '')
+    .split(/\s+/)
+    .map(item => normalizeServiceOutputToken(item))
+    .filter(Boolean)
+    .map(item => normalizeServiceAliasMatchText(item))
+    .join(' ')
+}
+
+function sanitizeAliasRulesText(text) {
+  const map = new Map()
+  let duplicateCount = 0
+  let conflictCount = 0
+
+  parseKeyValueLines(text).forEach(([from, to]) => {
+    const cleanFrom = String(from || '').trim()
+    const cleanTo = String(to || '').trim().replace(/\s+/g, ' ')
+    if (!cleanFrom || !cleanTo) return
+
+    const fromKey = normalizeAliasRuleSignature(cleanFrom)
+    const toKey = normalizeAliasRuleOutputSignature(cleanTo)
+    if (!fromKey || !toKey) return
+
+    if (map.has(fromKey)) {
+      const previous = map.get(fromKey)
+      if (previous.toKey === toKey) {
+        duplicateCount += 1
+        return
+      }
+
+      conflictCount += 1
+    }
+
+    map.set(fromKey, { from: cleanFrom, to: cleanTo, toKey })
+  })
+
+  return {
+    text: Array.from(map.values()).map(rule => `${rule.from}=${rule.to}`).join('\n'),
+    duplicateCount,
+    conflictCount
+  }
+}
+
+function cleanupAliasRulesBeforeSave() {
+  const result = sanitizeAliasRulesText(aliasRulesText.value)
+  const currentText = String(aliasRulesText.value || '').trim()
+  if (result.text && result.text !== currentText) {
+    aliasRulesText.value = result.text
+  }
+
+  const parts = []
+  if (result.duplicateCount > 0) parts.push(`自動移除重複服務同義詞 ${result.duplicateCount} 筆`)
+  if (result.conflictCount > 0) parts.push(`同一店家寫法有衝突 ${result.conflictCount} 筆，已保留最後一筆`)
+
+  return parts.join('，')
 }
 
 function mergeAliasRulesWithDefaults(text) {
@@ -6771,7 +6845,11 @@ function removeCountryFieldRule(index) {
 }
 
 function saveRules() {
-  saveCurrentScopeRules()
+  const aliasCleanupMessage = cleanupAliasRulesBeforeSave()
+  if (aliasCleanupMessage) {
+    statusMessage.value = `${aliasCleanupMessage}。`
+  }
+  return saveCurrentScopeRules()
 }
 
 function loadRules(options = {}) {
