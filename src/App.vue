@@ -1,4 +1,4 @@
-<!-- 第 018-113 批：攝影不露臉優先去重版（依第 018-112 批延續） -->
+<!-- 第 018-115 批：服務加價需明確金額版（依第 018-114 批延續） -->
 <template>
   <!-- 第 018-109 批：待上傳縮圖區禁止拖放版 -->
   <!-- batch018-76-employee-rules-semantic-verify-fix -->
@@ -2047,14 +2047,14 @@ const defaultAmountTransformRules = [
   { from: 3200, to: 3700 }
 ]
 
-// 第 018-113 批：攝影不露臉優先去重版。
+// 第 018-115 批：服務加價需明確金額版。
 const defaultServiceOrder = [
   '共浴', '無套吹', '輕功', '挑逗', '69', '品鮑', '小親親', '奶炮',
   '舔蛋', '按摩', '舌吻', '冰火', '毒龍', '波推', '胸推', '臀推',
   '桑拿', '調情', '漫遊', '0.01套+100', '0.02套', '絲襪',
   '情趣用品', '自慰秀', '2S+500', '2S+1000', '口爆+500',
   '吞精+500', '吞精+1000', '顏射+500', '自慰秀+500',
-  '情趣用品+500', '艷舞+500', '無套內射+1000', '無套內射+1500',
+  '情趣用品+500', '艷舞', '豔舞', '艷舞+500', '無套內射+1000', '無套內射+1500',
   '無套外射+1000', '後門+1000', '攝影不露臉+1000',
   '絲襪+100', '高跟鞋', '2節3S', '3節送1節200分',
   '3節送1節200分3S', '5節送3節200分', '5節送3節400分',
@@ -2163,10 +2163,10 @@ const defaultAliasRules = [
   '買2節送1S=2+1s',
   '買2節以上免費送口爆=口爆+500',
   '買2節以上免費 送口爆=口爆+500',
-  '買2節送艷舞秀=艷舞+500',
-  '買2節送豔舞秀=艷舞+500',
-  '買兩節送艷舞=艷舞+500',
-  '買兩節 送艷舞=艷舞+500',
+  '買2節送艷舞秀=艷舞',
+  '買2節送豔舞秀=艷舞',
+  '買兩節送艷舞=艷舞',
+  '買兩節 送艷舞=艷舞',
   '買3節送1節=3+1',
   '買三節送一節=3+1',
   '包夜5+3=5+3',
@@ -4965,13 +4965,23 @@ function extractServices(block) {
     }
   })
 
-  // 第 018-113 批：同一行或同一筆資料出現「攝影 + 不露臉」時，
-  // 明確視為「攝影不露臉+1000」，避免「攝影+1000」先被同義詞轉成「攝影露臉+1000」。
+  // 第 018-115 批：服務加價必須以文件1明確 +金額 為準。
+  // 同義詞可以改名稱，但不能因舊規則自行補上 +500 / +1000。
   if (shouldPreferNoFacePhotography(block)) {
     found.delete('攝影露臉+1000')
-    found.add('攝影不露臉+1000')
+    found.delete('攝影不露臉+1000')
+    found.add(hasExplicitPaidAmountForService(block, '攝影不露臉+1000') ? '攝影不露臉+1000' : '攝影不露臉')
   }
 
+  // 第 018-114 批：買節「送艷舞 / 送豔舞」屬於贈送服務，
+  // 沒有明確寫 +500 時，不可被舊同義詞誤轉成「艷舞+500」。
+  if (shouldPreferFreeDanceGift(block)) {
+    found.delete('艷舞+500')
+    found.delete('豔舞+500')
+    found.add('艷舞')
+  }
+
+  enforceExplicitPaidServices(found, block)
   normalizeOverlappingServices(found)
 
   const orderIndex = new Map(order.map((item, index) => [normalizeServiceOutputToken(item), index]))
@@ -4992,7 +5002,18 @@ function getServiceOrderIndex(item, orderIndex) {
   const aliasOrderMap = new Map([
     ['2+1s', '2節3S'],
     ['2+1S', '2節3S'],
-    ['深喉嚨', '深喉']
+    ['深喉嚨', '深喉'],
+    ['口爆', '口爆+500'],
+    ['吞精', '吞精+500'],
+    ['顏射', '顏射+500'],
+    ['自慰秀', '自慰秀+500'],
+    ['情趣用品', '情趣用品+500'],
+    ['艷舞', '艷舞+500'],
+    ['絲襪', '絲襪+100'],
+    ['0.01套', '0.01套+100'],
+    ['2S', '2S+500'],
+    ['攝影不露臉', '攝影不露臉+1000'],
+    ['攝影露臉', '攝影露臉+1000']
   ])
 
   const mapped = aliasOrderMap.get(item)
@@ -5063,7 +5084,11 @@ function normalizeOverlappingServices(found) {
     { canonical: '自慰秀', aliases: ['自衛秀'] },
     { canonical: '自慰秀+500', aliases: ['自衛秀+500'] },
     { canonical: '顏射+500', aliases: ['射顏+500'] },
-    { canonical: '攝影不露臉+1000', aliases: ['攝影不露臉', '不露臉攝影+1000', '攝影+1000不露臉'] }
+    { canonical: '攝影不露臉', aliases: ['不露臉攝影', '攝影不露臉'] },
+    { canonical: '攝影不露臉+1000', aliases: ['不露臉攝影+1000', '攝影+1000不露臉'] },
+    { canonical: '攝影露臉+1000', aliases: ['攝影+1000'] },
+    { canonical: '艷舞', aliases: ['豔舞', '艷舞秀', '豔舞秀'] },
+    { canonical: '艷舞+500', aliases: ['豔舞+500'] }
   ]
 
   equivalentServiceRules.forEach(({ canonical, aliases }) => {
@@ -5079,6 +5104,78 @@ function normalizeOverlappingServices(found) {
 
 
 
+
+
+function enforceExplicitPaidServices(found, sourceText) {
+  Array.from(found).forEach(item => {
+    const normalizedItem = normalizeServiceOutputToken(item)
+    if (!hasMonetaryServiceSuffix(normalizedItem)) return
+    if (hasExplicitPaidAmountForService(sourceText, normalizedItem)) return
+
+    found.delete(item)
+    found.delete(normalizedItem)
+    const baseItem = stripMonetaryServiceSuffix(normalizedItem)
+    if (baseItem) found.add(normalizeServiceOutputToken(baseItem))
+  })
+}
+
+function hasMonetaryServiceSuffix(text) {
+  return /(?:\+|加)\d{2,5}\s*$/.test(String(text || '').trim())
+}
+
+function getMonetaryServiceAmount(text) {
+  const match = String(text || '').trim().match(/(?:\+|加)(\d{2,5})\s*$/)
+  return match ? match[1] : ''
+}
+
+function stripMonetaryServiceSuffix(text) {
+  return String(text || '').trim().replace(/(?:\+|加)\d{2,5}\s*$/, '').trim()
+}
+
+function sanitizePaidServiceTokenBySource(sourceText, outputToken) {
+  const token = normalizeServiceOutputToken(outputToken)
+  if (!hasMonetaryServiceSuffix(token)) return token
+  if (hasExplicitPaidAmountForService(sourceText, token)) return token
+  return normalizeServiceOutputToken(stripMonetaryServiceSuffix(token))
+}
+
+function sanitizeAliasTargetBySource(fromText, toText) {
+  return String(toText || '')
+    .split(/\s+/)
+    .map(item => sanitizePaidServiceTokenBySource(fromText, item))
+    .filter(Boolean)
+    .join(' ')
+}
+
+function hasExplicitPaidAmountForService(sourceText, outputToken) {
+  const token = normalizeServiceOutputToken(outputToken)
+  if (!hasMonetaryServiceSuffix(token)) return true
+
+  const amount = getMonetaryServiceAmount(token)
+  const base = stripMonetaryServiceSuffix(token)
+  const source = normalizeServiceAliasMatchText(sourceText)
+  const normalizedToken = normalizeServiceAliasMatchText(token)
+  const normalizedBase = normalizeServiceAliasMatchText(base)
+  if (!source || !amount || !normalizedBase) return false
+
+  if (source.includes(normalizedToken)) return true
+
+  // 攝影文字常寫成「攝影+1000 不露臉」，與標準輸出「攝影不露臉+1000」不同序。
+  if (normalizedBase === normalizeServiceAliasMatchText('攝影不露臉')) {
+    return new RegExp(`攝影(?:\\+|加)?${amount}不露臉`).test(source)
+      || new RegExp(`不露臉攝影(?:\\+|加)?${amount}`).test(source)
+      || new RegExp(`攝影不露臉(?:\\+|加)?${amount}`).test(source)
+  }
+
+  if (normalizedBase === normalizeServiceAliasMatchText('攝影露臉')) {
+    return new RegExp(`攝影(?:露臉)?(?:\\+|加)?${amount}`).test(source)
+  }
+
+  const escapedBase = escapeRegExp(normalizedBase)
+  const directPattern = new RegExp(`${escapedBase}.{0,3}(?:\\+|加)?${amount}`)
+  const reversePattern = new RegExp(`(?:\\+|加)${amount}.{0,3}${escapedBase}`)
+  return directPattern.test(source) || reversePattern.test(source)
+}
 
 function buildTitle({ name, country, height, weight, cup, age }) {
   if (titleMode.value === 'name-country') return `【${name} ${country}】${height} ${weight} ${cup}${age ? ` ${age}` : ''}`
@@ -5156,6 +5253,22 @@ function shouldPreferNoFacePhotography(text) {
     || /不露臉(?:攝影)?(?:\+?\d+)?/.test(value)
 }
 
+
+function shouldPreferFreeDanceGift(text) {
+  const value = normalizeServiceAliasMatchText(text)
+  if (!value) return false
+
+  const hasDanceGift = /買(?:2|3|5)?節?送(?:艷|豔)舞(?:秀)?/.test(value)
+    || /送(?:艷|豔)舞(?:秀)?/.test(value)
+  if (!hasDanceGift) return false
+
+  // 只有明確寫「艷舞+500 / 豔舞+500」時，才保留加價版。
+  const hasExplicitPaidDance = /(?:艷|豔)舞(?:秀)?(?:\+|加)500/.test(value)
+    || /(?:\+|加)500(?:艷|豔)舞(?:秀)?/.test(value)
+
+  return !hasExplicitPaidDance
+}
+
 function normalizeServiceAliasMatchText(text) {
   return normalizeDigits(String(text || ''))
     .normalize('NFKC')
@@ -5181,6 +5294,10 @@ function normalizeServiceOutputToken(text) {
 
   // 第 018-112 批：舊服務寫法 2節3S 統一轉成 2+1s，避免文件2 出現 2+1s 2節3S。
   if (/^2節3s$/i.test(value)) return '2+1s'
+
+  // 第 018-114 批：豔舞統一顯示成「艷舞」，避免同義詞去重時拆成兩種。
+  if (value === '豔舞') return '艷舞'
+  if (value === '豔舞+500') return '艷舞+500'
 
   return value
 }
@@ -5340,12 +5457,16 @@ function parseAliasRules(text) {
   parseKeyValueLines(text).forEach(([from, to]) => {
     if (!from || !to) return
 
+    // 第 018-115 批：舊機房規則若把「沒有明確 +金額」的普通服務存成加價版，
+    // 讀取時自動降回普通服務，避免文件1沒寫加價卻輸出 +500 / +1000。
+    const fixedTo = sanitizeAliasTargetBySource(from, to)
+
     // 同一個店家寫法重複時，以最後一條為準。
     // 例如：
     // 2節3s=2節3S
     // 2節3s=2+1s
     // 最後會使用 2+1s。
-    map.set(from, to)
+    map.set(from, fixedTo)
   })
 
   return Array.from(map.entries())
@@ -5371,7 +5492,8 @@ function sanitizeAliasRulesText(text) {
 
   parseKeyValueLines(text).forEach(([from, to]) => {
     const cleanFrom = String(from || '').trim()
-    const cleanTo = String(to || '').trim().replace(/\s+/g, ' ')
+    const rawTo = String(to || '').trim().replace(/\s+/g, ' ')
+    const cleanTo = sanitizeAliasTargetBySource(cleanFrom, rawTo)
     if (!cleanFrom || !cleanTo) return
 
     const fromKey = normalizeAliasRuleSignature(cleanFrom)
