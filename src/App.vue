@@ -1,4 +1,4 @@
-<!-- 第 018-116 批：地區機房固定顯示與套用前範圍必選版（依第 018-115 批延續） -->
+<!-- 第 018-117 批：前台預覽工具列只保留同步訊息版（依第 018-116 批延續） -->
 <template>
   <!-- 第 018-109 批：待上傳縮圖區禁止拖放版 -->
   <!-- batch018-76-employee-rules-semantic-verify-fix -->
@@ -917,33 +917,7 @@
             {{ databaseSubmitStatusText }}
           </span>
 
-          <button
-            class="primary-btn db-btn preview-database-btn"
-            type="button"
-            :disabled="isDatabaseSubmitting"
-            @click="submitDocument4ToDatabase({ clearDocuments: false, reloadFrontendLadies: true })"
-          >
-            {{ databaseSubmitButtonText }}
-          </button>
-
-          <button
-            v-if="centralWebsiteSyncNeedsRetry"
-            class="ghost-btn central-retry-btn"
-            type="button"
-            :disabled="isDatabaseSubmitting"
-            @click="retryCentralWebsiteSync"
-          >
-            重新同步中央站
-          </button>
-
-          <button class="primary-btn frontend-load-btn" type="button" @click="loadFrontendLadies({ refresh: true })">重新讀取前台資料</button>
-
-          <label>
-            國籍篩選
-            <select v-model="countryFilter">
-              <option v-for="country in frontendCountries" :key="country" :value="country">{{ country }}</option>
-            </select>
-          </label>
+          <!-- 第 018-117 批：前台預覽右上工具列只保留同步狀態訊息；隱藏送出、重新讀取、國籍篩選與重試按鈕。 -->
         </div>
       </div>
 
@@ -1280,7 +1254,7 @@ const LOCATION_SCOPE_STORAGE_KEY = 'auto-document-converter-location-room-option
 const LAST_SCOPE_SELECTION_STORAGE_KEY = 'auto-document-converter-last-scope-selection-current'
 const DEFAULT_MANAGER_SCOPE_TYPE = '定點'
 const CLEAN_START_PANEL_STORAGE_KEY = 'auto-document-converter-clean-start-panel-always-clean-home'
-const ONLINE_READY_VERSION_LABEL = '第 018-116 批：地區機房固定顯示與套用前範圍必選版'
+const ONLINE_READY_VERSION_LABEL = '第 018-117 批：前台預覽工具列只保留同步訊息版'
 const PROTECTED_GLOBAL_RULE_NOTICE = '公版規則已固定保護，不會被清除；若遺失會自動補回預設公版。'
 const SOURCE_SLASH_SPACE_NOTICE = '文件1已啟用斜線自動轉空格，貼上後 / 與 ／ 會自動變成空格。'
 const STAFF_PROFILE_STORAGE_KEY = 'auto-document-converter-current-staff-profile'
