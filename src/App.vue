@@ -1238,6 +1238,7 @@
   </main>
 </template>
 
+<!-- batch018-118-room-sync-payload-fix -->
 <script setup>
 // 第 018-107 批：登入後預設展開地區機房管理，並記住最後使用的縣市 / 地區 / 定點外送 / 機房。
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -1245,6 +1246,7 @@ import { isSupabaseConfigured, supabase } from './supabaseClient'
 
 // 第 009-7 批開始固定使用這兩個正式儲存位置。
 // 之後新版不要再改這兩個 Key，避免每次更新檔案後規則消失。
+// 第 018-118 批：文件4 JSON 與中央網站同步 payload 正式帶入目前機房 room，避免後台顯示未設定機房。
 const RULE_STORAGE_KEY = 'auto-document-converter-rules-current'
 const CONFIRMED_STORAGE_KEY = 'auto-document-converter-confirmed-current'
 const SOURCE_STORAGE_KEY = 'auto-document-converter-source-current'
@@ -3697,26 +3699,32 @@ function buildCentralWebsiteSyncItem(item, previewLady = null) {
   if (!currentPreview) return item
 
   const currentLocation = getCurrentListingLocation()
-  const city = currentPreview.city || item.city || currentLocation.city
-  const district = currentPreview.district || item.district || currentLocation.district
-  const mode = currentPreview.mode || item.mode || currentLocation.mode
-  const room = ''
+  const previewLocation = getLadySyncLocation(currentPreview)
+  const itemLocation = getLadySyncLocation(item)
+  const city = currentPreview.city || item.city || previewLocation.city || itemLocation.city || currentLocation.city
+  const district = currentPreview.district || item.district || previewLocation.district || itemLocation.district || currentLocation.district
+  const mode = currentPreview.mode || item.mode || previewLocation.mode || itemLocation.mode || currentLocation.mode
+  const room = currentPreview.room || currentPreview.sourceRoom || item.room || item.sourceRoom || previewLocation.room || itemLocation.room || currentLocation.room || ruleScopeRoom.value || ''
   const sourceIdentity = currentPreview.sourceIdentity || makeStableLadySourceIdentity({
     ...item,
     ...currentPreview,
-    sourceRoom: currentPreview.sourceRoom || ruleScopeRoom.value
+    city,
+    district,
+    mode,
+    room,
+    sourceRoom: currentPreview.sourceRoom || item.sourceRoom || room || ruleScopeRoom.value
   })
 
   return {
     ...item,
     sourceId: sourceIdentity,
     sourceIdentity,
-    sourceRoom: currentPreview.sourceRoom || ruleScopeRoom.value || '',
+    sourceRoom: currentPreview.sourceRoom || item.sourceRoom || room || ruleScopeRoom.value || '',
     city,
     district,
     mode,
     room,
-    location: item.location || currentPreview.location || [city, district].filter(Boolean).join(' '),
+    location: [city, district, mode, room].filter(Boolean).join(' / '),
     locationInfo: {
       ...(item.locationInfo || {}),
       ...(currentPreview.locationInfo || {}),
@@ -4055,21 +4063,27 @@ function getCurrentListingLocation() {
   const city = cleanScopeText(ruleScopeCity.value || managerSelectedCity.value)
   const district = cleanScopeText(ruleScopeDistrict.value || managerSelectedDistrict.value)
   const mode = cleanScopeText(ruleScopeType.value || managerSelectedType.value)
-  const room = ''
+  const room = cleanScopeText(ruleScopeRoom.value)
 
   return {
     city,
     district,
     mode,
     room,
-    locationText: [city, district, mode].filter(Boolean).join(' / ')
+    locationText: [city, district, mode, room].filter(Boolean).join(' / ')
   }
 }
 
 function validateCurrentListingLocation() {
   const location = getCurrentListingLocation()
-  if (!location.city || !location.district) {
-    const message = '請先在「地區機房管理」選擇縣市與地區，再儲存文件3送出資料庫。'
+  const missingParts = []
+  if (!location.city) missingParts.push('縣市')
+  if (!location.district) missingParts.push('地區')
+  if (!location.mode) missingParts.push('定點 / 外送')
+  if (!location.room) missingParts.push('機房')
+
+  if (missingParts.length) {
+    const message = `請先在「地區機房管理」選完整範圍：${missingParts.join('、')}，再儲存文件3送出資料庫。`
     statusMessage.value = message
     apiStatusText.value = message
     return null
