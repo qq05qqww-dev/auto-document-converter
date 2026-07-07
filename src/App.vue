@@ -1,4 +1,4 @@
-<!-- 第 018-123 批：媒體穩定保留與刪除不整批刷新版（依第 018-122 批延續） -->
+<!-- 第 018-125 批：媒體刪除 404 修正與正式 ID 比對補強版（依第 018-124 批延續） -->
 <template>
   <!-- 第 018-109 批：待上傳縮圖區禁止拖放版 -->
   <!-- batch018-76-employee-rules-semantic-verify-fix -->
@@ -1316,7 +1316,7 @@ const frontendStatusText = ref('尚未讀取前台資料。')
 const frontendLadiesLoaded = ref(false)
 const databaseIdHintByLadyKey = ref({})
 const localUploadedMediaByLadyId = ref({})
-// 第 018-124 批：媒體刪除來源統一。中央網站刪除後，也記錄本機來源刪除抑制，避免重新讀取 converter 舊媒體又回彈。
+// 第 018-125 批：媒體刪除來源統一。中央網站刪除後，不再呼叫不存在的 02 converter 刪除端點，改用本機抑制避免 404 與回彈。
 const DELETED_MEDIA_SUPPRESSION_STORAGE_KEY = 'auto-document-converter-deleted-media-suppression-batch018-124'
 const deletedMediaSuppressionByLadyKey = ref(loadDeletedMediaSuppressionMap())
 const countryFilter = ref('全部')
@@ -2972,10 +2972,10 @@ function normalizeMediaRecordForPreview(media, fallback = {}) {
   }
 }
 
-function getLocalUploadedMediaKeysForLady(lady, hintedDatabaseId = 0) {
+function getLocalUploadedMediaKeysForLady(lady, hintedDatabaseId = '') {
   const keys = []
-  const id = Number(lady?.id || hintedDatabaseId || 0)
-  if (id) keys.push(`id:${id}`)
+  const rawId = String(lady?.id || hintedDatabaseId || '').trim()
+  if (rawId) keys.push(`id:${rawId}`)
 
   const sourceIdentity = lady?.sourceIdentity || lady?.sourceId || makeStableLadySourceIdentity(lady)
   if (sourceIdentity) keys.push(`source:${sourceIdentity}`)
@@ -3121,7 +3121,7 @@ function rememberDeletedMediaForLady(ladyOrId, mediaToRemove, previewLady = null
       )
 
   const keys = targetLady
-    ? getLocalUploadedMediaKeysForLady(targetLady, Number(ladyOrId || targetLady?.id || 0))
+    ? getLocalUploadedMediaKeysForLady(targetLady, ladyOrId || targetLady?.id || '')
     : [`id:${ladyOrId}`]
 
   const tokens = getMediaDuplicateTokens(normalized)
@@ -3151,7 +3151,7 @@ function clearDeletedMediaSuppressionForLadyMedia(ladyOrId, mediaItems = [], pre
         null
       )
   const keys = targetLady
-    ? getLocalUploadedMediaKeysForLady(targetLady, Number(ladyOrId || targetLady?.id || 0))
+    ? getLocalUploadedMediaKeysForLady(targetLady, ladyOrId || targetLady?.id || '')
     : [`id:${ladyOrId}`]
   const uploadedTokens = new Set(normalizedItems.flatMap(getMediaDuplicateTokens))
   if (!uploadedTokens.size) return
@@ -3174,7 +3174,7 @@ function clearDeletedMediaSuppressionForLadyMedia(ladyOrId, mediaItems = [], pre
 
 function getLadyAllMediaForDuplicateCheck(lady) {
   const currentMedia = Array.isArray(lady?.media) ? lady.media : []
-  const localMedia = getLocalUploadedMediaForLady(lady, Number(lady?.id || 0))
+  const localMedia = getLocalUploadedMediaForLady(lady, lady?.id || '')
   return mergeMediaRecords(currentMedia, localMedia)
 }
 
@@ -3218,7 +3218,7 @@ function removeMediaFromLocalPreview(ladyOrId, mediaToRemove, previewLady = null
       )
 
   const keys = targetLady
-    ? getLocalUploadedMediaKeysForLady(targetLady, Number(ladyOrId || 0))
+    ? getLocalUploadedMediaKeysForLady(targetLady, ladyOrId || targetLady?.id || '')
     : [`id:${ladyOrId}`]
 
   const next = { ...localUploadedMediaByLadyId.value }
@@ -3228,10 +3228,10 @@ function removeMediaFromLocalPreview(ladyOrId, mediaToRemove, previewLady = null
   })
   localUploadedMediaByLadyId.value = next
 
-  const targetId = Number(ladyOrId || targetLady?.id || 0)
+  const targetId = String(ladyOrId || targetLady?.id || '').trim()
   if (targetId) {
     frontendLadies.value = frontendLadies.value.map(item => {
-      if (Number(item?.id || 0) !== targetId) return item
+      if (String(item?.id || '') !== targetId) return item
       const media = Array.isArray(item.media) ? item.media.filter(shouldKeep) : []
       return { ...item, media, mediaCount: media.length }
     })
@@ -3253,7 +3253,7 @@ function updateMediaForLocalPreview(ladyOrId, mediaItems = [], previewLady = nul
       )
 
   const keys = targetLady
-    ? getLocalUploadedMediaKeysForLady(targetLady, Number(ladyOrId || 0))
+    ? getLocalUploadedMediaKeysForLady(targetLady, ladyOrId || targetLady?.id || '')
     : [`id:${ladyOrId}`]
 
   const next = { ...localUploadedMediaByLadyId.value }
@@ -3264,10 +3264,10 @@ function updateMediaForLocalPreview(ladyOrId, mediaItems = [], previewLady = nul
   })
   localUploadedMediaByLadyId.value = next
 
-  const targetId = Number(ladyOrId || targetLady?.id || 0)
+  const targetId = String(ladyOrId || targetLady?.id || '').trim()
   if (targetId) {
     frontendLadies.value = frontendLadies.value.map(item => {
-      if (Number(item?.id || 0) !== targetId) return item
+      if (String(item?.id || '') !== targetId) return item
       const nextMedia = mode === 'replace'
         ? normalizedItems
         : mergeMediaRecords(item.media || [], normalizedItems)
@@ -3295,7 +3295,7 @@ function mergeUploadedMediaIntoLocalPreview(ladyOrId, mediaItems = [], previewLa
       )
 
   const keys = targetLady
-    ? getLocalUploadedMediaKeysForLady(targetLady, Number(ladyOrId || 0))
+    ? getLocalUploadedMediaKeysForLady(targetLady, ladyOrId || targetLady?.id || '')
     : [`id:${ladyOrId}`]
 
   const next = { ...localUploadedMediaByLadyId.value }
@@ -3304,10 +3304,10 @@ function mergeUploadedMediaIntoLocalPreview(ladyOrId, mediaItems = [], previewLa
   })
   localUploadedMediaByLadyId.value = next
 
-  const targetId = Number(ladyOrId || targetLady?.id || 0)
+  const targetId = String(ladyOrId || targetLady?.id || '').trim()
   if (targetId) {
     frontendLadies.value = frontendLadies.value.map(item => {
-      if (Number(item?.id || 0) !== targetId) return item
+      if (String(item?.id || '') !== targetId) return item
       return {
         ...item,
         media: mergeMediaRecords(item.media || [], normalizedItems),
@@ -3684,49 +3684,19 @@ function formatAdminUpdatedTime(item) {
 }
 
 async function deleteMediaFromConverterSource(media, lady) {
+  // 第 018-125 批：目前上傳檔案未包含 02 converter Worker，線上也沒有
+  // /api/ladies/media/delete 或 /api/public/ladies/media/delete 端點。
+  // 先不要再呼叫不存在的端點，避免瀏覽器出現 404；正式刪除以 01 中央網站 Worker 為主，
+  // 02 畫面用 deletedMediaSuppressionByLadyKey 抑制舊 converter 媒體回彈。
   const mediaIdText = String(media?.id || media?.mediaId || media?.media_id || '').trim()
   const mediaUrl = String(media?.url || media?.publicUrl || media?.public_url || '').trim()
-  const targetLadyId = Number(lady?.id || media?.listingId || media?.listing_id || 0)
-  if (!targetLadyId && !mediaIdText && !mediaUrl) return { skipped: true }
+  if (!mediaIdText && !mediaUrl) return { skipped: true }
 
-  const payload = {
-    ladyId: targetLadyId || undefined,
-    mediaId: mediaIdText || undefined,
-    id: mediaIdText || undefined,
-    mediaUrl: mediaUrl || undefined,
-    url: mediaUrl || undefined,
-    name: lady?.name || '',
-    country: lady?.country || '',
-    sourceIdentity: lady?.sourceIdentity || ''
+  return {
+    ok: true,
+    skipped: true,
+    message: '02 converter 目前沒有媒體刪除 API；已改由 01 中央網站正式刪除，並在 02 前端記錄刪除抑制，避免重新整理後回彈。'
   }
-
-  const endpoints = [
-    `${apiBaseUrl.value}/api/ladies/media/delete`,
-    `${apiBaseUrl.value}/api/public/ladies/media/delete`
-  ]
-
-  let lastError = null
-  for (const endpoint of endpoints) {
-    try {
-      const { response, data } = await fetchJsonWithTimeout(
-        endpoint,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        },
-        8000,
-        'converter 來源媒體刪除失敗'
-      )
-      if (response.ok && data.ok !== false) return data
-      lastError = new Error(data.message || data.error || `HTTP ${response.status}`)
-      if (![404, 405].includes(Number(response.status))) break
-    } catch (error) {
-      lastError = error
-    }
-  }
-
-  return { ok: false, skipped: true, message: lastError?.message || 'converter 來源沒有提供媒體刪除端點，已改用本機抑制避免回彈。' }
 }
 
 async function deleteLadyMedia(media, lady) {
@@ -3742,14 +3712,16 @@ async function deleteLadyMedia(media, lady) {
 
   saveApiBaseUrl()
 
-  const targetLadyId = Number(lady?.id || media?.listingId || media?.listing_id || 0)
+  const targetLadyIdText = String(lady?.id || media?.listingId || media?.listing_id || '').trim()
+  const targetLadyNumericId = /^\d+$/.test(targetLadyIdText) ? Number(targetLadyIdText) : 0
+  const targetLadyRef = targetLadyIdText || lady
   const previewLady = currentDocumentPreviewLadies.value.find(item => String(item?.id || '') === String(lady?.id || '')) || lady || null
 
   try {
     const accessToken = await getCentralWebsiteAccessToken()
     let detail = null
-    if (targetLadyId) {
-      detail = await fetchPublicLadyDetail(targetLadyId, { refresh: true }).catch(() => null)
+    if (targetLadyNumericId) {
+      detail = await fetchPublicLadyDetail(targetLadyNumericId, { refresh: true }).catch(() => null)
     }
     const syncItem = buildCentralWebsiteSyncItem(detail || lady || {}, previewLady)
     const { response, data } = await fetchJsonWithTimeout(
@@ -3766,7 +3738,7 @@ async function deleteLadyMedia(media, lady) {
           sourceIdentity: syncItem.sourceIdentity || syncItem.sourceId || lady?.sourceIdentity || '',
           mediaId: mediaIdText,
           mediaUrl,
-          listingId: syncItem.centralListingId || syncItem.listingId || ''
+          listingId: syncItem.centralListingId || syncItem.listingId || targetLadyIdText || ''
         })
       },
       15000,
@@ -3777,14 +3749,14 @@ async function deleteLadyMedia(media, lady) {
       throw new Error(data.message || data.error || `HTTP ${response.status}`)
     }
 
-    rememberDeletedMediaForLady(targetLadyId || lady, media, previewLady)
+    rememberDeletedMediaForLady(targetLadyRef, media, previewLady)
     const converterDeleteResult = await deleteMediaFromConverterSource(media, detail || lady || {}).catch(error => ({ ok: false, message: error.message || String(error) }))
 
     const serverMedia = mergeMediaRecords([], data?.data?.media || data?.media || [])
     if (serverMedia.length || Array.isArray(data?.data?.media) || Array.isArray(data?.media)) {
-      updateMediaForLocalPreview(targetLadyId || lady, serverMedia, previewLady, 'replace')
+      updateMediaForLocalPreview(targetLadyRef, serverMedia, previewLady, 'replace')
     } else {
-      removeMediaFromLocalPreview(targetLadyId || lady, media, previewLady)
+      removeMediaFromLocalPreview(targetLadyRef, media, previewLady)
     }
     if (
       (mediaViewerItem.value?.id && mediaViewerItem.value.id === media?.id) ||
@@ -4049,9 +4021,9 @@ async function uploadLadyMedia() {
   let skippedDuplicateCount = 0
   let currentFile = null
   const uploadedCentralMediaItems = []
-  const uploadTargetLadyId = Number(mediaUploadLadyId.value || 0)
-  const uploadTargetPreviewLady = currentDocumentPreviewLadies.value.find(lady => String(lady.id || '') === String(mediaUploadLadyId.value || '')) || null
-  const uploadDuplicateCheckLady = uploadTargetPreviewLady || frontendLadies.value.find(lady => Number(lady?.id || 0) === uploadTargetLadyId) || null
+  const uploadTargetLadyId = String(mediaUploadLadyId.value || '').trim()
+  const uploadTargetPreviewLady = currentDocumentPreviewLadies.value.find(lady => String(lady.id || '') === uploadTargetLadyId) || null
+  const uploadDuplicateCheckLady = uploadTargetPreviewLady || frontendLadies.value.find(lady => String(lady?.id || '') === uploadTargetLadyId) || null
 
   initializeMediaUploadProgress()
   isMediaUploading.value = true
@@ -4113,7 +4085,7 @@ async function uploadLadyMedia() {
     }
 
     try {
-      const targetLadyId = Number(mediaUploadLadyId.value || uploadTargetLadyId || 0)
+      const targetLadyId = String(mediaUploadLadyId.value || uploadTargetLadyId || '').trim()
 
       if (uploadedCentralMediaItems.length) {
         await bindUploadedMediaDirectlyToCentralWebsite(targetLadyId, uploadedCentralMediaItems, {
@@ -4147,7 +4119,7 @@ async function uploadLadyMedia() {
 }
 
 async function syncSelectedLadyToCentralWebsite() {
-  const targetLadyId = Number(mediaUploadLadyId.value || 0)
+  const targetLadyId = String(mediaUploadLadyId.value || '').trim()
   if (!targetLadyId || isCurrentDocumentPreviewLadyId(mediaUploadLadyId.value)) {
     mediaUploadStatusText.value = '請先選擇已送出到資料庫、具有真實 ID 的小姐。'
     return
@@ -4687,10 +4659,13 @@ async function postCentralWebsiteSyncItems(items, options = {}) {
 }
 
 async function syncSingleLadyToCentralWebsite(ladyId, options = {}) {
-  const id = Number(ladyId || 0)
-  if (!id) throw new Error('找不到要同步的小姐資料庫 ID。')
+  const idText = String(ladyId || '').trim()
+  if (!idText) throw new Error('找不到要同步的小姐資料庫 ID。')
 
-  const item = await fetchPublicLadyDetail(id, { refresh: true })
+  const numericId = /^\d+$/.test(idText) ? Number(idText) : 0
+  const item = numericId
+    ? await fetchPublicLadyDetail(numericId, { refresh: true })
+    : frontendLadies.value.find(lady => String(lady?.id || '') === idText)
   if (!item) throw new Error('讀不到目前小姐的完整資料。')
 
   const syncItem = buildCentralWebsiteSyncItem(item, options.previewLady || null)
