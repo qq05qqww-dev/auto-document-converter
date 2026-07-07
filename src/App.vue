@@ -1,4 +1,4 @@
-<!-- 第 018-122 批：媒體防重複上傳與正式刪除版（依第 018-121 批延續） -->
+<!-- 第 018-123 批：媒體穩定保留與刪除不整批刷新版（依第 018-122 批延續） -->
 <template>
   <!-- 第 018-109 批：待上傳縮圖區禁止拖放版 -->
   <!-- batch018-76-employee-rules-semantic-verify-fix -->
@@ -1256,7 +1256,7 @@ const LOCATION_SCOPE_STORAGE_KEY = 'auto-document-converter-location-room-option
 const LAST_SCOPE_SELECTION_STORAGE_KEY = 'auto-document-converter-last-scope-selection-current'
 const DEFAULT_MANAGER_SCOPE_TYPE = '定點'
 const CLEAN_START_PANEL_STORAGE_KEY = 'auto-document-converter-clean-start-panel-always-clean-home'
-const ONLINE_READY_VERSION_LABEL = '第 018-120 批：同步後回傳ID與媒體可上傳修正版'
+const ONLINE_READY_VERSION_LABEL = '第 018-123 批：媒體穩定保留與刪除不整批刷新修正版'
 const PROTECTED_GLOBAL_RULE_NOTICE = '公版規則已固定保護，不會被清除；若遺失會自動補回預設公版。'
 const SOURCE_SLASH_SPACE_NOTICE = '文件1已啟用斜線自動轉空格，貼上後 / 與 ／ 會自動變成空格。'
 const STAFF_PROFILE_STORAGE_KEY = 'auto-document-converter-current-staff-profile'
@@ -3124,6 +3124,45 @@ function removeMediaFromLocalPreview(ladyOrId, mediaToRemove, previewLady = null
   }
 }
 
+
+// 第 018-123 批：媒體刪除 / 綁定後只更新目前小姐，不再整批重讀覆蓋本地剛上傳媒體。
+function updateMediaForLocalPreview(ladyOrId, mediaItems = [], previewLady = null, mode = 'merge') {
+  const normalizedItems = mergeMediaRecords([], mediaItems)
+  const targetLady = typeof ladyOrId === 'object'
+    ? ladyOrId
+    : (
+        previewLady ||
+        frontendLadies.value.find(item => String(item?.id || '') === String(ladyOrId || '')) ||
+        currentDocumentPreviewLadies.value.find(item => String(item?.id || '') === String(ladyOrId || '')) ||
+        null
+      )
+
+  const keys = targetLady
+    ? getLocalUploadedMediaKeysForLady(targetLady, Number(ladyOrId || 0))
+    : [`id:${ladyOrId}`]
+
+  const next = { ...localUploadedMediaByLadyId.value }
+  keys.forEach(key => {
+    next[key] = mode === 'replace'
+      ? normalizedItems
+      : mergeMediaRecords(next[key] || [], normalizedItems)
+  })
+  localUploadedMediaByLadyId.value = next
+
+  const targetId = Number(ladyOrId || targetLady?.id || 0)
+  if (targetId) {
+    frontendLadies.value = frontendLadies.value.map(item => {
+      if (Number(item?.id || 0) !== targetId) return item
+      const nextMedia = mode === 'replace'
+        ? normalizedItems
+        : mergeMediaRecords(item.media || [], normalizedItems)
+      return { ...item, media: nextMedia, mediaCount: nextMedia.length }
+    })
+  }
+
+  return normalizedItems.length
+}
+
 function mergeUploadedMediaIntoLocalPreview(ladyOrId, mediaItems = [], previewLady = null) {
   const normalizedItems = (Array.isArray(mediaItems) ? mediaItems : [])
     .map(item => normalizeMediaRecordForPreview(item, { isLocalUploadBound: true }))
@@ -3233,7 +3272,12 @@ async function bindUploadedMediaDirectlyToCentralWebsite(ladyId, mediaItems = []
     throw new Error(data.message || data.error || `中央網站媒體直接綁定失敗：HTTP ${response.status}`)
   }
 
-  mergeUploadedMediaIntoLocalPreview(id, normalizedMedia, previewLady)
+  const serverMedia = mergeMediaRecords([], data?.data?.media || data?.media || [])
+  if (serverMedia.length) {
+    updateMediaForLocalPreview(id, serverMedia, previewLady, 'replace')
+  } else {
+    mergeUploadedMediaIntoLocalPreview(id, normalizedMedia, previewLady)
+  }
   return data
 }
 
@@ -3568,7 +3612,12 @@ async function deleteLadyMedia(media, lady) {
       throw new Error(data.message || data.error || `HTTP ${response.status}`)
     }
 
-    removeMediaFromLocalPreview(targetLadyId || lady, media, previewLady)
+    const serverMedia = mergeMediaRecords([], data?.data?.media || data?.media || [])
+    if (serverMedia.length || Array.isArray(data?.data?.media) || Array.isArray(data?.media)) {
+      updateMediaForLocalPreview(targetLadyId || lady, serverMedia, previewLady, 'replace')
+    } else {
+      removeMediaFromLocalPreview(targetLadyId || lady, media, previewLady)
+    }
     if (
       (mediaViewerItem.value?.id && mediaViewerItem.value.id === media?.id) ||
       (mediaViewerItem.value?.url && mediaViewerItem.value.url === mediaUrl)
@@ -3576,8 +3625,7 @@ async function deleteLadyMedia(media, lady) {
       closeMediaViewer()
     }
 
-    await loadFrontendLadies({ refresh: true })
-    frontendStatusText.value = data.message || '媒體已從中央網站正式刪除。'
+    frontendStatusText.value = data.message || '媒體已從中央網站正式刪除，已只更新目前小姐，不再整批刷新覆蓋。'
   } catch (error) {
     frontendStatusText.value = `刪除媒體失敗：${error.message || error}`
   }
@@ -3896,12 +3944,6 @@ async function uploadLadyMedia() {
 
     try {
       const targetLadyId = Number(mediaUploadLadyId.value || uploadTargetLadyId || 0)
-      await syncSingleLadyToCentralWebsite(targetLadyId, {
-        maxAttempts: 3,
-        onRetry: ({ nextAttempt, maxAttempts }) => {
-          mediaUploadStatusText.value = `媒體已上傳到資料庫；中央網站同步暫時失敗，正在進行第 ${nextAttempt} / ${maxAttempts} 次重試...`
-        }
-      })
 
       if (uploadedCentralMediaItems.length) {
         await bindUploadedMediaDirectlyToCentralWebsite(targetLadyId, uploadedCentralMediaItems, {
@@ -3910,17 +3952,16 @@ async function uploadLadyMedia() {
         })
       }
 
-      await loadFrontendLadies({ refresh: true })
       if (uploadedCentralMediaItems.length) {
-        mergeUploadedMediaIntoLocalPreview(targetLadyId, uploadedCentralMediaItems, uploadTargetPreviewLady)
+        mergeUploadedMediaIntoLocalPreview(targetLadyId || mediaUploadLadyId.value, uploadedCentralMediaItems, uploadTargetPreviewLady)
       }
 
-      mediaUploadStatusText.value = `媒體疊加上傳完成：成功 ${successCount} 個，略過重複 ${skippedDuplicateCount} 個，失敗 ${failCount} 個。已直接綁定中央網站正確 ID 並同步目前小姐。`
+      mediaUploadStatusText.value = `媒體疊加上傳完成：成功 ${successCount} 個，略過重複 ${skippedDuplicateCount} 個，失敗 ${failCount} 個。已直接綁定中央網站正確 ID；沒有再重送整筆小姐資料，避免媒體被覆蓋。`
     } catch (syncError) {
       if (uploadedCentralMediaItems.length) {
         mergeUploadedMediaIntoLocalPreview(uploadTargetLadyId || mediaUploadLadyId.value, uploadedCentralMediaItems, uploadTargetPreviewLady)
       }
-      mediaUploadStatusText.value = `媒體已上傳到資料庫，但中央網站直接綁定或同步失敗：${syncError.message || syncError}。圖片已先保留在目前畫面，可稍後再次同步。`
+      mediaUploadStatusText.value = `媒體已上傳到資料庫，但中央網站直接綁定失敗：${syncError.message || syncError}。圖片已先保留在目前畫面，可稍後重新同步目前小姐。`
     }
   } catch (error) {
     isMediaUploading.value = false
