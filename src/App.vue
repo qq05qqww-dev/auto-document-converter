@@ -1,4 +1,4 @@
-<!-- 第 018-125 批：媒體刪除 404 修正與正式 ID 比對補強版（依第 018-124 批延續） -->
+<!-- 第 018-126 批：中央媒體來源統一與前後台數量同步修正版（依第 018-125 批延續） -->
 <template>
   <!-- 第 018-109 批：待上傳縮圖區禁止拖放版 -->
   <!-- batch018-76-employee-rules-semantic-verify-fix -->
@@ -1256,7 +1256,7 @@ const LOCATION_SCOPE_STORAGE_KEY = 'auto-document-converter-location-room-option
 const LAST_SCOPE_SELECTION_STORAGE_KEY = 'auto-document-converter-last-scope-selection-current'
 const DEFAULT_MANAGER_SCOPE_TYPE = '定點'
 const CLEAN_START_PANEL_STORAGE_KEY = 'auto-document-converter-clean-start-panel-always-clean-home'
-const ONLINE_READY_VERSION_LABEL = '第 018-123 批：媒體穩定保留與刪除不整批刷新修正版'
+const ONLINE_READY_VERSION_LABEL = '第 018-126 批：中央媒體來源統一與前後台數量同步修正版'
 const PROTECTED_GLOBAL_RULE_NOTICE = '公版規則已固定保護，不會被清除；若遺失會自動補回預設公版。'
 const SOURCE_SLASH_SPACE_NOTICE = '文件1已啟用斜線自動轉空格，貼上後 / 與 ／ 會自動變成空格。'
 const STAFF_PROFILE_STORAGE_KEY = 'auto-document-converter-current-staff-profile'
@@ -1316,6 +1316,8 @@ const frontendStatusText = ref('尚未讀取前台資料。')
 const frontendLadiesLoaded = ref(false)
 const databaseIdHintByLadyKey = ref({})
 const localUploadedMediaByLadyId = ref({})
+const centralWebsiteMediaByLadyKey = ref({})
+// 第 018-126 批：媒體顯示以 01 中央網站 listing_media 為權威來源；converter 本機來源只當未查到中央媒體前的 fallback。
 // 第 018-125 批：媒體刪除來源統一。中央網站刪除後，不再呼叫不存在的 02 converter 刪除端點，改用本機抑制避免 404 與回彈。
 const DELETED_MEDIA_SUPPRESSION_STORAGE_KEY = 'auto-document-converter-deleted-media-suppression-batch018-124'
 const deletedMediaSuppressionByLadyKey = ref(loadDeletedMediaSuppressionMap())
@@ -2957,19 +2959,31 @@ async function resolvePreviewLadyToDatabaseId(previewLadyId) {
 function normalizeMediaRecordForPreview(media, fallback = {}) {
   const url = String(media?.url || media?.publicUrl || media?.public_url || media?.href || '').trim()
   if (!url) return null
+  const mediaType = resolveMediaTypeFromRecord(media, fallback, url)
 
   return {
     id: media?.id || media?.mediaId || media?.media_id || media?.key || url,
     url,
-    mediaType: String(media?.mediaType || media?.media_type || fallback.mediaType || 'image').toLowerCase().startsWith('video')
-      ? 'video'
-      : 'image',
+    mediaType,
     caption: String(media?.caption || media?.note || media?.name || fallback.caption || '').trim(),
     note: String(media?.note || media?.caption || media?.name || fallback.caption || '').trim(),
     sortOrder: Number(media?.sortOrder ?? media?.sort_order ?? fallback.sortOrder ?? 999),
     isCover: Boolean(media?.isCover ?? media?.is_cover ?? fallback.isCover ?? false),
     isLocalUploadBound: Boolean(fallback.isLocalUploadBound)
   }
+}
+
+function resolveMediaTypeFromRecord(media = {}, fallback = {}, url = '') {
+  const explicitType = String(media?.mediaType || media?.media_type || media?.type || fallback.mediaType || '').toLowerCase()
+  if (explicitType.startsWith('video')) return 'video'
+  if (explicitType.startsWith('image')) return 'image'
+
+  const cleanUrl = String(url || media?.url || media?.publicUrl || media?.public_url || '')
+    .split('?')[0]
+    .split('#')[0]
+    .toLowerCase()
+  if (/\.(mp4|webm|mov|m4v|avi|mkv)$/.test(cleanUrl)) return 'video'
+  return 'image'
 }
 
 function getLocalUploadedMediaKeysForLady(lady, hintedDatabaseId = '') {
@@ -2984,6 +2998,58 @@ function getLocalUploadedMediaKeysForLady(lady, hintedDatabaseId = '') {
   if (previewKey) keys.push(`key:${previewKey}`)
 
   return Array.from(new Set(keys.filter(Boolean)))
+}
+
+
+function getCentralWebsiteMediaKeysForLady(lady, hintedDatabaseId = 0) {
+  return getLocalUploadedMediaKeysForLady(lady, hintedDatabaseId)
+}
+
+function getTargetLadyForMediaKey(ladyOrId, previewLady = null) {
+  if (ladyOrId && typeof ladyOrId === 'object') return ladyOrId
+  return previewLady ||
+    frontendLadies.value.find(item => String(item?.id || '') === String(ladyOrId || '')) ||
+    currentDocumentPreviewLadies.value.find(item => String(item?.id || '') === String(ladyOrId || '')) ||
+    null
+}
+
+function getMediaKeysForTarget(ladyOrId, previewLady = null) {
+  const targetLady = getTargetLadyForMediaKey(ladyOrId, previewLady)
+  if (targetLady) return getCentralWebsiteMediaKeysForLady(targetLady, ladyOrId || targetLady?.id || '')
+  const rawId = String(ladyOrId || '').trim()
+  return rawId ? [`id:${rawId}`] : []
+}
+
+function setCentralWebsiteMediaForLady(ladyOrId, mediaItems = [], previewLady = null) {
+  const normalizedItems = mergeMediaRecords([], mediaItems)
+  const keys = getMediaKeysForTarget(ladyOrId, previewLady)
+  if (!keys.length) return normalizedItems.length
+
+  const next = { ...centralWebsiteMediaByLadyKey.value }
+  keys.forEach(key => {
+    next[key] = normalizedItems
+  })
+  centralWebsiteMediaByLadyKey.value = next
+
+  const targetId = String(ladyOrId || previewLady?.id || '').trim()
+  if (targetId) {
+    frontendLadies.value = frontendLadies.value.map(item => {
+      if (String(item?.id || '') !== targetId) return item
+      return { ...item, media: normalizedItems, mediaCount: normalizedItems.length }
+    })
+  }
+
+  return normalizedItems.length
+}
+
+function getCentralWebsiteMediaSnapshotForLady(lady, hintedDatabaseId = 0) {
+  const keys = getCentralWebsiteMediaKeysForLady(lady, hintedDatabaseId)
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(centralWebsiteMediaByLadyKey.value, key)) {
+      return mergeMediaRecords([], centralWebsiteMediaByLadyKey.value[key] || [])
+    }
+  }
+  return null
 }
 
 function getLocalUploadedMediaForLady(lady, hintedDatabaseId = 0) {
@@ -3238,6 +3304,67 @@ function removeMediaFromLocalPreview(ladyOrId, mediaToRemove, previewLady = null
   }
 }
 
+function isSameMediaRecordForDelete(item, target) {
+  const itemMedia = normalizeMediaRecordForPreview(item)
+  const targetMedia = normalizeMediaRecordForPreview(target)
+  if (!itemMedia || !targetMedia) return false
+
+  const itemId = String(itemMedia.id || '')
+  const targetId = String(targetMedia.id || '')
+  if (itemId && targetId && itemId === targetId) return true
+
+  if (itemMedia.url && targetMedia.url && itemMedia.url === targetMedia.url) return true
+
+  const targetTokens = new Set(getMediaDuplicateTokens(targetMedia))
+  if (!targetTokens.size) return false
+  return getMediaDuplicateTokens(itemMedia).some(token => targetTokens.has(token))
+}
+
+function getRemainingMediaAfterDelete(mediaItems = [], mediaToRemove = null) {
+  return mergeMediaRecords([], mediaItems)
+    .filter(item => !isSameMediaRecordForDelete(item, mediaToRemove))
+    .map((item, index) => ({
+      ...item,
+      sortOrder: index + 1,
+      isCover: index === 0
+    }))
+}
+
+function getBestMediaSnapshotForLady(detail, lady, previewLady) {
+  return mergeMediaRecords(
+    [],
+    [
+      ...(Array.isArray(detail?.media) ? detail.media : []),
+      ...(Array.isArray(lady?.media) ? lady.media : []),
+      ...(Array.isArray(previewLady?.media) ? previewLady.media : [])
+    ]
+  )
+}
+
+async function syncRemainingMediaSnapshotToCentralWebsite(detail, lady, previewLady, remainingMedia) {
+  const baseItem = detail || lady || previewLady || {}
+  const syncItem = buildCentralWebsiteSyncItem(
+    {
+      ...baseItem,
+      media: remainingMedia,
+      mediaCount: remainingMedia.length,
+      replaceMedia: true,
+      mediaReplaceMode: 'replace'
+    },
+    previewLady || lady || null
+  )
+
+  syncItem.media = remainingMedia
+  syncItem.mediaCount = remainingMedia.length
+  syncItem.replaceMedia = true
+  syncItem.mediaReplaceMode = 'replace'
+
+  return postCentralWebsiteSyncItems([syncItem], {
+    maxAttempts: 1,
+    timeoutMs: CENTRAL_WEBSITE_SYNC_TIMEOUT_MS
+  })
+}
+
 
 // 第 018-124 批：媒體刪除 / 綁定後只更新目前小姐，並以中央刪除結果抑制 converter 舊媒體回彈。
 function updateMediaForLocalPreview(ladyOrId, mediaItems = [], previewLady = null, mode = 'merge') {
@@ -3389,12 +3516,73 @@ async function bindUploadedMediaDirectlyToCentralWebsite(ladyId, mediaItems = []
   }
 
   const serverMedia = mergeMediaRecords([], data?.data?.media || data?.media || [])
-  if (serverMedia.length) {
+  if (serverMedia.length || Array.isArray(data?.data?.media) || Array.isArray(data?.media)) {
+    setCentralWebsiteMediaForLady(id, serverMedia, previewLady)
     updateMediaForLocalPreview(id, serverMedia, previewLady, 'replace')
   } else {
     mergeUploadedMediaIntoLocalPreview(id, normalizedMedia, previewLady)
+    await fetchCentralWebsiteMediaForLady(previewLady || detail || { id }, { previewLady, allowMissing: true }).catch(() => null)
   }
   return data
+}
+
+async function fetchCentralWebsiteMediaForLady(lady, options = {}) {
+  if (!lady) return []
+
+  const previewLady = options.previewLady || lady
+  const syncItem = buildCentralWebsiteSyncItem(lady, previewLady)
+  const accessToken = await getCentralWebsiteAccessToken()
+  const { response, data } = await fetchJsonWithTimeout(
+    `${CENTRAL_WEBSITE_API_BASE_URL}/api/integrations/converter/central-listings/media/lookup`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        'X-Converter-Apikey': SUPABASE_PUBLIC_API_KEY
+      },
+      body: JSON.stringify({
+        item: syncItem,
+        sourceIdentity: syncItem.sourceIdentity || syncItem.sourceId || lady?.sourceIdentity || '',
+        listingId: syncItem.centralListingId || syncItem.listingId || lady?.centralListingId || lady?.listingId || ''
+      })
+    },
+    Number(options.timeoutMs || CENTRAL_WEBSITE_SYNC_TIMEOUT_MS),
+    '讀取中央網站媒體清單失敗'
+  )
+
+  if (!response.ok || data.ok === false) {
+    if (options.allowMissing && [404, 409].includes(Number(response.status || 0))) {
+      return []
+    }
+    throw new Error(data.message || data.error || `讀取中央網站媒體清單失敗：HTTP ${response.status}`)
+  }
+
+  const serverMedia = mergeMediaRecords([], data?.data?.media || data?.media || [])
+  setCentralWebsiteMediaForLady(lady, serverMedia, previewLady)
+  return serverMedia
+}
+
+async function refreshCentralWebsiteMediaForCurrentDocument(options = {}) {
+  const ladies = currentDocumentPreviewLadies.value
+  if (!Array.isArray(ladies) || !ladies.length) return { total: 0, refreshed: 0, failed: 0 }
+
+  let refreshed = 0
+  let failed = 0
+  for (const lady of ladies.slice(0, 80)) {
+    try {
+      await fetchCentralWebsiteMediaForLady(lady, {
+        allowMissing: true,
+        timeoutMs: options.timeoutMs || 9000
+      })
+      refreshed += 1
+    } catch (error) {
+      failed += 1
+      if (!options.silent) console.warn('讀取中央網站媒體清單失敗：', error)
+    }
+  }
+
+  return { total: ladies.length, refreshed, failed }
 }
 
 
@@ -3410,6 +3598,7 @@ const currentDocumentPreviewLadies = computed(() => {
       const assessment = assessLadyDatabaseSync(item)
       const dbLady = assessment.match
       const hintedDatabaseId = getDatabaseIdHint(item)
+      const centralMediaSnapshot = getCentralWebsiteMediaSnapshotForLady(item, hintedDatabaseId)
 
       return {
         id: dbLady?.id || hintedDatabaseId || `current-document-${index + 1}`,
@@ -3432,10 +3621,12 @@ const currentDocumentPreviewLadies = computed(() => {
         cup: body.cup || '',
         age: body.age ?? '',
         rawText: item.rawText || '',
-        media: mergeMediaRecords(
-          filterDeletedSuppressedMediaForLady(item, Array.isArray(dbLady?.media) ? dbLady.media : [], hintedDatabaseId),
-          getLocalUploadedMediaForLady(item, hintedDatabaseId)
-        ),
+        media: centralMediaSnapshot !== null
+          ? centralMediaSnapshot
+          : mergeMediaRecords(
+              filterDeletedSuppressedMediaForLady(item, Array.isArray(dbLady?.media) ? dbLady.media : [], hintedDatabaseId),
+              getLocalUploadedMediaForLady(item, hintedDatabaseId)
+            ),
         pricePlans: Array.isArray(item.pricePlans)
           ? item.pricePlans.map((plan, planIndex) => ({
               id: `current-document-${index + 1}-price-${planIndex + 1}`,
@@ -3683,22 +3874,6 @@ function formatAdminUpdatedTime(item) {
   return `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
-async function deleteMediaFromConverterSource(media, lady) {
-  // 第 018-125 批：目前上傳檔案未包含 02 converter Worker，線上也沒有
-  // /api/ladies/media/delete 或 /api/public/ladies/media/delete 端點。
-  // 先不要再呼叫不存在的端點，避免瀏覽器出現 404；正式刪除以 01 中央網站 Worker 為主，
-  // 02 畫面用 deletedMediaSuppressionByLadyKey 抑制舊 converter 媒體回彈。
-  const mediaIdText = String(media?.id || media?.mediaId || media?.media_id || '').trim()
-  const mediaUrl = String(media?.url || media?.publicUrl || media?.public_url || '').trim()
-  if (!mediaIdText && !mediaUrl) return { skipped: true }
-
-  return {
-    ok: true,
-    skipped: true,
-    message: '02 converter 目前沒有媒體刪除 API；已改由 01 中央網站正式刪除，並在 02 前端記錄刪除抑制，避免重新整理後回彈。'
-  }
-}
-
 async function deleteLadyMedia(media, lady) {
   const mediaIdText = String(media?.id || media?.mediaId || media?.media_id || '').trim()
   const mediaUrl = String(media?.url || media?.publicUrl || media?.public_url || '').trim()
@@ -3723,6 +3898,8 @@ async function deleteLadyMedia(media, lady) {
     if (targetLadyNumericId) {
       detail = await fetchPublicLadyDetail(targetLadyNumericId, { refresh: true }).catch(() => null)
     }
+    const mediaSnapshotBeforeDelete = getBestMediaSnapshotForLady(detail, lady, previewLady)
+    const remainingMediaSnapshot = getRemainingMediaAfterDelete(mediaSnapshotBeforeDelete, media)
     const syncItem = buildCentralWebsiteSyncItem(detail || lady || {}, previewLady)
     const { response, data } = await fetchJsonWithTimeout(
       `${CENTRAL_WEBSITE_API_BASE_URL}/api/integrations/converter/central-listings/media/delete`,
@@ -3750,12 +3927,19 @@ async function deleteLadyMedia(media, lady) {
     }
 
     rememberDeletedMediaForLady(targetLadyRef, media, previewLady)
-    const converterDeleteResult = await deleteMediaFromConverterSource(media, detail || lady || {}).catch(error => ({ ok: false, message: error.message || String(error) }))
-
     const serverMedia = mergeMediaRecords([], data?.data?.media || data?.media || [])
-    if (serverMedia.length || Array.isArray(data?.data?.media) || Array.isArray(data?.media)) {
-      updateMediaForLocalPreview(targetLadyRef, serverMedia, previewLady, 'replace')
+    const nextMedia = (serverMedia.length || Array.isArray(data?.data?.media) || Array.isArray(data?.media))
+      ? serverMedia
+      : remainingMediaSnapshot
+
+    if (nextMedia.length || mediaSnapshotBeforeDelete.length) {
+      await syncRemainingMediaSnapshotToCentralWebsite(detail || lady || {}, lady || {}, previewLady, nextMedia).catch(error => {
+        console.warn('sync remaining media snapshot failed', error)
+      })
+      setCentralWebsiteMediaForLady(targetLadyRef, nextMedia, previewLady)
+      updateMediaForLocalPreview(targetLadyRef, nextMedia, previewLady, 'replace')
     } else {
+      setCentralWebsiteMediaForLady(targetLadyRef, [], previewLady)
       removeMediaFromLocalPreview(targetLadyRef, media, previewLady)
     }
     if (
@@ -3765,11 +3949,29 @@ async function deleteLadyMedia(media, lady) {
       closeMediaViewer()
     }
 
-    frontendStatusText.value = converterDeleteResult?.ok === false
-      ? `媒體已從中央網站刪除，並已記錄 converter 來源刪除抑制；重新整理不會再從舊來源補回。${converterDeleteResult.message ? `（${converterDeleteResult.message}）` : ''}`
-      : '媒體已從中央網站與 converter 來源同步刪除，已只更新目前小姐，不再整批刷新覆蓋。'
+    frontendStatusText.value = '媒體已從 01 中央網站正式刪除；02 預覽、01 後台、01 前台會以中央 listing_media 數量為準。'
   } catch (error) {
-    frontendStatusText.value = `刪除媒體失敗：${error.message || error}`
+    const message = String(error?.message || error || '')
+    if (/404|not\s*found|找不到/i.test(message)) {
+      rememberDeletedMediaForLady(targetLadyRef, media, previewLady)
+      removeMediaFromLocalPreview(targetLadyRef, media, previewLady)
+      if (
+        (mediaViewerItem.value?.id && mediaViewerItem.value.id === media?.id) ||
+        (mediaViewerItem.value?.url && mediaViewerItem.value.url === mediaUrl)
+      ) {
+        closeMediaViewer()
+      }
+      const fallbackMediaSnapshot = getRemainingMediaAfterDelete(getBestMediaSnapshotForLady(null, lady, previewLady), media)
+      await syncRemainingMediaSnapshotToCentralWebsite(lady || {}, lady || {}, previewLady, fallbackMediaSnapshot).catch(syncError => {
+        console.warn('sync remaining media snapshot after 404 failed', syncError)
+      })
+      setCentralWebsiteMediaForLady(targetLadyRef, fallbackMediaSnapshot, previewLady)
+      updateMediaForLocalPreview(targetLadyRef, fallbackMediaSnapshot, previewLady, 'replace')
+      frontendStatusText.value = '中央網站已找不到這筆媒體，已從目前預覽移除並同步剩餘媒體清單；後台重新整理後應會一致。'
+      return
+    }
+
+    frontendStatusText.value = `刪除媒體失敗：${message}`
   }
 }
 
@@ -4131,13 +4333,17 @@ async function syncSelectedLadyToCentralWebsite() {
   mediaUploadStatusText.value = '正在讀取目前小姐的完整資料與媒體，並同步中央網站...'
 
   try {
+    const previewLady = currentDocumentPreviewLadies.value.find(lady => String(lady?.id || '') === targetLadyId) || null
     const data = await syncSingleLadyToCentralWebsite(targetLadyId, {
+      previewLady,
+      replaceMedia: true,
       maxAttempts: 3,
       onRetry: ({ nextAttempt, maxAttempts }) => {
         mediaUploadStatusText.value = `中央網站同步暫時失敗，正在進行第 ${nextAttempt} / ${maxAttempts} 次重試...`
       }
     })
     mediaUploadStatusText.value = data?.message || '目前小姐的圖片、影片與資料已同步到中央網站。'
+    await fetchCentralWebsiteMediaForLady(previewLady || { id: targetLadyId }, { previewLady, allowMissing: true }).catch(() => null)
     await loadFrontendLadies({ refresh: true })
   } catch (error) {
     mediaUploadStatusText.value = `目前小姐同步中央網站失敗：${error.message || error}。圖片仍保留在資料庫，可稍後再次重試。`
@@ -4415,6 +4621,11 @@ async function loadFrontendLadies(options = {}) {
     frontendStatusText.value = enriched.detailCount
       ? `已從${indexSourceText}讀取 ${indexItems.length} 筆小姐索引，並補讀本次 ${enriched.detailCount} 筆完整資料。`
       : `已從${indexSourceText}讀取 ${indexItems.length} 筆小姐索引。`
+    if (!options.skipCentralMediaRefresh) {
+      await refreshCentralWebsiteMediaForCurrentDocument({ silent: true }).catch(error => {
+        console.warn('中央網站媒體清單補讀失敗，先保留 converter fallback：', error)
+      })
+    }
     return true
   } catch (error) {
     frontendLadiesLoaded.value = false
@@ -4505,7 +4716,7 @@ async function ensureAppendImportBackendReady() {
 }
 
 // 第 018-110 批：文件3儲存與中央網站同步拆開，避免小批資料被整批同步拖慢。
-const DATABASE_IMPORT_TIMEOUT_MS = 15000
+const DATABASE_IMPORT_TIMEOUT_MS = 90000
 const CENTRAL_WEBSITE_SYNC_TIMEOUT_MS = 12000
 const CENTRAL_WEBSITE_SINGLE_SYNC_ATTEMPTS = 2
 
@@ -4553,7 +4764,24 @@ function getCurrentDocumentPreviewLady(item) {
 
 function buildCentralWebsiteSyncItem(item, previewLady = null) {
   const currentPreview = previewLady || getCurrentDocumentPreviewLady(item)
-  if (!currentPreview) return item
+  const body = item?.body || {}
+  const previewBody = currentPreview?.body || {}
+  const height = currentPreview?.height ?? previewBody?.height ?? item?.height ?? body?.height ?? null
+  const weight = currentPreview?.weight ?? previewBody?.weight ?? item?.weight ?? body?.weight ?? null
+  const cup = currentPreview?.cup ?? previewBody?.cup ?? item?.cup ?? body?.cup ?? ''
+  const age = currentPreview?.age ?? previewBody?.age ?? item?.age ?? body?.age ?? null
+  const nationality = currentPreview?.nationality || currentPreview?.country || item?.nationality || item?.country || ''
+  const flattenedItem = {
+    ...item,
+    nationality,
+    country: item?.country || nationality,
+    height,
+    weight,
+    cup,
+    age
+  }
+
+  if (!currentPreview) return flattenedItem
 
   const currentLocation = getCurrentListingLocation()
   const previewLocation = getLadySyncLocation(currentPreview)
@@ -4573,7 +4801,7 @@ function buildCentralWebsiteSyncItem(item, previewLady = null) {
   })
 
   return {
-    ...item,
+    ...flattenedItem,
     sourceId: sourceIdentity,
     sourceIdentity,
     sourceRoom: currentPreview.sourceRoom || item.sourceRoom || room || ruleScopeRoom.value || '',
@@ -4669,6 +4897,17 @@ async function syncSingleLadyToCentralWebsite(ladyId, options = {}) {
   if (!item) throw new Error('讀不到目前小姐的完整資料。')
 
   const syncItem = buildCentralWebsiteSyncItem(item, options.previewLady || null)
+  if (options.replaceMedia) {
+    const exactMedia = Array.isArray(options.previewLady?.media)
+      ? mergeMediaRecords([], options.previewLady.media)
+      : Array.isArray(syncItem.media)
+        ? mergeMediaRecords([], syncItem.media)
+        : []
+    syncItem.media = exactMedia
+    syncItem.mediaCount = exactMedia.length
+    syncItem.replaceMedia = true
+    syncItem.mediaReplaceMode = 'replace'
+  }
   return postCentralWebsiteSyncItems([syncItem], {
     ...options,
     maxAttempts: Math.max(1, Number(options.maxAttempts || CENTRAL_WEBSITE_SINGLE_SYNC_ATTEMPTS))
@@ -4768,6 +5007,7 @@ async function submitDocument4ToDatabase(options = {}) {
       const centralSync = await syncSavedLadiesToCentralWebsite(payload)
       applyDatabaseIdHintsFromResponse(centralSync, payload)
       await refreshFrontendLadiesUntilDocumentIdsReady(payload, { maxAttempts: 2, retryDelayMs: 500 })
+      await refreshCentralWebsiteMediaForCurrentDocument({ silent: true }).catch(() => null)
       const message = buildDetailedDatabaseSyncMessage(plan, centralSync)
       apiStatusText.value = message
       setDatabaseSubmitFeedback(message, 'success', { toast: true })
@@ -4825,6 +5065,7 @@ async function submitDocument4ToDatabase(options = {}) {
     centralWebsiteSyncNeedsRetry.value = false
     const centralSync = await syncSavedLadiesToCentralWebsite(payload)
     applyDatabaseIdHintsFromResponse(centralSync, payload)
+    await refreshCentralWebsiteMediaForCurrentDocument({ silent: true }).catch(() => null)
     const suspectedDuplicateCount = Number(centralSync?.data?.suspectedDuplicateCount || 0)
     const successMessage = buildDetailedDatabaseSyncMessage(plan, centralSync)
     const idReadySummary = await refreshFrontendLadiesUntilDocumentIdsReady(payload, { maxAttempts: 3, retryDelayMs: 700 })
