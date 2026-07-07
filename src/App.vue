@@ -1316,6 +1316,9 @@ const frontendStatusText = ref('尚未讀取前台資料。')
 const frontendLadiesLoaded = ref(false)
 const databaseIdHintByLadyKey = ref({})
 const localUploadedMediaByLadyId = ref({})
+// 第 018-124 批：媒體刪除來源統一。中央網站刪除後，也記錄本機來源刪除抑制，避免重新讀取 converter 舊媒體又回彈。
+const DELETED_MEDIA_SUPPRESSION_STORAGE_KEY = 'auto-document-converter-deleted-media-suppression-batch018-124'
+const deletedMediaSuppressionByLadyKey = ref(loadDeletedMediaSuppressionMap())
 const countryFilter = ref('全部')
 const mediaUploadLadyId = ref('')
 const mediaUploadType = ref('image')
@@ -2994,7 +2997,7 @@ function getLocalUploadedMediaForLady(lady, hintedDatabaseId = 0) {
       : []
     items.forEach(item => {
       const normalized = normalizeMediaRecordForPreview(item)
-      if (!normalized || seen.has(normalized.url)) return
+      if (!normalized || shouldSuppressDeletedMediaForLady(lady, normalized, hintedDatabaseId) || seen.has(normalized.url)) return
       seen.add(normalized.url)
       merged.push(normalized)
     })
@@ -3059,6 +3062,116 @@ function getMediaDuplicateTokens(media) {
   return Array.from(new Set(tokens))
 }
 
+function loadDeletedMediaSuppressionMap() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(DELETED_MEDIA_SUPPRESSION_STORAGE_KEY) || '{}')
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+  } catch (_error) {
+    return {}
+  }
+}
+
+function saveDeletedMediaSuppressionMap() {
+  try {
+    localStorage.setItem(DELETED_MEDIA_SUPPRESSION_STORAGE_KEY, JSON.stringify(deletedMediaSuppressionByLadyKey.value || {}))
+  } catch (_error) {
+    // localStorage 滿了也不阻斷刪除流程。
+  }
+}
+
+function getDeletedMediaSuppressionTokensForLady(lady, hintedDatabaseId = 0) {
+  const keys = getLocalUploadedMediaKeysForLady(lady, hintedDatabaseId)
+  const tokens = []
+  keys.forEach(key => {
+    const items = Array.isArray(deletedMediaSuppressionByLadyKey.value[key])
+      ? deletedMediaSuppressionByLadyKey.value[key]
+      : []
+    items.forEach(token => {
+      const normalized = normalizeMediaDuplicateToken(token)
+      if (normalized) tokens.push(normalized)
+    })
+  })
+  return new Set(tokens)
+}
+
+function shouldSuppressDeletedMediaForLady(lady, media, hintedDatabaseId = 0) {
+  const suppressed = getDeletedMediaSuppressionTokensForLady(lady, hintedDatabaseId)
+  if (!suppressed.size) return false
+  return getMediaDuplicateTokens(media).some(token => suppressed.has(token))
+}
+
+function filterDeletedSuppressedMediaForLady(lady, mediaItems = [], hintedDatabaseId = 0) {
+  return (Array.isArray(mediaItems) ? mediaItems : [])
+    .map(item => normalizeMediaRecordForPreview(item))
+    .filter(Boolean)
+    .filter(item => !shouldSuppressDeletedMediaForLady(lady, item, hintedDatabaseId))
+}
+
+function rememberDeletedMediaForLady(ladyOrId, mediaToRemove, previewLady = null) {
+  const normalized = normalizeMediaRecordForPreview(mediaToRemove)
+  if (!normalized) return
+
+  const targetLady = typeof ladyOrId === 'object'
+    ? ladyOrId
+    : (
+        previewLady ||
+        frontendLadies.value.find(item => String(item?.id || '') === String(ladyOrId || '')) ||
+        currentDocumentPreviewLadies.value.find(item => String(item?.id || '') === String(ladyOrId || '')) ||
+        null
+      )
+
+  const keys = targetLady
+    ? getLocalUploadedMediaKeysForLady(targetLady, Number(ladyOrId || targetLady?.id || 0))
+    : [`id:${ladyOrId}`]
+
+  const tokens = getMediaDuplicateTokens(normalized)
+  if (!tokens.length) return
+
+  const next = { ...deletedMediaSuppressionByLadyKey.value }
+  keys.forEach(key => {
+    const current = Array.isArray(next[key]) ? next[key] : []
+    next[key] = Array.from(new Set([...current, ...tokens])).slice(-200)
+  })
+  deletedMediaSuppressionByLadyKey.value = next
+  saveDeletedMediaSuppressionMap()
+}
+
+function clearDeletedMediaSuppressionForLadyMedia(ladyOrId, mediaItems = [], previewLady = null) {
+  const normalizedItems = (Array.isArray(mediaItems) ? mediaItems : [])
+    .map(item => normalizeMediaRecordForPreview(item))
+    .filter(Boolean)
+  if (!normalizedItems.length) return
+
+  const targetLady = typeof ladyOrId === 'object'
+    ? ladyOrId
+    : (
+        previewLady ||
+        frontendLadies.value.find(item => String(item?.id || '') === String(ladyOrId || '')) ||
+        currentDocumentPreviewLadies.value.find(item => String(item?.id || '') === String(ladyOrId || '')) ||
+        null
+      )
+  const keys = targetLady
+    ? getLocalUploadedMediaKeysForLady(targetLady, Number(ladyOrId || targetLady?.id || 0))
+    : [`id:${ladyOrId}`]
+  const uploadedTokens = new Set(normalizedItems.flatMap(getMediaDuplicateTokens))
+  if (!uploadedTokens.size) return
+
+  const next = { ...deletedMediaSuppressionByLadyKey.value }
+  let changed = false
+  keys.forEach(key => {
+    if (!Array.isArray(next[key])) return
+    const filtered = next[key].filter(token => !uploadedTokens.has(normalizeMediaDuplicateToken(token)))
+    if (filtered.length !== next[key].length) {
+      next[key] = filtered
+      changed = true
+    }
+  })
+  if (changed) {
+    deletedMediaSuppressionByLadyKey.value = next
+    saveDeletedMediaSuppressionMap()
+  }
+}
+
 function getLadyAllMediaForDuplicateCheck(lady) {
   const currentMedia = Array.isArray(lady?.media) ? lady.media : []
   const localMedia = getLocalUploadedMediaForLady(lady, Number(lady?.id || 0))
@@ -3082,6 +3195,7 @@ function isMediaUploadFileAlreadyBoundToLady(file, lady) {
 }
 
 function removeMediaFromLocalPreview(ladyOrId, mediaToRemove, previewLady = null) {
+  rememberDeletedMediaForLady(ladyOrId, mediaToRemove, previewLady)
   const removeId = String(mediaToRemove?.id || mediaToRemove?.mediaId || mediaToRemove?.media_id || '')
   const removeUrl = String(mediaToRemove?.url || mediaToRemove?.publicUrl || mediaToRemove?.public_url || '').trim()
   if (!removeId && !removeUrl) return
@@ -3125,9 +3239,10 @@ function removeMediaFromLocalPreview(ladyOrId, mediaToRemove, previewLady = null
 }
 
 
-// 第 018-123 批：媒體刪除 / 綁定後只更新目前小姐，不再整批重讀覆蓋本地剛上傳媒體。
+// 第 018-124 批：媒體刪除 / 綁定後只更新目前小姐，並以中央刪除結果抑制 converter 舊媒體回彈。
 function updateMediaForLocalPreview(ladyOrId, mediaItems = [], previewLady = null, mode = 'merge') {
   const normalizedItems = mergeMediaRecords([], mediaItems)
+  if (mode !== 'replace') clearDeletedMediaSuppressionForLadyMedia(ladyOrId, normalizedItems, previewLady)
   const targetLady = typeof ladyOrId === 'object'
     ? ladyOrId
     : (
@@ -3168,6 +3283,7 @@ function mergeUploadedMediaIntoLocalPreview(ladyOrId, mediaItems = [], previewLa
     .map(item => normalizeMediaRecordForPreview(item, { isLocalUploadBound: true }))
     .filter(Boolean)
   if (!normalizedItems.length) return 0
+  clearDeletedMediaSuppressionForLadyMedia(ladyOrId, normalizedItems, previewLady)
 
   const targetLady = typeof ladyOrId === 'object'
     ? ladyOrId
@@ -3316,7 +3432,10 @@ const currentDocumentPreviewLadies = computed(() => {
         cup: body.cup || '',
         age: body.age ?? '',
         rawText: item.rawText || '',
-        media: mergeMediaRecords(Array.isArray(dbLady?.media) ? dbLady.media : [], getLocalUploadedMediaForLady(item, hintedDatabaseId)),
+        media: mergeMediaRecords(
+          filterDeletedSuppressedMediaForLady(item, Array.isArray(dbLady?.media) ? dbLady.media : [], hintedDatabaseId),
+          getLocalUploadedMediaForLady(item, hintedDatabaseId)
+        ),
         pricePlans: Array.isArray(item.pricePlans)
           ? item.pricePlans.map((plan, planIndex) => ({
               id: `current-document-${index + 1}-price-${planIndex + 1}`,
@@ -3564,6 +3683,52 @@ function formatAdminUpdatedTime(item) {
   return `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
+async function deleteMediaFromConverterSource(media, lady) {
+  const mediaIdText = String(media?.id || media?.mediaId || media?.media_id || '').trim()
+  const mediaUrl = String(media?.url || media?.publicUrl || media?.public_url || '').trim()
+  const targetLadyId = Number(lady?.id || media?.listingId || media?.listing_id || 0)
+  if (!targetLadyId && !mediaIdText && !mediaUrl) return { skipped: true }
+
+  const payload = {
+    ladyId: targetLadyId || undefined,
+    mediaId: mediaIdText || undefined,
+    id: mediaIdText || undefined,
+    mediaUrl: mediaUrl || undefined,
+    url: mediaUrl || undefined,
+    name: lady?.name || '',
+    country: lady?.country || '',
+    sourceIdentity: lady?.sourceIdentity || ''
+  }
+
+  const endpoints = [
+    `${apiBaseUrl.value}/api/ladies/media/delete`,
+    `${apiBaseUrl.value}/api/public/ladies/media/delete`
+  ]
+
+  let lastError = null
+  for (const endpoint of endpoints) {
+    try {
+      const { response, data } = await fetchJsonWithTimeout(
+        endpoint,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        },
+        8000,
+        'converter 來源媒體刪除失敗'
+      )
+      if (response.ok && data.ok !== false) return data
+      lastError = new Error(data.message || data.error || `HTTP ${response.status}`)
+      if (![404, 405].includes(Number(response.status))) break
+    } catch (error) {
+      lastError = error
+    }
+  }
+
+  return { ok: false, skipped: true, message: lastError?.message || 'converter 來源沒有提供媒體刪除端點，已改用本機抑制避免回彈。' }
+}
+
 async function deleteLadyMedia(media, lady) {
   const mediaIdText = String(media?.id || media?.mediaId || media?.media_id || '').trim()
   const mediaUrl = String(media?.url || media?.publicUrl || media?.public_url || '').trim()
@@ -3612,6 +3777,9 @@ async function deleteLadyMedia(media, lady) {
       throw new Error(data.message || data.error || `HTTP ${response.status}`)
     }
 
+    rememberDeletedMediaForLady(targetLadyId || lady, media, previewLady)
+    const converterDeleteResult = await deleteMediaFromConverterSource(media, detail || lady || {}).catch(error => ({ ok: false, message: error.message || String(error) }))
+
     const serverMedia = mergeMediaRecords([], data?.data?.media || data?.media || [])
     if (serverMedia.length || Array.isArray(data?.data?.media) || Array.isArray(data?.media)) {
       updateMediaForLocalPreview(targetLadyId || lady, serverMedia, previewLady, 'replace')
@@ -3625,7 +3793,9 @@ async function deleteLadyMedia(media, lady) {
       closeMediaViewer()
     }
 
-    frontendStatusText.value = data.message || '媒體已從中央網站正式刪除，已只更新目前小姐，不再整批刷新覆蓋。'
+    frontendStatusText.value = converterDeleteResult?.ok === false
+      ? `媒體已從中央網站刪除，並已記錄 converter 來源刪除抑制；重新整理不會再從舊來源補回。${converterDeleteResult.message ? `（${converterDeleteResult.message}）` : ''}`
+      : '媒體已從中央網站與 converter 來源同步刪除，已只更新目前小姐，不再整批刷新覆蓋。'
   } catch (error) {
     frontendStatusText.value = `刪除媒體失敗：${error.message || error}`
   }
