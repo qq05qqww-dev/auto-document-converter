@@ -1,4 +1,4 @@
-<!-- 第 018-127 批：前台預覽卡片點擊開啟置中媒體上傳彈窗版（依第 018-126 批延續） -->
+<!-- 第 018-128 批：前台預覽卡片滿版換行與媒體上傳彈窗內容置中版（依第 018-127 批延續） -->
 <!-- 第 018-126 批：中央媒體來源統一與前後台數量同步修正版（依第 018-125 批延續） -->
 <template>
   <!-- 第 018-109 批：待上傳縮圖區禁止拖放版 -->
@@ -13957,6 +13957,69 @@ button:disabled {
   font-weight: 900;
   white-space: nowrap;
   pointer-events: none;
+}
+
+
+/* 第 018-128 批：前台預覽小姐卡片滿版換行 + 媒體上傳彈窗內容置中 */
+.frontend-media-preview-layout.media-modal-card-only-layout {
+  display: block !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  width: 100% !important;
+}
+
+.media-modal-card-only-layout .frontend-preview-side-panel.is-full-width-preview {
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 0 !important;
+}
+
+.media-modal-card-only-layout .compact-right-lady-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 150px)) !important;
+  justify-content: start !important;
+  align-items: start !important;
+  gap: 12px !important;
+  width: 100% !important;
+}
+
+.media-modal-card-only-layout .compact-right-lady-card {
+  width: 150px !important;
+  max-width: 150px !important;
+}
+
+.media-upload-modal-dialog {
+  width: min(760px, calc(100vw - 32px)) !important;
+}
+
+.media-upload-modal-dialog .media-upload-modal-header,
+.media-upload-modal-dialog .modal-media-upload-box {
+  width: min(640px, 100%) !important;
+  max-width: 640px !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  box-sizing: border-box !important;
+}
+
+.media-upload-modal-dialog .modal-media-upload-box {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+@media (max-width: 760px) {
+  .media-modal-card-only-layout .compact-right-lady-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)) !important;
+  }
+
+  .media-modal-card-only-layout .compact-right-lady-card {
+    width: auto !important;
+    max-width: none !important;
+  }
+
+  .media-upload-modal-dialog .media-upload-modal-header,
+  .media-upload-modal-dialog .modal-media-upload-box {
+    width: 100% !important;
+    max-width: none !important;
+  }
 }
 
 </style>
