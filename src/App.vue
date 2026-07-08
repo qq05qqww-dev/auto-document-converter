@@ -1001,28 +1001,30 @@
                 <span>{{ lady.cup || '-' }}</span>
               </div>
 
-              <div v-if="lady.media && lady.media.length > 1" class="lady-media-thumbs compact-right-thumbs">
-                <div v-for="media in lady.media.slice(1)" :key="media.id || media.url" class="lady-media-thumb-wrap">
-                  <button
-                    type="button"
-                    class="lady-media-open-btn"
-                    @click.stop="openMediaViewer(media, lady)"
-                  >
-                    <img
-                      v-if="media.mediaType === 'image'"
-                      :src="media.url"
-                      :alt="getMediaDisplayName(media, lady)"
-                      class="lady-media-thumb"
-                    />
-                    <video
-                      v-else-if="media.mediaType === 'video'"
-                      :src="media.url"
-                      class="lady-media-thumb"
-                      muted
-                      playsinline
-                    ></video>
-                  </button>
-                  <button type="button" class="lady-media-delete-btn mini" @click.stop="deleteLadyMedia(media, lady)">×</button>
+              <div class="lady-media-thumbs-slot compact-right-thumbs-slot">
+                <div v-if="lady.media && lady.media.length > 1" class="lady-media-thumbs compact-right-thumbs">
+                  <div v-for="media in lady.media.slice(1)" :key="media.id || media.url" class="lady-media-thumb-wrap">
+                    <button
+                      type="button"
+                      class="lady-media-open-btn"
+                      @click.stop="openMediaViewer(media, lady)"
+                    >
+                      <img
+                        v-if="media.mediaType === 'image'"
+                        :src="media.url"
+                        :alt="getMediaDisplayName(media, lady)"
+                        class="lady-media-thumb"
+                      />
+                      <video
+                        v-else-if="media.mediaType === 'video'"
+                        :src="media.url"
+                        class="lady-media-thumb"
+                        muted
+                        playsinline
+                      ></video>
+                    </button>
+                    <button type="button" class="lady-media-delete-btn mini" @click.stop="deleteLadyMedia(media, lady)">×</button>
+                  </div>
                 </div>
               </div>
 
@@ -1189,7 +1191,7 @@
 
       <div v-if="mediaViewerItem" class="media-viewer-mask" @click.self="closeMediaViewer">
         <div class="media-viewer-dialog">
-          <button type="button" class="media-viewer-close" @click="closeMediaViewer">×</button>
+          <button type="button" class="media-viewer-close" @click="closeMediaViewer" aria-label="關閉預覽">✕ 關閉</button>
           <div
             class="media-viewer-body"
             @touchstart.passive="handleMediaViewerTouchStart"
@@ -14019,6 +14021,84 @@ button:disabled {
   .media-upload-modal-dialog .modal-media-upload-box {
     width: 100% !important;
     max-width: none !important;
+  }
+}
+
+
+/* 第 018-129 批：前台預覽卡片方案區對齊 + 圖片放大關閉按鈕加大 */
+.compact-right-lady-card {
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.compact-right-thumbs-slot {
+  min-height: 38px;
+  margin-bottom: 2px;
+}
+
+.compact-right-thumbs-slot .compact-right-thumbs {
+  margin: 0 !important;
+}
+
+.compact-right-lady-card .card-section-title:first-of-type {
+  margin-top: 0 !important;
+}
+
+.compact-right-price-list {
+  align-items: flex-start !important;
+  min-height: 74px;
+  align-content: flex-start !important;
+}
+
+.compact-right-service-list {
+  align-items: flex-start !important;
+  align-content: flex-start !important;
+}
+
+.media-viewer-close {
+  top: 14px !important;
+  right: 14px !important;
+  min-width: 92px !important;
+  height: 46px !important;
+  padding: 0 16px !important;
+  border: 1px solid rgba(255, 255, 255, 0.72) !important;
+  border-radius: 999px !important;
+  background: rgba(15, 23, 42, 0.94) !important;
+  color: #fff !important;
+  font-size: 16px !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.22) !important;
+}
+
+.media-viewer-close:hover {
+  background: rgba(37, 99, 235, 0.96) !important;
+  transform: translateY(-1px);
+}
+
+.media-viewer-close:focus-visible {
+  outline: 3px solid rgba(96, 165, 250, 0.55);
+  outline-offset: 3px;
+}
+
+@media (max-width: 760px) {
+  .compact-right-thumbs-slot {
+    min-height: 34px;
+  }
+
+  .compact-right-price-list {
+    min-height: 68px;
+  }
+
+  .media-viewer-close {
+    min-width: 82px !important;
+    height: 42px !important;
+    padding: 0 14px !important;
+    font-size: 15px !important;
   }
 }
 
