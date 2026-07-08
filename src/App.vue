@@ -1,4 +1,5 @@
-<!-- 第 018-128 批：前台預覽卡片滿版換行與媒體上傳彈窗內容置中版（依第 018-127 批延續） -->
+<!-- 第 018-130 批：上傳彈窗顯示已上傳媒體與燈箱資訊精簡版（依第 018-129 批延續） -->
+<!-- 第 018-129 批：前台預覽卡片方案服務對齊與媒體燈箱關閉鈕加大版（依第 018-128 批延續） -->
 <!-- 第 018-126 批：中央媒體來源統一與前後台數量同步修正版（依第 018-125 批延續） -->
 <template>
   <!-- 第 018-109 批：待上傳縮圖區禁止拖放版 -->
@@ -1061,6 +1062,57 @@
               </div>
               <button type="button" class="media-upload-modal-close" @click="closeMediaUploadModal">關閉</button>
             </div>
+
+            <div class="media-upload-current-panel">
+              <div class="current-media-panel-title">
+                <div>
+                  <strong>目前已上傳圖片 / 影片</strong>
+                  <span>這裡會顯示這位小姐已經綁定到中央網站的媒體。</span>
+                </div>
+                <b>{{ selectedUploadLadyMedia.length }} 個媒體</b>
+              </div>
+
+              <div v-if="selectedUploadLadyMedia.length" class="current-media-thumb-grid">
+                <div
+                  v-for="media in selectedUploadLadyMedia"
+                  :key="media.id || media.url"
+                  class="current-media-thumb-card"
+                >
+                  <button
+                    type="button"
+                    class="current-media-open-btn"
+                    @click="openMediaViewer(media, mediaUploadSelectedLady)"
+                  >
+                    <img
+                      v-if="media.mediaType === 'image'"
+                      :src="media.url"
+                      :alt="mediaUploadSelectedLadyLabel"
+                    />
+                    <video
+                      v-else-if="media.mediaType === 'video'"
+                      :src="media.url"
+                      muted
+                      playsinline
+                    ></video>
+                    <div v-else class="selected-file-fallback">FILE</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    class="current-media-delete-btn"
+                    @click="deleteLadyMedia(media, mediaUploadSelectedLady)"
+                    title="刪除這張 / 這段媒體"
+                  >×</button>
+
+                  <span class="current-media-type-badge">{{ media.mediaType === 'video' ? '影片' : '圖片' }}</span>
+                </div>
+              </div>
+
+              <div v-else class="current-media-empty">
+                這位小姐目前尚未上傳圖片 / 影片；可直接在下方新增。
+              </div>
+            </div>
+
           <div class="media-upload-box compact-media-upload-box modal-media-upload-box">
           <div class="media-upload-title-row">
             <h3>媒體上傳測試</h3>
@@ -1191,7 +1243,6 @@
 
       <div v-if="mediaViewerItem" class="media-viewer-mask" @click.self="closeMediaViewer">
         <div class="media-viewer-dialog">
-          <button type="button" class="media-viewer-close" @click="closeMediaViewer" aria-label="關閉預覽">✕ 關閉</button>
           <div
             class="media-viewer-body"
             @touchstart.passive="handleMediaViewerTouchStart"
@@ -1238,8 +1289,7 @@
           </div>
           <div class="media-viewer-footer">
             <div>
-              <strong>{{ getMediaDisplayName(mediaViewerItem, { name: mediaViewerLadyName, country: mediaViewerLadyCountry }) }}</strong>
-              <span v-if="mediaViewerLadyName || mediaViewerLadyCountry">【{{ mediaViewerLadyCountry }} {{ mediaViewerLadyName }}】</span>
+              <span v-if="mediaViewerLadyName || mediaViewerLadyCountry" class="media-viewer-lady-label">【{{ mediaViewerLadyCountry }} {{ mediaViewerLadyName }}】</span>
               <small v-if="mediaViewerTotal > 1" class="media-viewer-hint">可按左右箭頭、鍵盤 ← →，手機可左右滑動</small>
             </div>
             <div class="media-viewer-actions">
@@ -1408,6 +1458,13 @@ const mediaUploadSelectedLadyLabel = computed(() => {
   const country = String(lady.country || '').trim()
   const name = String(lady.name || '').trim()
   return `【${[country, name].filter(Boolean).join(' ')}】`
+})
+
+const selectedUploadLadyMedia = computed(() => {
+  const lady = mediaUploadSelectedLady.value
+  return Array.isArray(lady?.media)
+    ? lady.media.filter(media => media?.url)
+    : []
 })
 const confirmedText = ref('')
 const statusMessage = ref('等待貼上資料。')
@@ -10384,6 +10441,128 @@ select:focus, input:focus, textarea:focus {
   box-shadow: none !important;
 }
 
+/* 第 018-130 批：點小姐開上傳彈窗時，同步顯示該小姐已上傳媒體 */
+.media-upload-current-panel {
+  margin: 0 22px 16px;
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.current-media-panel-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.current-media-panel-title strong {
+  display: block;
+  color: #0f172a;
+  font-size: 15px;
+  font-weight: 950;
+}
+
+.current-media-panel-title span {
+  display: block;
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.current-media-panel-title b {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: rgba(37, 99, 235, 0.1);
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.current-media-thumb-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 92px));
+  gap: 10px;
+  max-height: 230px;
+  overflow: auto;
+  padding: 2px 2px 4px;
+}
+
+.current-media-thumb-card {
+  position: relative;
+  width: 92px;
+  height: 92px;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(241, 245, 249, 0.9);
+}
+
+.current-media-open-btn {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.current-media-open-btn img,
+.current-media-open-btn video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.current-media-delete-btn {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  z-index: 3;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(239, 68, 68, 0.95);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 950;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(239, 68, 68, 0.26);
+}
+
+.current-media-type-badge {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  z-index: 2;
+  border-radius: 999px;
+  padding: 4px 7px;
+  background: rgba(15, 23, 42, 0.78);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.current-media-empty {
+  min-height: 74px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  background: rgba(248, 250, 252, 0.85);
+  color: #64748b;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 800;
+}
+
 @media (max-width: 760px) {
   .media-upload-modal-mask {
     align-items: stretch;
@@ -10679,6 +10858,17 @@ select:focus, input:focus, textarea:focus {
   color: #64748b;
   font-size: 13px;
   font-weight: 700;
+}
+
+.media-viewer-lady-label {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: rgba(241, 245, 249, 0.92);
+  color: #334155 !important;
+  font-size: 13px;
+  font-weight: 900 !important;
 }
 
 .media-viewer-hint {
