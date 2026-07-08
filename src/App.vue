@@ -1241,8 +1241,9 @@
         </div>
       </teleport>
 
-      <div v-if="mediaViewerItem" class="media-viewer-mask" @click.self="closeMediaViewer">
-        <div class="media-viewer-dialog">
+      <teleport to="body">
+        <div v-if="mediaViewerItem" class="media-viewer-mask" @click.self="closeMediaViewer">
+          <div class="media-viewer-dialog">
           <div
             class="media-viewer-body"
             @touchstart.passive="handleMediaViewerTouchStart"
@@ -1302,8 +1303,9 @@
               <button type="button" class="ghost-btn" @click="closeMediaViewer">關閉</button>
             </div>
           </div>
+          </div>
         </div>
-      </div>
+      </teleport>
     </section>
 
 
@@ -1312,6 +1314,7 @@
   </main>
 </template>
 
+<!-- 第 018-131 批：媒體上傳彈窗內縮圖放大層級修正 -->
 <!-- batch018-120-sync-id-backfill-media-upload-fix -->
 <script setup>
 // 第 018-107 批：登入後預設展開地區機房管理，並記住最後使用的縣市 / 地區 / 定點外送 / 機房。
@@ -10732,7 +10735,7 @@ select:focus, input:focus, textarea:focus {
 .media-viewer-mask {
   position: fixed;
   inset: 0;
-  z-index: 60;
+  z-index: 14000;
   background: rgba(15, 23, 42, 0.78);
   display: grid;
   place-items: center;
@@ -14290,6 +14293,18 @@ button:disabled {
     padding: 0 14px !important;
     font-size: 15px !important;
   }
+}
+
+
+
+/* 第 018-131 批：媒體上傳彈窗內點已上傳縮圖時，放大燈箱必須蓋在上傳彈窗前方 */
+.media-viewer-mask {
+  z-index: 14000 !important;
+}
+
+.media-viewer-dialog {
+  position: relative !important;
+  z-index: 14001 !important;
 }
 
 </style>
