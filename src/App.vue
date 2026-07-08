@@ -1,3 +1,4 @@
+<!-- 第 018-127 批：前台預覽卡片點擊開啟置中媒體上傳彈窗版（依第 018-126 批延續） -->
 <!-- 第 018-126 批：中央媒體來源統一與前後台數量同步修正版（依第 018-125 批延續） -->
 <template>
   <!-- 第 018-109 批：待上傳縮圖區禁止拖放版 -->
@@ -922,8 +923,143 @@
       </div>
 
 
-      <div class="frontend-media-preview-layout">
-        <div class="media-upload-box compact-media-upload-box">
+      <div class="frontend-media-preview-layout media-modal-card-only-layout">
+        <div class="frontend-preview-side-panel is-full-width-preview">
+          <div class="preview-side-topbar">
+            <p class="hint frontend-inline-status">{{ previewStatusText }}</p>
+          </div>
+
+          <div v-if="filteredFrontendLadies.length" class="lady-card-grid compact-right-lady-grid">
+            <article
+              v-for="lady in filteredFrontendLadies"
+              :key="lady.id"
+              class="lady-card compact-right-lady-card"
+              :class="{ 'is-selected-upload-lady': isSelectedUploadLady(lady) }"
+              :data-preview-lady-id="String(lady.id || '')"
+              role="button"
+              tabindex="0"
+              :aria-label="`開啟【${lady.country || ''} ${lady.name || ''}】媒體上傳視窗`"
+              @click="openMediaUploadModalForLady(lady)"
+              @keydown.enter.prevent="openMediaUploadModalForLady(lady)"
+              @keydown.space.prevent="openMediaUploadModalForLady(lady)"
+            >
+              <span v-if="isSelectedUploadLady(lady)" class="selected-upload-lady-badge">目前選擇</span>
+              <span class="lady-card-upload-hint-badge">點卡片上傳媒體</span>
+              <div class="lady-cover-box">
+                <template v-if="getLadyCoverMedia(lady)">
+                  <button
+                    type="button"
+                    class="lady-media-open-btn lady-cover-trigger"
+                    @click.stop="openMediaViewer(getLadyCoverMedia(lady), lady)"
+                  >
+                    <img
+                      v-if="getLadyCoverMedia(lady).mediaType === 'image'"
+                      :src="getLadyCoverMedia(lady).url"
+                      :alt="getMediaDisplayName(getLadyCoverMedia(lady), lady)"
+                      class="lady-cover-media"
+                    />
+                    <video
+                      v-else
+                      :src="getLadyCoverMedia(lady).url"
+                      class="lady-cover-media"
+                      muted
+                      playsinline
+                    ></video>
+                  </button>
+
+                  <button
+                    type="button"
+                    class="lady-media-delete-btn"
+                    @click.stop="deleteLadyMedia(getLadyCoverMedia(lady), lady)"
+                  >
+                    刪除
+                  </button>
+                </template>
+                <div v-else class="lady-cover-empty">
+                  尚未上傳照片
+                </div>
+
+                <span v-if="getLadyMediaCount(lady)" class="media-count-badge">
+                  {{ getLadyMediaCount(lady) }} 個媒體
+                </span>
+              </div>
+
+              <div class="lady-card-title compact-right-title">
+                <strong>【{{ lady.country }} {{ lady.name }}】</strong>
+                <span v-if="lady.age">{{ lady.age }}y</span>
+              </div>
+
+              <div class="lady-sync-status-row" :title="lady.syncStateMessage">
+                <span class="lady-sync-status-badge" :class="`is-${lady.syncState}`">
+                  {{ lady.syncStateLabel }}
+                </span>
+              </div>
+
+              <div class="lady-body-line compact-right-body-line">
+                <span>{{ lady.height || '-' }}</span>
+                <span>{{ lady.weight || '-' }}</span>
+                <span>{{ lady.cup || '-' }}</span>
+              </div>
+
+              <div v-if="lady.media && lady.media.length > 1" class="lady-media-thumbs compact-right-thumbs">
+                <div v-for="media in lady.media.slice(1)" :key="media.id || media.url" class="lady-media-thumb-wrap">
+                  <button
+                    type="button"
+                    class="lady-media-open-btn"
+                    @click.stop="openMediaViewer(media, lady)"
+                  >
+                    <img
+                      v-if="media.mediaType === 'image'"
+                      :src="media.url"
+                      :alt="getMediaDisplayName(media, lady)"
+                      class="lady-media-thumb"
+                    />
+                    <video
+                      v-else-if="media.mediaType === 'video'"
+                      :src="media.url"
+                      class="lady-media-thumb"
+                      muted
+                      playsinline
+                    ></video>
+                  </button>
+                  <button type="button" class="lady-media-delete-btn mini" @click.stop="deleteLadyMedia(media, lady)">×</button>
+                </div>
+              </div>
+
+              <div class="card-section-title">方案價格</div>
+              <div class="lady-price-list compact-right-price-list">
+                <span v-for="plan in lady.pricePlans" :key="plan.id || plan.priceText" class="price-pill">
+                  {{ plan.priceText }}
+                </span>
+              </div>
+
+              <div class="card-section-title service-title">服務項目</div>
+              <div class="lady-service-list compact-right-service-list">
+                <span v-for="service in lady.services" :key="service.id || service.serviceName" class="service-pill">
+                  {{ service.serviceName }}
+                </span>
+              </div>
+            </article>
+          </div>
+
+          <div v-else class="empty-preview side-empty-preview">
+            尚未讀取到資料。請先確認 Supabase 有資料，再按「讀取前台資料」。
+          </div>
+        </div>
+      </div>
+
+      <teleport to="body">
+        <div v-if="isMediaUploadModalOpen" class="media-upload-modal-mask" @click.self="closeMediaUploadModal">
+          <section class="media-upload-modal-dialog" role="dialog" aria-modal="true" aria-label="媒體上傳測試">
+            <div class="media-upload-modal-header">
+              <div>
+                <span class="media-upload-modal-kicker">目前選擇</span>
+                <h3>{{ mediaUploadSelectedLadyLabel }}</h3>
+                <p>這裡就是原本左側「媒體上傳測試」區塊；點任一位小姐後會在正中央開啟。</p>
+              </div>
+              <button type="button" class="media-upload-modal-close" @click="closeMediaUploadModal">關閉</button>
+            </div>
+          <div class="media-upload-box compact-media-upload-box modal-media-upload-box">
           <div class="media-upload-title-row">
             <h3>媒體上傳測試</h3>
             <p>先把圖片 / 影片上傳到 R2，並綁定到 Supabase 的小姐資料。</p>
@@ -1047,123 +1183,9 @@
 
           <p class="hint media-upload-status">{{ mediaUploadStatusText }}</p>
         </div>
-
-        <div class="frontend-preview-side-panel">
-          <div class="preview-side-topbar">
-            <p class="hint frontend-inline-status">{{ previewStatusText }}</p>
-          </div>
-
-          <div v-if="filteredFrontendLadies.length" class="lady-card-grid compact-right-lady-grid">
-            <article
-              v-for="lady in filteredFrontendLadies"
-              :key="lady.id"
-              class="lady-card compact-right-lady-card"
-              :class="{ 'is-selected-upload-lady': isSelectedUploadLady(lady) }"
-              :data-preview-lady-id="String(lady.id || '')"
-            >
-              <span v-if="isSelectedUploadLady(lady)" class="selected-upload-lady-badge">目前選擇</span>
-              <div class="lady-cover-box">
-                <template v-if="getLadyCoverMedia(lady)">
-                  <button
-                    type="button"
-                    class="lady-media-open-btn lady-cover-trigger"
-                    @click="openMediaViewer(getLadyCoverMedia(lady), lady)"
-                  >
-                    <img
-                      v-if="getLadyCoverMedia(lady).mediaType === 'image'"
-                      :src="getLadyCoverMedia(lady).url"
-                      :alt="getMediaDisplayName(getLadyCoverMedia(lady), lady)"
-                      class="lady-cover-media"
-                    />
-                    <video
-                      v-else
-                      :src="getLadyCoverMedia(lady).url"
-                      class="lady-cover-media"
-                      muted
-                      playsinline
-                    ></video>
-                  </button>
-
-                  <button
-                    type="button"
-                    class="lady-media-delete-btn"
-                    @click.stop="deleteLadyMedia(getLadyCoverMedia(lady), lady)"
-                  >
-                    刪除
-                  </button>
-                </template>
-                <div v-else class="lady-cover-empty">
-                  尚未上傳照片
-                </div>
-
-                <span v-if="getLadyMediaCount(lady)" class="media-count-badge">
-                  {{ getLadyMediaCount(lady) }} 個媒體
-                </span>
-              </div>
-
-              <div class="lady-card-title compact-right-title">
-                <strong>【{{ lady.country }} {{ lady.name }}】</strong>
-                <span v-if="lady.age">{{ lady.age }}y</span>
-              </div>
-
-              <div class="lady-sync-status-row" :title="lady.syncStateMessage">
-                <span class="lady-sync-status-badge" :class="`is-${lady.syncState}`">
-                  {{ lady.syncStateLabel }}
-                </span>
-              </div>
-
-              <div class="lady-body-line compact-right-body-line">
-                <span>{{ lady.height || '-' }}</span>
-                <span>{{ lady.weight || '-' }}</span>
-                <span>{{ lady.cup || '-' }}</span>
-              </div>
-
-              <div v-if="lady.media && lady.media.length > 1" class="lady-media-thumbs compact-right-thumbs">
-                <div v-for="media in lady.media.slice(1)" :key="media.id || media.url" class="lady-media-thumb-wrap">
-                  <button
-                    type="button"
-                    class="lady-media-open-btn"
-                    @click="openMediaViewer(media, lady)"
-                  >
-                    <img
-                      v-if="media.mediaType === 'image'"
-                      :src="media.url"
-                      :alt="getMediaDisplayName(media, lady)"
-                      class="lady-media-thumb"
-                    />
-                    <video
-                      v-else-if="media.mediaType === 'video'"
-                      :src="media.url"
-                      class="lady-media-thumb"
-                      muted
-                      playsinline
-                    ></video>
-                  </button>
-                  <button type="button" class="lady-media-delete-btn mini" @click.stop="deleteLadyMedia(media, lady)">×</button>
-                </div>
-              </div>
-
-              <div class="card-section-title">方案價格</div>
-              <div class="lady-price-list compact-right-price-list">
-                <span v-for="plan in lady.pricePlans" :key="plan.id || plan.priceText" class="price-pill">
-                  {{ plan.priceText }}
-                </span>
-              </div>
-
-              <div class="card-section-title service-title">服務項目</div>
-              <div class="lady-service-list compact-right-service-list">
-                <span v-for="service in lady.services" :key="service.id || service.serviceName" class="service-pill">
-                  {{ service.serviceName }}
-                </span>
-              </div>
-            </article>
-          </div>
-
-          <div v-else class="empty-preview side-empty-preview">
-            尚未讀取到資料。請先確認 Supabase 有資料，再按「讀取前台資料」。
-          </div>
+          </section>
         </div>
-      </div>
+      </teleport>
 
       <div v-if="mediaViewerItem" class="media-viewer-mask" @click.self="closeMediaViewer">
         <div class="media-viewer-dialog">
@@ -1326,6 +1348,7 @@ const mediaUploadLadyId = ref('')
 const mediaUploadType = ref('image')
 const mediaUploadNote = ref('')
 const mediaUploadFiles = ref([])
+const isMediaUploadModalOpen = ref(false)
 const isMediaDragging = ref(false)
 const isPendingMediaDropBlocked = ref(false)
 const mediaUploadStatusText = ref('尚未上傳媒體。')
@@ -1371,6 +1394,18 @@ const mediaUploadProgressSummary = computed(() => {
     return `目前上傳：${fileName}｜已完成 ${mediaUploadCompletedCount.value} / ${mediaUploadTotalCount.value}｜失敗 ${mediaUploadFailedCount.value}`
   }
   return `已完成 ${mediaUploadCompletedCount.value} / ${mediaUploadTotalCount.value}｜失敗 ${mediaUploadFailedCount.value}`
+})
+const mediaUploadSelectedLady = computed(() => {
+  const targetId = String(mediaUploadLadyId.value || '')
+  if (!targetId) return null
+  return mediaUploadLadyOptions.value.find(lady => String(lady?.id || '') === targetId) || null
+})
+const mediaUploadSelectedLadyLabel = computed(() => {
+  const lady = mediaUploadSelectedLady.value
+  if (!lady) return '請先選擇小姐'
+  const country = String(lady.country || '').trim()
+  const name = String(lady.name || '').trim()
+  return `【${[country, name].filter(Boolean).join(' ')}】`
 })
 const confirmedText = ref('')
 const statusMessage = ref('等待貼上資料。')
@@ -3714,6 +3749,9 @@ watch(mediaUploadLadyOptions, (ladies) => {
   const hasCurrentLady = ladies.some(lady => String(lady.id || '') === currentId)
   if (!hasCurrentLady) {
     mediaUploadLadyId.value = ladies[0]?.id ? String(ladies[0].id) : ''
+    if (isMediaUploadModalOpen.value && !ladies.length) {
+      closeMediaUploadModal()
+    }
   }
 }, { immediate: true })
 
@@ -4173,6 +4211,27 @@ function uploadMediaFileWithProgress(formData, onProgress) {
 
 function isSelectedUploadLady(lady) {
   return String(lady?.id || '') === String(mediaUploadLadyId.value || '')
+}
+
+function openMediaUploadModalForLady(lady) {
+  if (!lady) return
+
+  const nextId = String(lady.id || '')
+  if (nextId) {
+    mediaUploadLadyId.value = nextId
+  }
+
+  const label = `【${[lady.country, lady.name].filter(Boolean).join(' ')}】`
+  mediaUploadStatusText.value = `已選擇 ${label}，可以直接上傳圖片 / 影片。`
+  isMediaUploadModalOpen.value = true
+  isMediaDragging.value = false
+  isPendingMediaDropBlocked.value = false
+}
+
+function closeMediaUploadModal() {
+  isMediaUploadModalOpen.value = false
+  isMediaDragging.value = false
+  isPendingMediaDropBlocked.value = false
 }
 
 async function scrollSelectedMediaUploadLadyIntoView() {
@@ -10213,6 +10272,135 @@ select:focus, input:focus, textarea:focus {
   }
 }
 
+
+
+/* 第 018-127 批：前台預覽卡片點擊開啟置中媒體上傳彈窗 */
+.media-modal-card-only-layout {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
+.frontend-preview-side-panel.is-full-width-preview {
+  width: 100%;
+}
+
+.compact-right-lady-card {
+  cursor: pointer;
+}
+
+.compact-right-lady-card:focus-visible {
+  outline: 3px solid rgba(14, 165, 233, 0.65);
+  outline-offset: 4px;
+}
+
+.lady-card-upload-hint-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 4;
+  border-radius: 999px;
+  padding: 4px 7px;
+  background: rgba(15, 23, 42, 0.72);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 900;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.18);
+  pointer-events: none;
+}
+
+.media-upload-modal-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(12px);
+}
+
+.media-upload-modal-dialog {
+  width: min(680px, calc(100vw - 32px));
+  max-height: calc(100vh - 44px);
+  overflow: auto;
+  border: 1px solid rgba(148, 163, 184, 0.38);
+  border-radius: 26px;
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(239, 246, 255, 0.96));
+  box-shadow: 0 32px 90px rgba(15, 23, 42, 0.34);
+}
+
+.media-upload-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 20px 22px 14px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.24);
+}
+
+.media-upload-modal-header h3 {
+  margin: 4px 0 4px;
+  color: #0f172a;
+  font-size: 22px;
+  font-weight: 950;
+}
+
+.media-upload-modal-header p {
+  margin: 0;
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.media-upload-modal-kicker {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 9px;
+  background: rgba(37, 99, 235, 0.1);
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.media-upload-modal-close {
+  border: 1px solid rgba(148, 163, 184, 0.38);
+  border-radius: 999px;
+  padding: 9px 14px;
+  background: rgba(255, 255, 255, 0.88);
+  color: #334155;
+  font-weight: 900;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.modal-media-upload-box {
+  margin: 0;
+  border: none !important;
+  border-radius: 0 0 26px 26px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+@media (max-width: 760px) {
+  .media-upload-modal-mask {
+    align-items: stretch;
+    padding: 12px;
+  }
+
+  .media-upload-modal-dialog {
+    width: 100%;
+    max-height: calc(100vh - 24px);
+  }
+
+  .media-upload-modal-header {
+    flex-direction: column;
+  }
+
+  .media-upload-modal-close {
+    width: 100%;
+  }
+}
 
 /* 第 018-7 批：媒體上傳左側、前台預覽右側、支援燈箱與刪除 */
 .frontend-media-preview-layout {
