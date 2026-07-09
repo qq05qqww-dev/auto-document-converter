@@ -1315,6 +1315,7 @@
 </template>
 
 <!-- 第 018-131 批：媒體上傳彈窗內縮圖放大層級修正 -->
+<!-- batch018-132-duplicate-upsert-guard -->
 <!-- batch018-120-sync-id-backfill-media-upload-fix -->
 <script setup>
 // 第 018-107 批：登入後預設展開地區機房管理，並記住最後使用的縣市 / 地區 / 定點外送 / 機房。
@@ -2600,6 +2601,107 @@ function makePreviewLadyKey(lady) {
   return `${normalizeLadySyncCompactText(country)}__${normalizeLadySyncCompactText(lady?.name || '')}`
 }
 
+function normalizeLadyIdentityBodyValue(value) {
+  const text = normalizeLadySyncCompactText(value)
+  return text.replace(/[^0-9a-z一-鿿]+/gi, '')
+}
+
+function getLadyIdentityBodyParts(lady) {
+  const body = lady?.body || {}
+  return {
+    age: normalizeLadyIdentityBodyValue(lady?.age ?? body?.age ?? ''),
+    height: normalizeLadyIdentityBodyValue(lady?.height ?? body?.height ?? ''),
+    weight: normalizeLadyIdentityBodyValue(lady?.weight ?? body?.weight ?? ''),
+    cup: normalizeLadyIdentityBodyValue(lady?.cup ?? body?.cup ?? '')
+  }
+}
+
+function makeLadyStrictIdentityKey(lady) {
+  const nameKey = makePreviewLadyKey(lady)
+  const bodyParts = getLadyIdentityBodyParts(lady)
+  return [
+    nameKey,
+    bodyParts.age,
+    bodyParts.height,
+    bodyParts.weight,
+    bodyParts.cup
+  ].join('__')
+}
+
+function countMatchingIdentityBodyParts(sourceLady, targetLady) {
+  const source = getLadyIdentityBodyParts(sourceLady)
+  const target = getLadyIdentityBodyParts(targetLady)
+  let availableCount = 0
+  let matchedCount = 0
+  ;['height', 'weight', 'cup', 'age'].forEach(key => {
+    if (!source[key] || !target[key]) return
+    availableCount += 1
+    if (source[key] === target[key]) matchedCount += 1
+  })
+  return { availableCount, matchedCount }
+}
+
+function isSameFormalLadyIdentity(sourceLady, targetLady) {
+  if (!sourceLady || !targetLady) return false
+  if (makePreviewLadyKey(sourceLady) !== makePreviewLadyKey(targetLady)) return false
+  const { availableCount, matchedCount } = countMatchingIdentityBodyParts(sourceLady, targetLady)
+  if (availableCount >= 3) return matchedCount >= 3
+  if (availableCount === 2) return matchedCount >= 2
+  return false
+}
+
+function findBestExistingLadyMatchForSync(lady) {
+  const key = makePreviewLadyKey(lady)
+  const matches = frontendLadies.value.filter(item => makePreviewLadyKey(item) === key)
+  if (!matches.length) {
+    return { match: null, matches, formalMatches: [], suspected: false, matchedBy: '' }
+  }
+
+  const strictKey = makeLadyStrictIdentityKey(lady)
+  const strictMatches = matches.filter(item => makeLadyStrictIdentityKey(item) === strictKey)
+  const formalMatches = strictMatches.length
+    ? strictMatches
+    : matches.filter(item => isSameFormalLadyIdentity(lady, item))
+
+  if (formalMatches.length === 1) {
+    return {
+      match: formalMatches[0],
+      matches,
+      formalMatches,
+      suspected: false,
+      matchedBy: strictMatches.length ? 'formal-id-full-body' : 'formal-id-body'
+    }
+  }
+
+  if (formalMatches.length > 1) {
+    return {
+      match: null,
+      matches,
+      formalMatches,
+      suspected: true,
+      matchedBy: 'multiple-formal-id-body'
+    }
+  }
+
+  if (matches.length === 1) {
+    return {
+      match: matches[0],
+      matches,
+      formalMatches: [],
+      suspected: false,
+      matchedBy: 'name-country-single'
+    }
+  }
+
+  return {
+    match: null,
+    matches,
+    formalMatches: [],
+    suspected: true,
+    matchedBy: 'multiple-name-country'
+  }
+}
+
 function getLadySyncLocation(lady) {
   const locationInfo = lady?.locationInfo || lady?.location_info || {}
   return {
@@ -2676,12 +2778,13 @@ function assessLadyDatabaseSync(lady) {
       label: '尚未比對',
       message: '正在讀取資料庫，確認是否已同步。',
       match: null,
-      matches: []
+      matches: [],
+      matchedBy: ''
     }
   }
 
-  const key = makePreviewLadyKey(lady)
-  const matches = frontendLadies.value.filter(item => makePreviewLadyKey(item) === key)
+  const matchResult = findBestExistingLadyMatchForSync(lady)
+  const { match, matches, suspected, matchedBy } = matchResult
 
   if (!matches.length) {
     return {
@@ -2689,47 +2792,86 @@ function assessLadyDatabaseSync(lady) {
       label: '可新增',
       message: '資料庫尚無同國籍、同姓名小姐，可安全新增。',
       match: null,
-      matches
+      matches,
+      matchedBy: ''
     }
   }
 
-  if (matches.length > 1) {
+  if (suspected || !match) {
     return {
       state: 'suspected',
       label: `疑似重複 ${matches.length} 筆`,
-      message: '資料庫已有多筆同國籍、同姓名資料，已禁止自動送出，避免誤新增或誤更新。',
+      message: matchedBy === 'multiple-formal-id-body'
+        ? '資料庫已有多筆同國籍、同姓名且身材條件相同的資料，已禁止送出，請先到 01 後台整理重複資料。'
+        : '資料庫已有多筆同國籍、同姓名資料，系統無法安全判斷唯一主檔，已禁止新增第二筆。',
       match: null,
-      matches
+      matches,
+      matchedBy
     }
   }
 
-  const match = matches[0]
   const sameContent = JSON.stringify(buildLadySyncComparable(lady)) === JSON.stringify(buildLadySyncComparable(match))
 
   if (sameContent) {
     return {
       state: 'synced',
       label: '已同步',
-      message: '資料庫已有完全相同資料，本次會略過，不會重複新增。',
+      message: '資料庫已有完全相同資料，本次會略過資料庫新增；中央網站只會補同步原正式資料。',
       match,
-      matches
+      matches,
+      matchedBy
     }
   }
 
   return {
     state: 'update',
     label: '可更新',
-    message: '資料庫已有同一位小姐，但內容有變更；本次會更新原資料，不會建立第二筆。',
+    message: matchedBy === 'name-country-single'
+      ? '資料庫已有同國籍、同姓名唯一資料；本次會更新原資料，不會建立第二筆。'
+      : '資料庫已比對到同一位小姐正式主檔；本次會更新原資料，不會建立第二筆。',
     match,
-    matches
+    matches,
+    matchedBy
   }
 }
 
+function buildDuplicateGuardedSubmissionItem(item, assessment = null) {
+  const match = assessment?.match || null
+  const matchedId = Number(match?.id || getDatabaseIdHint(item) || 0)
+  const sourceIdentity = item?.sourceIdentity || item?.sourceId || makeStableLadySourceIdentity({
+    ...item,
+    ...(match || {})
+  })
+  const guarded = {
+    ...item,
+    sourceId: sourceIdentity,
+    sourceIdentity,
+    duplicateGuardMode: assessment?.state === 'update' ? 'update-existing' : 'create-or-update',
+    duplicateGuardMatchedBy: assessment?.matchedBy || '',
+    duplicateGuardNameKey: makePreviewLadyKey(item),
+    duplicateGuardIdentityKey: makeLadyStrictIdentityKey(item)
+  }
+
+  if (matchedId > 0 && assessment?.state === 'update') {
+    guarded.id = matchedId
+    guarded.databaseId = matchedId
+    guarded.existingDatabaseId = matchedId
+    guarded.existingListingId = matchedId
+    guarded.targetListingId = matchedId
+  }
+
+  return guarded
+}
+
 function buildDatabaseSubmissionPlan(payload) {
-  const rows = (Array.isArray(payload?.items) ? payload.items : []).map(item => ({
-    item,
-    assessment: assessLadyDatabaseSync(item)
-  }))
+  const rows = (Array.isArray(payload?.items) ? payload.items : []).map(item => {
+    const assessment = assessLadyDatabaseSync(item)
+    return {
+      item,
+      assessment,
+      guardedItem: buildDuplicateGuardedSubmissionItem(item, assessment)
+    }
+  })
 
   return {
     rows,
@@ -2740,7 +2882,7 @@ function buildDatabaseSubmissionPlan(payload) {
     checkingCount: rows.filter(row => row.assessment.state === 'checking').length,
     itemsToSubmit: rows
       .filter(row => ['new', 'update'].includes(row.assessment.state))
-      .map(row => row.item)
+      .map(row => row.guardedItem)
   }
 }
 
@@ -4901,8 +5043,22 @@ function buildCentralWebsiteSyncItem(item, previewLady = null) {
     cup,
     age
   }
+  const assessment = frontendLadiesLoaded.value ? assessLadyDatabaseSync({ ...flattenedItem, ...(currentPreview || {}) }) : null
+  const matchedId = Number(assessment?.match?.id || item?.existingListingId || item?.existingDatabaseId || item?.databaseId || 0)
+  const duplicateGuardFields = {
+    duplicateGuardMode: assessment?.state === 'update' || assessment?.state === 'synced' ? 'update-existing' : 'create-or-update',
+    duplicateGuardMatchedBy: assessment?.matchedBy || item?.duplicateGuardMatchedBy || '',
+    duplicateGuardNameKey: makePreviewLadyKey({ ...flattenedItem, ...(currentPreview || {}) }),
+    duplicateGuardIdentityKey: makeLadyStrictIdentityKey({ ...flattenedItem, ...(currentPreview || {}) })
+  }
 
-  if (!currentPreview) return flattenedItem
+  if (!currentPreview) {
+    return {
+      ...flattenedItem,
+      ...duplicateGuardFields,
+      ...(matchedId > 0 ? { existingListingId: matchedId, targetListingId: matchedId, databaseId: matchedId } : {})
+    }
+  }
 
   const currentLocation = getCurrentListingLocation()
   const previewLocation = getLadySyncLocation(currentPreview)
@@ -4911,7 +5067,7 @@ function buildCentralWebsiteSyncItem(item, previewLady = null) {
   const district = currentPreview.district || item.district || previewLocation.district || itemLocation.district || currentLocation.district
   const mode = currentPreview.mode || item.mode || previewLocation.mode || itemLocation.mode || currentLocation.mode
   const room = currentPreview.room || currentPreview.sourceRoom || item.room || item.sourceRoom || previewLocation.room || itemLocation.room || currentLocation.room || ruleScopeRoom.value || ''
-  const sourceIdentity = currentPreview.sourceIdentity || makeStableLadySourceIdentity({
+  const sourceIdentity = currentPreview.sourceIdentity || item.sourceIdentity || item.sourceId || makeStableLadySourceIdentity({
     ...item,
     ...currentPreview,
     city,
@@ -4923,6 +5079,8 @@ function buildCentralWebsiteSyncItem(item, previewLady = null) {
 
   return {
     ...flattenedItem,
+    ...duplicateGuardFields,
+    ...(matchedId > 0 ? { existingListingId: matchedId, targetListingId: matchedId, databaseId: matchedId } : {}),
     sourceId: sourceIdentity,
     sourceIdentity,
     sourceRoom: currentPreview.sourceRoom || item.sourceRoom || room || ruleScopeRoom.value || '',
