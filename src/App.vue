@@ -1442,6 +1442,7 @@
 <!-- batch018-133-media-duplicate-false-skip-fix -->
 <!-- batch018-132-duplicate-upsert-guard -->
 <!-- batch018-120-sync-id-backfill-media-upload-fix -->
+<!-- batch018-138-central-direct-media-upload-bind-fix -->
 <script setup>
 // 第 018-107 批：登入後預設展開地區機房管理，並記住最後使用的縣市 / 地區 / 定點外送 / 機房。
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -4597,9 +4598,11 @@ function initializeMediaUploadProgress() {
   mediaUploadFailedCount.value = 0
 }
 
-function uploadMediaFileWithProgress(formData, onProgress) {
+function uploadMediaFileWithProgress(formData, onProgress, options = {}) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
+    const uploadUrl = options.url || `${apiBaseUrl.value}/api/ladies/media/upload`
+    const headers = options.headers && typeof options.headers === 'object' ? options.headers : {}
 
     xhr.upload.onprogress = event => {
       if (!event.lengthComputable) return
@@ -4617,7 +4620,7 @@ function uploadMediaFileWithProgress(formData, onProgress) {
       }
 
       if (xhr.status < 200 || xhr.status >= 300) {
-        reject(new Error(data.message || `HTTP ${xhr.status}`))
+        reject(new Error(data.message || data.error || `HTTP ${xhr.status}`))
         return
       }
 
@@ -4627,8 +4630,55 @@ function uploadMediaFileWithProgress(formData, onProgress) {
 
     xhr.onerror = () => reject(new Error('網路連線中斷，媒體上傳失敗。'))
     xhr.onabort = () => reject(new Error('媒體上傳已中止。'))
-    xhr.open('POST', `${apiBaseUrl.value}/api/ladies/media/upload`)
+    xhr.open('POST', uploadUrl)
+    Object.entries(headers).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && String(value).trim()) {
+        xhr.setRequestHeader(key, String(value))
+      }
+    })
     xhr.send(formData)
+  })
+}
+
+async function prepareCentralMediaUploadContext(ladyId, previewLady = null) {
+  const id = Number(ladyId || 0)
+  if (!id) throw new Error('找不到可綁定媒體的正式小姐 ID。')
+
+  const detail = await fetchPublicLadyDetail(id, { refresh: true })
+  if (!detail) throw new Error('中央網站媒體上傳失敗：讀不到目前小姐完整資料。')
+
+  const syncItem = buildCentralWebsiteSyncItem(detail, previewLady)
+  const accessToken = await getCentralWebsiteAccessToken()
+  return {
+    ladyId: id,
+    previewLady,
+    detail,
+    syncItem,
+    accessToken,
+    sourceIdentity: syncItem.sourceIdentity || syncItem.sourceId || detail.sourceIdentity || detail.sourceId || ''
+  }
+}
+
+function uploadMediaFileToCentralWebsiteWithProgress(file, context, onProgress, index = 0) {
+  if (!file) throw new Error('沒有可上傳的媒體檔案。')
+  if (!context?.accessToken || !context?.syncItem) throw new Error('中央網站媒體上傳前置資料不完整。')
+
+  const mediaType = file.type.startsWith('video/') ? 'video' : 'image'
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('item', JSON.stringify(context.syncItem || {}))
+  formData.append('sourceIdentity', context.sourceIdentity || '')
+  formData.append('listingId', String(context.syncItem.centralListingId || context.syncItem.listingId || context.ladyId || ''))
+  formData.append('mediaType', mediaType)
+  formData.append('note', file.name || '')
+  formData.append('sortOrder', String(index + 1))
+
+  return uploadMediaFileWithProgress(formData, onProgress, {
+    url: `${CENTRAL_WEBSITE_API_BASE_URL}/api/integrations/converter/central-listings/media/upload-bind`,
+    headers: {
+      Authorization: `Bearer ${context.accessToken}`,
+      'X-Converter-Apikey': SUPABASE_PUBLIC_API_KEY
+    }
   })
 }
 
@@ -4708,11 +4758,16 @@ async function uploadLadyMedia() {
   const uploadTargetLadyId = String(mediaUploadLadyId.value || '').trim()
   const uploadTargetPreviewLady = currentDocumentPreviewLadies.value.find(lady => String(lady.id || '') === uploadTargetLadyId) || null
   const uploadDuplicateCheckLady = uploadTargetPreviewLady || frontendLadies.value.find(lady => String(lady?.id || '') === uploadTargetLadyId) || null
+  let centralUploadContext = null
+  let centralDirectUploadUsed = false
 
   initializeMediaUploadProgress()
   isMediaUploading.value = true
 
   try {
+    mediaUploadStatusText.value = '正在準備中央網站媒體上傳，不會再走舊的 converter 暫存上傳。'
+    centralUploadContext = await prepareCentralMediaUploadContext(uploadTargetLadyId, uploadTargetPreviewLady)
+
     for (const file of mediaUploadFiles.value) {
       currentFile = file
       mediaUploadCurrentFileName.value = file.name
@@ -4726,16 +4781,11 @@ async function uploadLadyMedia() {
 
       setMediaUploadFileState(file, makeMediaUploadState('uploading', 0, '上傳中 0%'))
 
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('ladyId', String(mediaUploadLadyId.value))
-      formData.append('mediaType', file.type.startsWith('video/') ? 'video' : 'image')
-      formData.append('note', file.name)
-
-      const uploadResult = await uploadMediaFileWithProgress(formData, percent => {
+      const uploadResult = await uploadMediaFileToCentralWebsiteWithProgress(file, centralUploadContext, percent => {
         setMediaUploadFileState(file, makeMediaUploadState('uploading', percent, `上傳中 ${percent}%`))
-        mediaUploadStatusText.value = `正在上傳「${file.name}」：${percent}%。已完成 ${successCount} / ${mediaUploadFiles.value.length} 個檔案。`
-      })
+        mediaUploadStatusText.value = `正在上傳並綁定中央網站「${file.name}」：${percent}%。已完成 ${successCount} / ${mediaUploadFiles.value.length} 個檔案。`
+      }, successCount)
+      centralDirectUploadUsed = true
 
       const uploadedItems = buildFallbackUploadedMediaFromResponse(uploadResult, file, successCount)
       uploadedCentralMediaItems.push(...uploadedItems)
@@ -4771,18 +4821,24 @@ async function uploadLadyMedia() {
     try {
       const targetLadyId = String(mediaUploadLadyId.value || uploadTargetLadyId || '').trim()
 
-      if (uploadedCentralMediaItems.length) {
+      if (uploadedCentralMediaItems.length && !centralDirectUploadUsed) {
         await bindUploadedMediaDirectlyToCentralWebsite(targetLadyId, uploadedCentralMediaItems, {
           previewLady: uploadTargetPreviewLady,
           timeoutMs: 15000
         })
+      } else if (uploadedCentralMediaItems.length && centralDirectUploadUsed) {
+        await fetchCentralWebsiteMediaForLady(uploadTargetPreviewLady || centralUploadContext?.detail || { id: targetLadyId }, {
+          previewLady: uploadTargetPreviewLady,
+          allowMissing: true,
+          refresh: true
+        }).catch(() => null)
       }
 
       if (uploadedCentralMediaItems.length) {
         mergeUploadedMediaIntoLocalPreview(targetLadyId || mediaUploadLadyId.value, uploadedCentralMediaItems, uploadTargetPreviewLady)
       }
 
-      mediaUploadStatusText.value = `媒體疊加上傳完成：成功 ${successCount} 個，略過重複 ${skippedDuplicateCount} 個，失敗 ${failCount} 個。已直接綁定中央網站正確 ID；沒有再重送整筆小姐資料，避免媒體被覆蓋。`
+      mediaUploadStatusText.value = `媒體疊加上傳完成：成功 ${successCount} 個，略過重複 ${skippedDuplicateCount} 個，失敗 ${failCount} 個。已直接上傳 R2 並綁定 01 中央網站 listing_media；沒有再重送整筆小姐資料，避免媒體被覆蓋。`
     } catch (syncError) {
       if (uploadedCentralMediaItems.length) {
         mergeUploadedMediaIntoLocalPreview(uploadTargetLadyId || mediaUploadLadyId.value, uploadedCentralMediaItems, uploadTargetPreviewLady)
