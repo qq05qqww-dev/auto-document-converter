@@ -1386,6 +1386,7 @@
 </template>
 
 <!-- 第 018-131 批：媒體上傳彈窗內縮圖放大層級修正 -->
+<!-- batch018-136-sync-result-classification-fix -->
 <!-- batch018-135-consistency-check-modal-preview-header -->
 <!-- batch018-133-media-duplicate-false-skip-fix -->
 <!-- batch018-132-duplicate-upsert-guard -->
@@ -3110,37 +3111,44 @@ function getPlanItemNamesByState(plan, states = []) {
     .map(row => formatSyncLadyName(row.item))
 }
 
-function getCentralSyncResultNames(centralSync, matcher) {
-  const rows = Array.isArray(centralSync?.data?.results)
+function getCentralSyncResultRows(centralSync) {
+  return Array.isArray(centralSync?.data?.results)
     ? centralSync.data.results
     : Array.isArray(centralSync?.results)
       ? centralSync.results
       : []
+}
 
-  return rows
+function getCentralSyncResultNames(centralSync, matcher) {
+  return getCentralSyncResultRows(centralSync)
     .filter(row => typeof matcher === 'function' ? matcher(row) : false)
     .map(row => formatSyncLadyName(row))
 }
 
 function buildDetailedDatabaseSyncMessage(plan, centralSync = null) {
-  const createdNames = uniqueDisplayNames([
-    ...getPlanItemNamesByState(plan, ['new']),
-    ...getCentralSyncResultNames(centralSync, row => row?.status === 'created')
-  ])
-  const updatedNames = uniqueDisplayNames([
-    ...getPlanItemNamesByState(plan, ['update']),
-    ...getCentralSyncResultNames(centralSync, row => row?.status === 'updated' && !row?.duplicatePrevented)
-  ])
-  const duplicateNames = uniqueDisplayNames([
-    ...getPlanItemNamesByState(plan, ['suspected']),
-    ...getCentralSyncResultNames(centralSync, row => row?.duplicatePrevented || row?.status === 'suspected-duplicate')
-  ])
+  // 第 018-136 批：送出前的 02 比對只是預估；真正新增/更新結果以 01 Worker 回傳為準。
+  // 01 Worker 的 duplicatePrevented 代表「已防止重複並更新既有主檔」，不是「未建立」。
+  // 因此有中央同步結果時，不再把同一位小姐同時列在新增與更新，也不把 duplicatePrevented 列入重複未建立。
+  const centralRows = getCentralSyncResultRows(centralSync)
+  const hasCentralResult = centralRows.length > 0
+
+  const createdNames = hasCentralResult
+    ? uniqueDisplayNames(getCentralSyncResultNames(centralSync, row => row?.status === 'created'))
+    : uniqueDisplayNames(getPlanItemNamesByState(plan, ['new']))
+
+  const updatedNames = hasCentralResult
+    ? uniqueDisplayNames(getCentralSyncResultNames(centralSync, row => row?.status === 'updated'))
+    : uniqueDisplayNames(getPlanItemNamesByState(plan, ['update', 'synced']))
+
+  const suspectedNames = hasCentralResult
+    ? uniqueDisplayNames(getCentralSyncResultNames(centralSync, row => row?.status === 'suspected-duplicate'))
+    : uniqueDisplayNames(getPlanItemNamesByState(plan, ['suspected']))
 
   return [
-    `同步完成：新增 ${createdNames.length}、更新 ${updatedNames.length}、重複未建立 ${duplicateNames.length}`,
+    `同步完成：新增 ${createdNames.length}、更新 ${updatedNames.length}、疑似重複 ${suspectedNames.length}`,
     `新增：${formatSyncNameList(createdNames)}`,
     `更新：${formatSyncNameList(updatedNames)}`,
-    `重複資料未建立：${formatSyncNameList(duplicateNames)}`
+    `疑似重複需整理：${formatSyncNameList(suspectedNames)}`
   ].join('\n')
 }
 
