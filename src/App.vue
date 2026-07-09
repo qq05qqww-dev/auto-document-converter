@@ -1,3 +1,4 @@
+<!-- 第 018-133 批：媒體重複誤判修正，改由伺服器 URL 權威判斷 -->
 <!-- 第 018-130 批：上傳彈窗顯示已上傳媒體與燈箱資訊精簡版（依第 018-129 批延續） -->
 <!-- 第 018-129 批：前台預覽卡片方案服務對齊與媒體燈箱關閉鈕加大版（依第 018-128 批延續） -->
 <!-- 第 018-126 批：中央媒體來源統一與前後台數量同步修正版（依第 018-125 批延續） -->
@@ -1315,6 +1316,7 @@
 </template>
 
 <!-- 第 018-131 批：媒體上傳彈窗內縮圖放大層級修正 -->
+<!-- batch018-133-media-duplicate-false-skip-fix -->
 <!-- batch018-132-duplicate-upsert-guard -->
 <!-- batch018-120-sync-id-backfill-media-upload-fix -->
 <script setup>
@@ -3478,25 +3480,20 @@ function clearDeletedMediaSuppressionForLadyMedia(ladyOrId, mediaItems = [], pre
 }
 
 function getLadyAllMediaForDuplicateCheck(lady) {
-  const currentMedia = Array.isArray(lady?.media) ? lady.media : []
-  const localMedia = getLocalUploadedMediaForLady(lady, lady?.id || '')
-  return mergeMediaRecords(currentMedia, localMedia)
+  // 第 018-133 批：媒體重複判斷只能使用「已經存在於資料庫 / 中央網站」的權威媒體。
+  // 不能再拿 localUploadedMediaByLadyId 暫存資料判斷，否則上次失敗或舊暫存會造成「尚未上傳卻略過重複」。
+  if (!lady) return []
+  const centralMedia = getCentralWebsiteMediaSnapshotForLady(lady, lady?.id || '')
+  if (centralMedia !== null) return mergeMediaRecords([], centralMedia)
+  return mergeMediaRecords([], Array.isArray(lady?.media) ? lady.media : [])
 }
 
 function isMediaUploadFileAlreadyBoundToLady(file, lady) {
+  // 第 018-133 批：瀏覽器端不再用檔名 / caption 預先略過。
+  // 很多手機圖片會同名，若只靠檔名會把新圖片誤判成重複，導致 01 後台沒有圖片。
+  // 真正的重複媒體交給 01 Worker 以「已上傳後的 R2 URL」判斷。
   if (!file || !lady) return false
-  const fileNameToken = normalizeMediaDuplicateToken(file.name)
-  if (!fileNameToken) return false
-
-  const existingMedia = getLadyAllMediaForDuplicateCheck(lady)
-  return existingMedia.some(media => {
-    const mediaTokens = getMediaDuplicateTokens(media)
-    return mediaTokens.some(token => (
-      token === fileNameToken ||
-      token.endsWith(fileNameToken) ||
-      token.includes(fileNameToken)
-    ))
-  })
+  return false
 }
 
 function removeMediaFromLocalPreview(ladyOrId, mediaToRemove, previewLady = null) {
@@ -14466,3 +14463,17 @@ button:disabled {
 }
 
 </style>
+
+
+/* 第 018-133 批：卡片上方「目前選擇 / 點卡片上傳媒體」避免窄卡文字重疊 */
+.compact-right-lady-card.is-selected-upload-lady .lady-card-upload-hint-badge {
+  display: none !important;
+}
+
+.compact-right-lady-card .selected-upload-lady-badge,
+.compact-right-lady-card .lady-card-upload-hint-badge {
+  max-width: calc(100% - 16px) !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
