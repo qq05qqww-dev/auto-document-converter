@@ -1,3 +1,4 @@
+<!-- 第 018-137 批：疑似重複小姐整理與媒體缺失快速處理工具版 -->
 <!-- 第 018-133 批：媒體重複誤判修正，改由伺服器 URL 權威判斷 -->
 <!-- 第 018-130 批：上傳彈窗顯示已上傳媒體與燈箱資訊精簡版（依第 018-129 批延續） -->
 <!-- 第 018-129 批：前台預覽卡片方案服務對齊與媒體燈箱關閉鈕加大版（依第 018-128 批延續） -->
@@ -1067,7 +1068,7 @@
               <div>
                 <span class="consistency-check-modal-kicker">資料一致性檢查</span>
                 <h3>本次小姐同步狀態</h3>
-                <p>檢查本次文件小姐在 01 中央網站是否重複、是否缺圖，以及媒體數量是否一致；此功能只檢查，不會刪除或修改資料。</p>
+                <p>檢查本次文件小姐在 01 中央網站是否重複、是否缺圖，以及媒體數量是否一致；疑似重複時可手動指定正式主檔，其他筆只會標記待整理，不會刪除資料。</p>
               </div>
               <button type="button" class="consistency-check-modal-close" @click="closeConsistencyCheckModal">關閉</button>
             </div>
@@ -1095,6 +1096,10 @@
                 </small>
               </div>
 
+              <div v-if="duplicateResolveStatusText" class="duplicate-resolve-status" :class="`is-${duplicateResolveStatusType}`">
+                {{ duplicateResolveStatusText }}
+              </div>
+
               <div v-if="consistencyReportRows.length" class="consistency-result-table-wrap">
                 <table class="consistency-result-table">
                   <thead>
@@ -1107,12 +1112,57 @@
                     </tr>
                   </thead>
                   <tbody>
-                    <tr v-for="row in consistencyReportRows" :key="row.sourceId || row.name">
+                    <tr v-for="row in consistencyReportRows" :key="duplicateRowKey(row)">
                       <td>【{{ row.nationality || row.country || '-' }} {{ row.name || '-' }}】</td>
                       <td><span class="consistency-status-pill" :class="`is-${row.status}`">{{ row.statusLabel || row.status }}</span></td>
                       <td>{{ row.centralListingId ? `已建立 ${shortId(row.centralListingId)}` : '尚未建立' }}</td>
                       <td>{{ row.mediaCount || 0 }} 張 / 段</td>
-                      <td>{{ row.suggestion || row.message || '-' }}</td>
+                      <td>
+                        <p class="consistency-suggestion-text">{{ row.suggestion || row.message || '-' }}</p>
+
+                        <div v-if="row.status === 'duplicate' && getDuplicateCandidates(row).length" class="duplicate-organize-box">
+                          <div class="duplicate-organize-title">
+                            <strong>選擇要保留的正式主檔</strong>
+                            <span>其他重複筆會標記待整理並下架，不會刪除資料。</span>
+                          </div>
+                          <label
+                            v-for="candidate in getDuplicateCandidates(row)"
+                            :key="candidate.id"
+                            class="duplicate-candidate-option"
+                            :class="{ active: selectedDuplicateOfficialMap[duplicateRowKey(row)] === candidate.id }"
+                          >
+                            <input
+                              v-model="selectedDuplicateOfficialMap[duplicateRowKey(row)]"
+                              type="radio"
+                              :name="`duplicate-official-${duplicateRowKey(row)}`"
+                              :value="candidate.id"
+                            />
+                            <span>
+                              <b>{{ candidate.name || row.name }}</b>
+                              <small>ID {{ shortId(candidate.id) }}｜媒體 {{ candidate.mediaCount || 0 }}｜{{ candidate.city || '-' }} / {{ candidate.district || '-' }} / {{ candidate.room || '未設定機房' }}｜{{ candidate.statusLabel || candidate.status || '-' }}</small>
+                            </span>
+                          </label>
+
+                          <label class="duplicate-merge-media-toggle">
+                            <input v-model="duplicateResolveMergeMedia" type="checkbox" />
+                            同時把其他重複筆的圖片 / 影片補到正式主檔（不刪原媒體）
+                          </label>
+
+                          <button
+                            type="button"
+                            class="primary-btn duplicate-resolve-btn"
+                            :disabled="isDuplicateResolveBusy || getDuplicateCandidates(row).length < 2"
+                            @click="resolveDuplicateRow(row)"
+                          >
+                            {{ isDuplicateResolveBusy ? '處理中...' : '保留選取主檔，其他標記待整理' }}
+                          </button>
+                        </div>
+
+                        <div v-if="row.status === 'media-missing'" class="media-missing-action-box">
+                          <button type="button" class="ghost-btn" @click="openMediaUploadModalFromConsistency(row)">開啟媒體上傳</button>
+                          <span>重新上傳後再按「重新檢查本次小姐」。</span>
+                        </div>
+                      </td>
                     </tr>
                   </tbody>
                 </table>
@@ -1386,6 +1436,7 @@
 </template>
 
 <!-- 第 018-131 批：媒體上傳彈窗內縮圖放大層級修正 -->
+<!-- batch018-137-duplicate-organize-tool -->
 <!-- batch018-136-sync-result-classification-fix -->
 <!-- batch018-135-consistency-check-modal-preview-header -->
 <!-- batch018-133-media-duplicate-false-skip-fix -->
@@ -1560,6 +1611,11 @@ const isConsistencyCheckModalOpen = ref(false)
 const consistencyStatusText = ref('尚未檢查資料一致性。')
 const consistencyStatusType = ref('info')
 const consistencyReport = ref(null)
+const selectedDuplicateOfficialMap = ref({})
+const duplicateResolveMergeMedia = ref(true)
+const isDuplicateResolveBusy = ref(false)
+const duplicateResolveStatusText = ref('')
+const duplicateResolveStatusType = ref('info')
 const actionToastVisible = ref(false)
 const actionToastText = ref('')
 const actionToastType = ref('success')
@@ -4010,6 +4066,56 @@ function shortId(value) {
   return text.length > 8 ? `${text.slice(0, 8)}...` : text
 }
 
+function duplicateRowKey(row) {
+  return [
+    String(row?.sourceId || row?.source_id || ''),
+    String(row?.nationality || row?.country || ''),
+    String(row?.name || ''),
+    String(row?.city || ''),
+    String(row?.district || ''),
+  ].join('|') || `row-${Math.random().toString(36).slice(2)}`
+}
+
+function getDuplicateCandidates(row) {
+  return Array.isArray(row?.candidates) ? row.candidates.filter(candidate => candidate?.id) : []
+}
+
+function applyDuplicateCandidateDefaults(report = consistencyReport.value) {
+  const rows = Array.isArray(report?.items) ? report.items : []
+  const next = { ...selectedDuplicateOfficialMap.value }
+  for (const row of rows) {
+    if (row?.status !== 'duplicate') continue
+    const candidates = getDuplicateCandidates(row)
+    if (!candidates.length) continue
+    const key = duplicateRowKey(row)
+    if (next[key] && candidates.some(candidate => candidate.id === next[key])) continue
+    const best = [...candidates].sort((a, b) => Number(b.mediaCount || 0) - Number(a.mediaCount || 0))[0]
+    next[key] = best?.id || candidates[0].id
+  }
+  selectedDuplicateOfficialMap.value = next
+}
+
+function findPreviewLadyFromConsistencyRow(row) {
+  const targetName = String(row?.name || '').trim()
+  const targetCountry = String(row?.nationality || row?.country || '').trim()
+  if (!targetName) return null
+  return currentDocumentPreviewLadies.value.find((lady) => (
+    String(lady?.name || '').trim() === targetName &&
+    (!targetCountry || String(lady?.country || '').trim() === targetCountry)
+  )) || null
+}
+
+function openMediaUploadModalFromConsistency(row) {
+  const lady = findPreviewLadyFromConsistencyRow(row)
+  if (!lady) {
+    duplicateResolveStatusType.value = 'warning'
+    duplicateResolveStatusText.value = '找不到這位小姐的本次文件卡片，請先確認文件3仍有這筆資料。'
+    return
+  }
+  closeConsistencyCheckModal()
+  openMediaUploadModalForLady(lady)
+}
+
 function openConsistencyCheckModal() {
   isConsistencyCheckModalOpen.value = true
   if (!consistencyReport.value && currentDocumentPreviewLadies.value.length && !isConsistencyChecking.value) {
@@ -4023,6 +4129,9 @@ function closeConsistencyCheckModal() {
 
 function resetConsistencyCheckStatus() {
   consistencyReport.value = null
+  selectedDuplicateOfficialMap.value = {}
+  duplicateResolveStatusText.value = ''
+  duplicateResolveStatusType.value = 'info'
   consistencyStatusText.value = '尚未檢查資料一致性。'
   consistencyStatusType.value = 'info'
 }
@@ -5313,6 +5422,9 @@ async function runConsistencyCheck() {
     }
 
     consistencyReport.value = data.data || data
+    applyDuplicateCandidateDefaults(consistencyReport.value)
+    duplicateResolveStatusText.value = ''
+    duplicateResolveStatusType.value = 'info'
     const summary = consistencyReport.value?.summary || {}
     const duplicateCount = Number(summary.duplicateCount || 0)
     const mediaMissingCount = Number(summary.mediaMissingCount || 0)
@@ -5330,6 +5442,82 @@ async function runConsistencyCheck() {
     consistencyStatusText.value = error?.message || '中央網站一致性檢查失敗。'
   } finally {
     isConsistencyChecking.value = false
+  }
+}
+
+
+async function resolveDuplicateRow(row) {
+  if (isDuplicateResolveBusy.value) return
+  const candidates = getDuplicateCandidates(row)
+  if (candidates.length < 2) {
+    duplicateResolveStatusType.value = 'warning'
+    duplicateResolveStatusText.value = '這筆沒有足夠的重複候選資料可整理。'
+    return
+  }
+
+  const key = duplicateRowKey(row)
+  const officialListingId = selectedDuplicateOfficialMap.value[key] || candidates[0]?.id || ''
+  const duplicateIds = candidates
+    .map(candidate => candidate.id)
+    .filter(id => id && id !== officialListingId)
+
+  if (!officialListingId || !duplicateIds.length) {
+    duplicateResolveStatusType.value = 'warning'
+    duplicateResolveStatusText.value = '請先選擇要保留的正式主檔。'
+    return
+  }
+
+  const officialCandidate = candidates.find(candidate => candidate.id === officialListingId)
+  const label = `【${row?.nationality || row?.country || ''} ${row?.name || ''}】`
+  const confirmText = [
+    `確認整理 ${label} 的重複資料？`,
+    '',
+    `保留主檔：${officialCandidate?.name || row?.name || ''} / ${shortId(officialListingId)}`,
+    `其他 ${duplicateIds.length} 筆會標記待整理並下架，不會刪除資料。`,
+    duplicateResolveMergeMedia.value ? '會同時把其他重複筆的圖片 / 影片補到正式主檔。' : '不會搬移媒體。',
+  ].join('\n')
+
+  if (!window.confirm(confirmText)) return
+
+  isDuplicateResolveBusy.value = true
+  duplicateResolveStatusType.value = 'pending'
+  duplicateResolveStatusText.value = '正在整理疑似重複資料...'
+
+  try {
+    const accessToken = await getCentralWebsiteAccessToken()
+    const { response, data } = await fetchJsonWithTimeout(
+      `${CENTRAL_WEBSITE_API_BASE_URL}/api/integrations/converter/central-listings/duplicates/mark-official`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'X-Converter-Apikey': SUPABASE_PUBLIC_API_KEY,
+        },
+        body: JSON.stringify({
+          officialListingId,
+          duplicateIds,
+          mergeMedia: duplicateResolveMergeMedia.value,
+        }),
+      },
+      CENTRAL_WEBSITE_SYNC_TIMEOUT_MS,
+      '整理疑似重複資料失敗'
+    )
+
+    if (!response.ok || data?.ok === false) {
+      throw new Error(data?.message || data?.error || `整理疑似重複資料失敗：HTTP ${response.status}`)
+    }
+
+    const result = data.data || data
+    duplicateResolveStatusType.value = 'success'
+    duplicateResolveStatusText.value = `整理完成：保留 1 筆正式主檔，標記待整理 ${result.markedDuplicateCount || duplicateIds.length} 筆，補入媒體 ${result.mergedMediaCount || 0} 筆。`
+    showActionToast(duplicateResolveStatusText.value, 'success')
+    await runConsistencyCheck()
+  } catch (error) {
+    duplicateResolveStatusType.value = 'error'
+    duplicateResolveStatusText.value = error?.message || '整理疑似重複資料失敗。'
+  } finally {
+    isDuplicateResolveBusy.value = false
   }
 }
 
@@ -14739,6 +14927,108 @@ button:disabled {
 .consistency-status-pill.is-duplicate { background: #fee2e2; color: #b91c1c; }
 .consistency-status-pill.is-missing { background: #dbeafe; color: #1d4ed8; }
 .consistency-status-pill.is-error { background: #fee2e2; color: #991b1b; }
+
+
+/* batch018-137-duplicate-organize-tool */
+.consistency-suggestion-text {
+  margin: 0 0 10px;
+  line-height: 1.55;
+}
+
+.duplicate-resolve-status {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  font-weight: 900;
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  background: rgba(248, 250, 252, 0.94);
+  color: #334155;
+}
+
+.duplicate-resolve-status.is-success { background: #dcfce7; color: #047857; border-color: rgba(34, 197, 94, 0.34); }
+.duplicate-resolve-status.is-warning { background: #fef3c7; color: #b45309; border-color: rgba(245, 158, 11, 0.34); }
+.duplicate-resolve-status.is-error { background: #fee2e2; color: #b91c1c; border-color: rgba(239, 68, 68, 0.34); }
+.duplicate-resolve-status.is-pending { background: #dbeafe; color: #1d4ed8; border-color: rgba(59, 130, 246, 0.34); }
+
+.duplicate-organize-box,
+.media-missing-action-box {
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  background: rgba(239, 246, 255, 0.72);
+}
+
+.duplicate-organize-title {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 10px;
+  color: #0f172a;
+}
+
+.duplicate-organize-title span,
+.media-missing-action-box span {
+  color: #64748b;
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.duplicate-candidate-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-bottom: 8px;
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(255, 255, 255, 0.78);
+  cursor: pointer;
+}
+
+.duplicate-candidate-option.active {
+  border-color: rgba(37, 99, 235, 0.46);
+  background: rgba(219, 234, 254, 0.82);
+  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.12);
+}
+
+.duplicate-candidate-option input {
+  margin-top: 4px;
+}
+
+.duplicate-candidate-option span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.duplicate-candidate-option small {
+  color: #64748b;
+  font-weight: 800;
+  line-height: 1.5;
+}
+
+.duplicate-merge-media-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 10px 0;
+  font-size: 0.86rem;
+  font-weight: 900;
+  color: #334155;
+}
+
+.duplicate-resolve-btn {
+  width: 100%;
+  min-height: 40px;
+}
+
+.media-missing-action-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
 
 @media (max-width: 720px) {
   .consistency-check-head,
