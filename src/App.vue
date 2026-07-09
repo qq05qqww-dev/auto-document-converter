@@ -1052,6 +1052,53 @@
         </div>
       </div>
 
+      <section class="consistency-check-panel">
+        <div class="consistency-check-head">
+          <div>
+            <h3>資料一致性檢查</h3>
+            <p>檢查本次文件小姐在 01 中央網站是否重複、是否缺圖，以及媒體數量是否一致；此功能只檢查，不會刪除或修改資料。</p>
+          </div>
+          <button
+            type="button"
+            class="primary-btn consistency-check-btn"
+            :disabled="isConsistencyChecking || !currentDocumentPreviewLadies.length"
+            @click="runConsistencyCheck"
+          >
+            {{ isConsistencyChecking ? '檢查中...' : '檢查本次小姐同步狀態' }}
+          </button>
+        </div>
+
+        <div class="consistency-check-summary" :class="`is-${consistencyStatusType}`">
+          <span>{{ consistencyStatusText }}</span>
+          <small v-if="consistencyReport?.summary">
+            正常 {{ consistencyReport.summary.okCount || 0 }}｜缺媒體 {{ consistencyReport.summary.mediaMissingCount || 0 }}｜疑似重複 {{ consistencyReport.summary.duplicateCount || 0 }}｜未建立 {{ consistencyReport.summary.missingCount || 0 }}
+          </small>
+        </div>
+
+        <div v-if="consistencyReportRows.length" class="consistency-result-table-wrap">
+          <table class="consistency-result-table">
+            <thead>
+              <tr>
+                <th>小姐</th>
+                <th>狀態</th>
+                <th>01 主檔</th>
+                <th>媒體</th>
+                <th>建議處理</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in consistencyReportRows" :key="row.sourceId || row.name">
+                <td>【{{ row.nationality || row.country || '-' }} {{ row.name || '-' }}】</td>
+                <td><span class="consistency-status-pill" :class="`is-${row.status}`">{{ row.statusLabel || row.status }}</span></td>
+                <td>{{ row.centralListingId ? `已建立 ${shortId(row.centralListingId)}` : '尚未建立' }}</td>
+                <td>{{ row.mediaCount || 0 }} 張 / 段</td>
+                <td>{{ row.suggestion || row.message || '-' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <teleport to="body">
         <div v-if="isMediaUploadModalOpen" class="media-upload-modal-mask" @click.self="closeMediaUploadModal">
           <section class="media-upload-modal-dialog" role="dialog" aria-modal="true" aria-label="媒體上傳測試">
@@ -1316,6 +1363,7 @@
 </template>
 
 <!-- 第 018-131 批：媒體上傳彈窗內縮圖放大層級修正 -->
+<!-- batch018-134-consistency-check-preview -->
 <!-- batch018-133-media-duplicate-false-skip-fix -->
 <!-- batch018-132-duplicate-upsert-guard -->
 <!-- batch018-120-sync-id-backfill-media-upload-fix -->
@@ -1483,6 +1531,10 @@ const centralWebsiteSyncNeedsRetry = ref(false)
 const centralWebsiteSyncRetryText = ref('')
 const databaseSubmitStatusText = ref('尚未送出本次文件3。')
 const databaseSubmitStatusType = ref('info')
+const isConsistencyChecking = ref(false)
+const consistencyStatusText = ref('尚未檢查資料一致性。')
+const consistencyStatusType = ref('info')
+const consistencyReport = ref(null)
 const actionToastVisible = ref(false)
 const actionToastText = ref('')
 const actionToastType = ref('success')
@@ -3918,6 +3970,24 @@ const databaseSyncSummaryText = computed(() => {
   return `本次比對：新增 ${summary.newCount}、更新 ${summary.updateCount}、已同步 ${summary.syncedCount}、疑似重複 ${summary.suspectedCount}。`
 })
 
+const consistencyReportRows = computed(() => (Array.isArray(consistencyReport.value?.items) ? consistencyReport.value.items : []))
+
+function shortId(value) {
+  const text = String(value || '').trim()
+  if (!text) return ''
+  return text.length > 8 ? `${text.slice(0, 8)}...` : text
+}
+
+function resetConsistencyCheckStatus() {
+  consistencyReport.value = null
+  consistencyStatusText.value = '尚未檢查資料一致性。'
+  consistencyStatusType.value = 'info'
+}
+
+watch(currentDocumentPreviewLadies, () => {
+  resetConsistencyCheckStatus()
+})
+
 watch(databaseSyncSummaryText, message => {
   if (!isDatabaseSubmitting.value && ['info', 'success'].includes(databaseSubmitStatusType.value)) {
     setDatabaseSubmitFeedback(message, 'info')
@@ -5160,6 +5230,64 @@ async function postCentralWebsiteSyncItems(items, options = {}) {
   }
 
   throw lastError || new Error('中央網站同步失敗。')
+}
+
+
+async function runConsistencyCheck() {
+  if (isConsistencyChecking.value) return
+  const ladies = currentDocumentPreviewLadies.value
+  if (!ladies.length) {
+    consistencyStatusText.value = '目前沒有本次文件小姐可檢查。'
+    consistencyStatusType.value = 'warning'
+    return
+  }
+
+  isConsistencyChecking.value = true
+  consistencyStatusText.value = '正在檢查 01 中央網站資料與媒體狀態...'
+  consistencyStatusType.value = 'pending'
+  consistencyReport.value = null
+
+  try {
+    const accessToken = await getCentralWebsiteAccessToken()
+    const items = ladies.map(lady => buildCentralWebsiteSyncItem(lady, lady))
+    const { response, data } = await fetchJsonWithTimeout(
+      `${CENTRAL_WEBSITE_API_BASE_URL}/api/integrations/converter/central-listings/consistency-check`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'X-Converter-Apikey': SUPABASE_PUBLIC_API_KEY
+        },
+        body: JSON.stringify({ items })
+      },
+      CENTRAL_WEBSITE_SYNC_TIMEOUT_MS,
+      '中央網站一致性檢查失敗'
+    )
+
+    if (!response.ok || data?.ok === false) {
+      throw new Error(data?.message || data?.error || `中央網站一致性檢查失敗：HTTP ${response.status}`)
+    }
+
+    consistencyReport.value = data.data || data
+    const summary = consistencyReport.value?.summary || {}
+    const duplicateCount = Number(summary.duplicateCount || 0)
+    const mediaMissingCount = Number(summary.mediaMissingCount || 0)
+    const missingCount = Number(summary.missingCount || 0)
+    const warningCount = duplicateCount + mediaMissingCount + missingCount
+    if (warningCount > 0) {
+      consistencyStatusType.value = duplicateCount > 0 ? 'error' : 'warning'
+      consistencyStatusText.value = `檢查完成：發現 ${warningCount} 筆需要處理，請看下方建議。`
+    } else {
+      consistencyStatusType.value = 'success'
+      consistencyStatusText.value = '檢查完成：本次小姐主檔與媒體狀態正常。'
+    }
+  } catch (error) {
+    consistencyStatusType.value = 'error'
+    consistencyStatusText.value = error?.message || '中央網站一致性檢查失敗。'
+  } finally {
+    isConsistencyChecking.value = false
+  }
 }
 
 async function syncSingleLadyToCentralWebsite(ladyId, options = {}) {
@@ -14460,6 +14588,125 @@ button:disabled {
 .media-viewer-dialog {
   position: relative !important;
   z-index: 14001 !important;
+}
+
+
+/* batch018-134-consistency-check-preview */
+.consistency-check-panel {
+  margin: 22px 0 0;
+  padding: 18px;
+  border: 1px solid rgba(37, 99, 235, 0.16);
+  border-radius: 22px;
+  background: linear-gradient(135deg, rgba(248, 251, 255, 0.98), rgba(239, 247, 255, 0.92));
+  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.08);
+}
+
+.consistency-check-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.consistency-check-head h3 {
+  margin: 0 0 6px;
+  font-size: 1.08rem;
+  color: #14315e;
+}
+
+.consistency-check-head p {
+  margin: 0;
+  color: #64748b;
+  line-height: 1.6;
+}
+
+.consistency-check-btn {
+  white-space: nowrap;
+}
+
+.consistency-check-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(226, 232, 240, 0.72);
+  color: #334155;
+  font-weight: 700;
+}
+
+.consistency-check-summary small {
+  color: #64748b;
+  font-weight: 700;
+}
+
+.consistency-check-summary.is-pending { background: #eff6ff; color: #1d4ed8; }
+.consistency-check-summary.is-success { background: #ecfdf5; color: #047857; }
+.consistency-check-summary.is-warning { background: #fffbeb; color: #b45309; }
+.consistency-check-summary.is-error { background: #fef2f2; color: #b91c1c; }
+
+.consistency-result-table-wrap {
+  margin-top: 14px;
+  overflow-x: auto;
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.consistency-result-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 760px;
+}
+
+.consistency-result-table th,
+.consistency-result-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+  text-align: left;
+  vertical-align: top;
+  color: #334155;
+}
+
+.consistency-result-table th {
+  color: #14315e;
+  font-weight: 800;
+  background: rgba(241, 245, 249, 0.82);
+}
+
+.consistency-result-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.consistency-status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 800;
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.consistency-status-pill.is-ok { background: #dcfce7; color: #047857; }
+.consistency-status-pill.is-media-missing { background: #fef3c7; color: #b45309; }
+.consistency-status-pill.is-duplicate { background: #fee2e2; color: #b91c1c; }
+.consistency-status-pill.is-missing { background: #dbeafe; color: #1d4ed8; }
+.consistency-status-pill.is-error { background: #fee2e2; color: #991b1b; }
+
+@media (max-width: 720px) {
+  .consistency-check-head,
+  .consistency-check-summary {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .consistency-check-btn {
+    width: 100%;
+  }
 }
 
 </style>
