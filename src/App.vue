@@ -909,18 +909,26 @@
     </section>
 
 <section class="frontend-preview-panel">
-      <div class="preview-header">
-        <div>
+      <div class="preview-header preview-header-with-actions">
+        <div class="preview-title-block">
           <h2>前台網站預覽</h2>
           <p>這裡只預覽目前文件3 / 文件4 的最新小姐；資料庫與網站後台仍然累加保存。</p>
         </div>
 
-        <div class="preview-tools">
-          <span class="database-submit-feedback" :class="`is-${databaseSubmitStatusType}`">
+        <div class="preview-tools preview-top-right-tools">
+          <span class="database-submit-feedback preview-sync-summary" :class="`is-${databaseSubmitStatusType}`">
             {{ databaseSubmitStatusText }}
           </span>
+          <button
+            type="button"
+            class="primary-btn preview-consistency-open-btn"
+            :disabled="!currentDocumentPreviewLadies.length"
+            @click="openConsistencyCheckModal"
+          >
+            資料一致性檢查
+          </button>
 
-          <!-- 第 018-117 批：前台預覽右上工具列只保留同步狀態訊息；隱藏送出、重新讀取、國籍篩選與重試按鈕。 -->
+          <!-- 第 018-135 批：同步比對摘要移到前台預覽右上角；一致性檢查改成彈窗顯示。 -->
         </div>
       </div>
 
@@ -1052,52 +1060,67 @@
         </div>
       </div>
 
-      <section class="consistency-check-panel">
-        <div class="consistency-check-head">
-          <div>
-            <h3>資料一致性檢查</h3>
-            <p>檢查本次文件小姐在 01 中央網站是否重複、是否缺圖，以及媒體數量是否一致；此功能只檢查，不會刪除或修改資料。</p>
-          </div>
-          <button
-            type="button"
-            class="primary-btn consistency-check-btn"
-            :disabled="isConsistencyChecking || !currentDocumentPreviewLadies.length"
-            @click="runConsistencyCheck"
-          >
-            {{ isConsistencyChecking ? '檢查中...' : '檢查本次小姐同步狀態' }}
-          </button>
-        </div>
+      <teleport to="body">
+        <div v-if="isConsistencyCheckModalOpen" class="consistency-check-modal-mask" @click.self="closeConsistencyCheckModal">
+          <section class="consistency-check-modal-dialog" role="dialog" aria-modal="true" aria-label="資料一致性檢查">
+            <div class="consistency-check-modal-header">
+              <div>
+                <span class="consistency-check-modal-kicker">資料一致性檢查</span>
+                <h3>本次小姐同步狀態</h3>
+                <p>檢查本次文件小姐在 01 中央網站是否重複、是否缺圖，以及媒體數量是否一致；此功能只檢查，不會刪除或修改資料。</p>
+              </div>
+              <button type="button" class="consistency-check-modal-close" @click="closeConsistencyCheckModal">關閉</button>
+            </div>
 
-        <div class="consistency-check-summary" :class="`is-${consistencyStatusType}`">
-          <span>{{ consistencyStatusText }}</span>
-          <small v-if="consistencyReport?.summary">
-            正常 {{ consistencyReport.summary.okCount || 0 }}｜缺媒體 {{ consistencyReport.summary.mediaMissingCount || 0 }}｜疑似重複 {{ consistencyReport.summary.duplicateCount || 0 }}｜未建立 {{ consistencyReport.summary.missingCount || 0 }}
-          </small>
-        </div>
+            <div class="consistency-check-modal-body">
+              <div class="consistency-check-head">
+                <div>
+                  <h3>檢查結果</h3>
+                  <p>需要時可重新檢查，目前只會讀取 01 中央網站狀態。</p>
+                </div>
+                <button
+                  type="button"
+                  class="primary-btn consistency-check-btn"
+                  :disabled="isConsistencyChecking || !currentDocumentPreviewLadies.length"
+                  @click="runConsistencyCheck"
+                >
+                  {{ isConsistencyChecking ? '檢查中...' : '重新檢查本次小姐' }}
+                </button>
+              </div>
 
-        <div v-if="consistencyReportRows.length" class="consistency-result-table-wrap">
-          <table class="consistency-result-table">
-            <thead>
-              <tr>
-                <th>小姐</th>
-                <th>狀態</th>
-                <th>01 主檔</th>
-                <th>媒體</th>
-                <th>建議處理</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="row in consistencyReportRows" :key="row.sourceId || row.name">
-                <td>【{{ row.nationality || row.country || '-' }} {{ row.name || '-' }}】</td>
-                <td><span class="consistency-status-pill" :class="`is-${row.status}`">{{ row.statusLabel || row.status }}</span></td>
-                <td>{{ row.centralListingId ? `已建立 ${shortId(row.centralListingId)}` : '尚未建立' }}</td>
-                <td>{{ row.mediaCount || 0 }} 張 / 段</td>
-                <td>{{ row.suggestion || row.message || '-' }}</td>
-              </tr>
-            </tbody>
-          </table>
+              <div class="consistency-check-summary" :class="`is-${consistencyStatusType}`">
+                <span>{{ consistencyStatusText }}</span>
+                <small v-if="consistencyReport?.summary">
+                  正常 {{ consistencyReport.summary.okCount || 0 }}｜缺媒體 {{ consistencyReport.summary.mediaMissingCount || 0 }}｜疑似重複 {{ consistencyReport.summary.duplicateCount || 0 }}｜未建立 {{ consistencyReport.summary.missingCount || 0 }}
+                </small>
+              </div>
+
+              <div v-if="consistencyReportRows.length" class="consistency-result-table-wrap">
+                <table class="consistency-result-table">
+                  <thead>
+                    <tr>
+                      <th>小姐</th>
+                      <th>狀態</th>
+                      <th>01 主檔</th>
+                      <th>媒體</th>
+                      <th>建議處理</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="row in consistencyReportRows" :key="row.sourceId || row.name">
+                      <td>【{{ row.nationality || row.country || '-' }} {{ row.name || '-' }}】</td>
+                      <td><span class="consistency-status-pill" :class="`is-${row.status}`">{{ row.statusLabel || row.status }}</span></td>
+                      <td>{{ row.centralListingId ? `已建立 ${shortId(row.centralListingId)}` : '尚未建立' }}</td>
+                      <td>{{ row.mediaCount || 0 }} 張 / 段</td>
+                      <td>{{ row.suggestion || row.message || '-' }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
         </div>
-      </section>
+      </teleport>
 
       <teleport to="body">
         <div v-if="isMediaUploadModalOpen" class="media-upload-modal-mask" @click.self="closeMediaUploadModal">
@@ -1363,7 +1386,7 @@
 </template>
 
 <!-- 第 018-131 批：媒體上傳彈窗內縮圖放大層級修正 -->
-<!-- batch018-134-consistency-check-preview -->
+<!-- batch018-135-consistency-check-modal-preview-header -->
 <!-- batch018-133-media-duplicate-false-skip-fix -->
 <!-- batch018-132-duplicate-upsert-guard -->
 <!-- batch018-120-sync-id-backfill-media-upload-fix -->
@@ -1532,6 +1555,7 @@ const centralWebsiteSyncRetryText = ref('')
 const databaseSubmitStatusText = ref('尚未送出本次文件3。')
 const databaseSubmitStatusType = ref('info')
 const isConsistencyChecking = ref(false)
+const isConsistencyCheckModalOpen = ref(false)
 const consistencyStatusText = ref('尚未檢查資料一致性。')
 const consistencyStatusType = ref('info')
 const consistencyReport = ref(null)
@@ -3976,6 +4000,17 @@ function shortId(value) {
   const text = String(value || '').trim()
   if (!text) return ''
   return text.length > 8 ? `${text.slice(0, 8)}...` : text
+}
+
+function openConsistencyCheckModal() {
+  isConsistencyCheckModalOpen.value = true
+  if (!consistencyReport.value && currentDocumentPreviewLadies.value.length && !isConsistencyChecking.value) {
+    runConsistencyCheck()
+  }
+}
+
+function closeConsistencyCheckModal() {
+  isConsistencyCheckModalOpen.value = false
 }
 
 function resetConsistencyCheckStatus() {
@@ -14591,7 +14626,7 @@ button:disabled {
 }
 
 
-/* batch018-134-consistency-check-preview */
+/* batch018-135-consistency-check-modal-preview-header */
 .consistency-check-panel {
   margin: 22px 0 0;
   padding: 18px;
@@ -14709,7 +14744,157 @@ button:disabled {
   }
 }
 
-</style>
+
+/* batch018-135-consistency-check-modal-preview-header */
+.preview-header.preview-header-with-actions {
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.preview-title-block {
+  flex: 1 1 420px;
+  min-width: 280px;
+}
+
+.preview-top-right-tools {
+  width: auto;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  max-width: 760px;
+}
+
+.preview-sync-summary {
+  min-width: 300px;
+  max-width: 520px;
+}
+
+.preview-consistency-open-btn {
+  min-height: 42px;
+  white-space: nowrap;
+  box-shadow: 0 14px 28px rgba(37, 99, 235, 0.22);
+}
+
+.consistency-check-modal-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 13500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(10px);
+}
+
+.consistency-check-modal-dialog {
+  width: min(1040px, calc(100vw - 48px));
+  max-height: calc(100vh - 58px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border-radius: 28px;
+  border: 1px solid rgba(148, 163, 184, 0.42);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96));
+  box-shadow: 0 34px 90px rgba(15, 23, 42, 0.34);
+}
+
+.consistency-check-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 24px 26px 18px;
+  border-bottom: 1px solid rgba(203, 213, 225, 0.72);
+}
+
+.consistency-check-modal-kicker {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin-bottom: 8px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.consistency-check-modal-header h3 {
+  margin: 0 0 8px;
+  font-size: 24px;
+  color: #0f172a;
+}
+
+.consistency-check-modal-header p {
+  margin: 0;
+  color: #64748b;
+  font-weight: 700;
+  line-height: 1.6;
+}
+
+.consistency-check-modal-close {
+  flex: 0 0 auto;
+  border: 1px solid rgba(148, 163, 184, 0.55);
+  border-radius: 999px;
+  padding: 10px 18px;
+  background: rgba(255, 255, 255, 0.82);
+  color: #0f172a;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.consistency-check-modal-body {
+  overflow: auto;
+  padding: 20px 26px 26px;
+}
+
+.consistency-check-modal-body .consistency-check-head {
+  padding: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 20px;
+  background: rgba(248, 250, 252, 0.92);
+}
+
+@media (max-width: 980px) {
+  .preview-header.preview-header-with-actions {
+    flex-direction: column;
+  }
+
+  .preview-top-right-tools {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .preview-sync-summary,
+  .preview-consistency-open-btn {
+    width: 100%;
+    max-width: none;
+  }
+
+  .consistency-check-modal-mask {
+    padding: 14px;
+  }
+
+  .consistency-check-modal-dialog {
+    width: calc(100vw - 28px);
+    max-height: calc(100vh - 28px);
+  }
+
+  .consistency-check-modal-header,
+  .consistency-check-head,
+  .consistency-check-summary {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+
+
 
 
 /* 第 018-133 批：卡片上方「目前選擇 / 點卡片上傳媒體」避免窄卡文字重疊 */
@@ -14724,3 +14909,6 @@ button:disabled {
   overflow: hidden !important;
   text-overflow: ellipsis !important;
 }
+
+
+</style>
