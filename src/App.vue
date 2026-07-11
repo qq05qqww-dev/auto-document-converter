@@ -1,3 +1,4 @@
+<!-- 第 018-145 批：老闆全站公版＋員工地區補充規則正式分層版 -->
 <!-- 第 018-144 批：優惠組合縮寫轉中文、中文原文保留版 -->
 <!-- 第 018-137 批：疑似重複小姐整理與媒體缺失快速處理工具版 -->
 <!-- 第 018-133 批：媒體重複誤判修正，改由伺服器 URL 權威判斷 -->
@@ -6,6 +7,7 @@
 <!-- 第 018-126 批：中央媒體來源統一與前後台數量同步修正版（依第 018-125 批延續） -->
 <template>
   <!-- 第 018-109 批：待上傳縮圖區禁止拖放版 -->
+  <!-- batch018-145-owner-global-employee-location-supplement -->
   <!-- batch018-144-promotion-shorthand-to-chinese-source-preserve -->
   <!-- batch018-142-alias-delete-persist-fix -->
   <main v-if="!authReady" class="login-page-shell">
@@ -268,7 +270,7 @@
                 :disabled="isSavingScopeRules || isLoadingScopeRules"
                 @click="saveCurrentScopeRules"
               >
-                {{ isSavingScopeRules ? '儲存中...' : '儲存目前機房規則' }}
+                {{ isSavingScopeRules ? '儲存中...' : (isOwner ? '儲存老闆全站公版' : '儲存目前地區補充') }}
               </button>
               <button
                 class="ghost-btn"
@@ -276,7 +278,7 @@
                 :disabled="isSavingScopeRules || isLoadingScopeRules"
                 @click="loadCurrentScopeRules"
               >
-                {{ isLoadingScopeRules ? '讀取中...' : '讀取目前機房規則' }}
+                {{ isLoadingScopeRules ? '讀取中...' : (isOwner ? '讀取老闆全站公版' : '讀取老闆公版＋我的補充') }}
               </button>
             </div>
             <p class="room-rule-feedback" :class="`is-${roomRuleStatusType}`">
@@ -1724,12 +1726,13 @@ const authUserEmail = computed(() => authUser.value?.email || '尚未登入')
 const isOwner = computed(() => authProfile.value?.role === 'owner')
 const currentRoleLabel = computed(() => isOwner.value ? '老闆' : '員工')
 const ruleLayerHelpText = computed(() => isOwner.value
-  ? '第一層公司公版規則：所有員工會先讀取並套用這裡的設定。'
-  : '第二層個人補充規則：欄位預設空白；只填自己需要追加或覆蓋的內容。實際轉換會先套老闆公版，再套目前員工補充。')
+  ? '第一層公司全站公版：不分縣市、地區、定點或機房，所有員工轉換時都會先套用。'
+  : '第二層個人地區補充：欄位預設空白，只新增目前地區需要的內容；實際轉換固定先套老闆全站公版，再套目前員工補充。')
 const ownerBaseRuleData = ref(null)
 const employeeSupplementLoaded = ref(false)
 const OWNER_BASE_RULE_KIND = 'owner_base_rules_v1'
 const EMPLOYEE_SUPPLEMENT_RULE_KIND = 'employee_supplement_rules_v1'
+const OWNER_GLOBAL_SCOPE_VALUE = '__OWNER_GLOBAL__'
 
 function cleanStaffName(value) {
   const name = String(value || '').trim().replace(/\s+/g, ' ')
@@ -1746,6 +1749,7 @@ function applyAuthenticatedProfile(user, profile = null) {
   localStorage.setItem(STAFF_PROFILE_STORAGE_KEY, nextName)
 
   if (profile?.role === 'owner') {
+    ruleScopeLevel.value = 'global'
     void loadEmployeeProfiles({ silent: true })
   } else {
     employeeProfiles.value = []
@@ -2256,6 +2260,15 @@ function toggleTopPanel(panel) {
   showQuickRules.value = activeTopPanel.value === 'quick'
   showAdvancedSettings.value = activeTopPanel.value === 'advanced'
   showApiPanel.value = activeTopPanel.value === 'api'
+
+  if (nextPanel && ['price', 'format', 'quick', 'advanced'].includes(nextPanel)) {
+    if (isOwner.value) {
+      ruleScopeLevel.value = 'global'
+      void loadCurrentScopeRules({ silent: true, preferOnline: true })
+    } else if (ruleScopeLevel.value === 'room') {
+      void loadCurrentScopeRules({ silent: true, preferOnline: true })
+    }
+  }
 }
 
 function toggleScopeManager() {
@@ -6080,7 +6093,14 @@ async function convertTextWithScopeGuard() {
     return
   }
 
-  await withEffectiveRulesForEmployee(async () => convertText())
+  try {
+    await withEffectiveRulesForEmployee(async () => convertText())
+  } catch (error) {
+    const message = `無法套用有效規則：${error.message || error}`
+    statusMessage.value = message
+    apiStatusText.value = message
+    setRoomRuleFeedback(message, 'error', { toast: true })
+  }
 }
 
 function convertText() {
@@ -8057,6 +8077,11 @@ function addUniqueToList(list, value) {
 }
 
 function syncRuleScopeLevelFromSelection() {
+  if (isOwner.value) {
+    ruleScopeLevel.value = 'global'
+    return
+  }
+
   const city = cleanScopeText(ruleScopeCity.value)
   const district = cleanScopeText(ruleScopeDistrict.value)
   const type = cleanScopeText(ruleScopeType.value)
@@ -8364,6 +8389,7 @@ watch(ruleScopeRoom, async value => {
   syncRuleScopeLevelFromSelection()
 
   if (
+    !isOwner.value &&
     cleanScopeText(value) &&
     ruleScopeLevel.value === 'room' &&
     cleanScopeText(ruleScopeCity.value) &&
@@ -8501,7 +8527,16 @@ function deleteRuleDataFromScope(store, level, key) {
 }
 
 function validateCurrentRuleScope() {
-  if (ruleScopeLevel.value === 'global') return true
+  if (isOwner.value) {
+    ruleScopeLevel.value = 'global'
+    return true
+  }
+
+  if (ruleScopeLevel.value === 'global') {
+    const message = '員工補充規則必須先選完整縣市 / 地區 / 定點外送 / 機房；老闆全站公版不需要選範圍。'
+    setRoomRuleFeedback(message, 'warning', { toast: true })
+    return false
+  }
   if (ruleScopeLevel.value === 'city' && cleanScopeText(ruleScopeCity.value)) return true
   if (ruleScopeLevel.value === 'district' && cleanScopeText(ruleScopeCity.value) && cleanScopeText(ruleScopeDistrict.value)) return true
   if (ruleScopeLevel.value === 'type' && cleanScopeText(ruleScopeCity.value) && cleanScopeText(ruleScopeDistrict.value) && cleanScopeText(ruleScopeType.value)) return true
@@ -8560,6 +8595,8 @@ function getEffectiveScopedRuleData() {
 }
 
 const currentRuleScopeLabel = computed(() => {
+  if (isOwner.value) return '老闆全站公版（所有縣市共用）'
+
   const city = cleanScopeText(ruleScopeCity.value)
   const district = cleanScopeText(ruleScopeDistrict.value)
   const type = cleanScopeText(ruleScopeType.value)
@@ -8573,7 +8610,11 @@ const currentRuleScopeLabel = computed(() => {
   return '公版規則'
 })
 
-const effectiveRuleSourceLabel = computed(() => getEffectiveScopedRuleData().label)
+const effectiveRuleSourceLabel = computed(() => {
+  if (isOwner.value) return '老闆全站公版規則'
+  const supplementLabel = getEffectiveScopedRuleData().label
+  return `老闆全站公版＋${supplementLabel}個人補充`
+})
 
 function buildEmptyEmployeeSupplementData() {
   return {
@@ -8661,26 +8702,97 @@ function mergeOwnerAndEmployeeRules(ownerData = {}, supplementData = {}) {
   }
 }
 
-async function getOnlineOwnerRuleForCurrentRoom() {
+async function getOnlineOwnerGlobalRule() {
   if (!isOnlineWorkspaceReady()) return null
+
+  if (isOwner.value) {
+    const { data, error } = await supabase
+      .from('employee_rules')
+      .select('rules')
+      .eq('user_id', authUser.value.id)
+      .eq('city', OWNER_GLOBAL_SCOPE_VALUE)
+      .eq('district', OWNER_GLOBAL_SCOPE_VALUE)
+      .eq('mode', OWNER_GLOBAL_SCOPE_VALUE)
+      .eq('room', OWNER_GLOBAL_SCOPE_VALUE)
+      .maybeSingle()
+
+    if (error) throw error
+    if (data?.rules && typeof data.rules === 'object') return data.rules
+
+    // 相容舊版：尚未建立全站公版時，若老闆目前有選完整機房，先讀舊機房規則供畫面帶入。
+    return getOnlineRuleForCurrentRoom()
+  }
+
+  const { data, error } = await supabase.rpc('get_owner_global_rule')
+  if (error) throw error
+  if (data && typeof data === 'object') return data
+
+  // 相容第 018-144 前的舊機房公版；老闆重新儲存全站公版後即不再使用此路徑。
   const city = cleanScopeText(ruleScopeCity.value)
   const district = cleanScopeText(ruleScopeDistrict.value)
   const mode = cleanScopeText(ruleScopeType.value)
   const room = cleanScopeText(ruleScopeRoom.value)
   if (!city || !district || !mode || !room) return null
 
-  if (isOwner.value) {
-    return getOnlineRuleForCurrentRoom()
-  }
-
-  const { data, error } = await supabase.rpc('get_owner_rule_for_scope', {
+  const legacy = await supabase.rpc('get_owner_rule_for_scope', {
     p_city: city,
     p_district: district,
     p_mode: mode,
     p_room: room
   })
+  if (legacy.error) throw legacy.error
+  return legacy.data && typeof legacy.data === 'object' ? legacy.data : null
+}
+
+async function getOnlineOwnerRuleForCurrentRoom() {
+  return getOnlineOwnerGlobalRule()
+}
+
+async function saveOnlineOwnerGlobalRule(data) {
+  if (!isOwner.value || !isOnlineWorkspaceReady()) return null
+
+  const globalRule = { ...data, kind: OWNER_BASE_RULE_KIND }
+  const row = {
+    user_id: authUser.value.id,
+    city: OWNER_GLOBAL_SCOPE_VALUE,
+    district: OWNER_GLOBAL_SCOPE_VALUE,
+    mode: OWNER_GLOBAL_SCOPE_VALUE,
+    room: OWNER_GLOBAL_SCOPE_VALUE,
+    rules: globalRule
+  }
+
+  const { data: savedRows, error } = await supabase
+    .from('employee_rules')
+    .upsert(row, { onConflict: 'user_id,city,district,mode,room' })
+    .select('rules')
+
   if (error) throw error
-  return data && typeof data === 'object' ? data : null
+  if (!Array.isArray(savedRows) || !savedRows.length) {
+    throw new Error('老闆全站公版寫入 0 筆；請確認 employee_rules 的 RLS 與唯一索引。')
+  }
+
+  const { data: verifiedRow, error: verifyError } = await supabase
+    .from('employee_rules')
+    .select('rules')
+    .eq('user_id', authUser.value.id)
+    .eq('city', OWNER_GLOBAL_SCOPE_VALUE)
+    .eq('district', OWNER_GLOBAL_SCOPE_VALUE)
+    .eq('mode', OWNER_GLOBAL_SCOPE_VALUE)
+    .eq('room', OWNER_GLOBAL_SCOPE_VALUE)
+    .maybeSingle()
+
+  if (verifyError) throw verifyError
+  const verifiedRule = verifiedRow?.rules
+  if (!verifiedRule || typeof verifiedRule !== 'object') {
+    throw new Error('老闆全站公版送出後未能重新讀回。')
+  }
+
+  const differenceFields = getRuleDataDifferenceFields(verifiedRule, globalRule)
+  if (differenceFields.length) {
+    throw new Error(`老闆全站公版重新讀回內容不同；差異欄位：${differenceFields.join('、')}。`)
+  }
+
+  return verifiedRule
 }
 
 function applyEmployeeSupplementData(data, options = {}) {
@@ -8708,11 +8820,25 @@ function applyEmployeeSupplementData(data, options = {}) {
 
 async function withEffectiveRulesForEmployee(callback) {
   if (isOwner.value) return callback()
+
   const supplement = normalizeSupplementRuleData(collectRuleData())
-  const owner = ownerBaseRuleData.value || await getOnlineOwnerRuleForCurrentRoom() || buildDefaultRuleData()
+  let onlineOwnerRule = null
+
+  try {
+    onlineOwnerRule = await getOnlineOwnerGlobalRule()
+  } catch (error) {
+    console.warn('讀取老闆全站公版失敗，嘗試使用本次登入已快取公版：', error)
+  }
+
+  const owner = onlineOwnerRule || ownerBaseRuleData.value
+  if (!owner || typeof owner !== 'object') {
+    throw new Error('讀不到老闆全站公版規則。請老闆先登入任一設定頁按「儲存」，並確認已執行第 018-145 批 SQL。')
+  }
+
   ownerBaseRuleData.value = owner
   const effective = mergeOwnerAndEmployeeRules(owner, supplement)
   applyRuleData(effective, { keepPanelsOpen: true })
+
   try {
     return await callback()
   } finally {
@@ -8856,6 +8982,7 @@ async function saveOnlineRuleForCurrentRoom(data) {
 
 async function saveCurrentScopeRules(options = {}) {
   if (isSavingScopeRules.value) return false
+  if (isOwner.value) ruleScopeLevel.value = 'global'
   if (!validateCurrentRuleScope()) return false
 
   const itemLabel = cleanScopeText(options.itemLabel || '')
@@ -8878,9 +9005,26 @@ async function saveCurrentScopeRules(options = {}) {
 
     if (ruleScopeLevel.value === 'global') {
       localStorage.setItem(getStaffScopedStorageKey(RULE_STORAGE_KEY), JSON.stringify(data))
+
+      if (!isOwner.value) {
+        setRoomRuleFeedback('員工不能修改老闆全站公版；請選完整地區與機房後儲存自己的補充規則。', 'warning', { toast: true })
+        return false
+      }
+
+      if (!isOnlineWorkspaceReady()) {
+        setRoomRuleFeedback('老闆全站公版已保留在本機，但目前未連線登入，尚未同步給所有員工。', 'warning', { toast: true })
+        return true
+      }
+
+      const verifiedRule = await saveOnlineOwnerGlobalRule(data)
+      ownerBaseRuleData.value = verifiedRule
+      const verifiedStore = setRuleDataToScope(readScopeRuleStore(), 'global', 'global', verifiedRule)
+      writeScopeRuleStore(verifiedStore)
+      localStorage.setItem(getStaffScopedStorageKey(RULE_STORAGE_KEY), JSON.stringify(verifiedRule))
+
       const message = itemLabel
-        ? `已個別儲存「${itemLabel}」到本機公版；線上員工規則請選到完整機房後儲存。`
-        : '已儲存本機公版規則；線上員工規則請選到完整機房後儲存。'
+        ? `已儲存老闆全站公版「${itemLabel}」；所有縣市與所有員工轉換時都會先套用。`
+        : '已儲存老闆全站公版；所有縣市與所有員工轉換時都會先套用。'
       setRoomRuleFeedback(message, 'success', { toast: true })
       return true
     }
@@ -8910,12 +9054,8 @@ async function saveCurrentScopeRules(options = {}) {
     rememberCurrentScopeSelection({ syncOnline: true })
 
     const message = itemLabel
-      ? (isOwner.value
-          ? `已個別儲存老闆公版「${itemLabel}」：${currentRuleScopeLabel.value}；所有員工會先套用這一層。`
-          : `已個別儲存我的補充「${itemLabel}」：${currentRuleScopeLabel.value}；轉換時會接在老闆公版後套用。`)
-      : (isOwner.value
-          ? `已確認儲存老闆公版規則：${currentRuleScopeLabel.value}；所有員工會先套用這一層。`
-          : `已確認儲存員工個人補充規則：${currentRuleScopeLabel.value}；轉換時會接在老闆公版後套用。`)
+      ? `已儲存我的地區補充「${itemLabel}」：${currentRuleScopeLabel.value}；轉換時會接在老闆全站公版後套用。`
+      : `已儲存員工地區補充規則：${currentRuleScopeLabel.value}；轉換時會接在老闆全站公版後套用。`
     setRoomRuleFeedback(message, 'success', { toast: true })
     return true
   } catch (error) {
@@ -8956,6 +9096,7 @@ async function getOnlineRuleForCurrentRoom() {
 
 async function loadCurrentScopeRules(options = {}) {
   if (isLoadingScopeRules.value) return false
+  if (isOwner.value) ruleScopeLevel.value = 'global'
   if (!validateCurrentRuleScope()) return false
 
   const isAutoLoad = options.auto === true
@@ -8966,11 +9107,32 @@ async function loadCurrentScopeRules(options = {}) {
   }
 
   try {
+    if (isOwner.value) {
+      let ownerRule = null
+      if (isOnlineWorkspaceReady()) {
+        ownerRule = await getOnlineOwnerGlobalRule()
+      }
+      ownerRule = ownerRule || getGlobalRuleDataFallback() || buildDefaultRuleData()
+      ownerBaseRuleData.value = ownerRule
+      applyRuleData(ownerRule, { keepPanelsOpen: true })
+      const store = setRuleDataToScope(readScopeRuleStore(), 'global', 'global', ownerRule)
+      writeScopeRuleStore(store)
+      localStorage.setItem(getStaffScopedStorageKey(RULE_STORAGE_KEY), JSON.stringify(ownerRule))
+      setRoomRuleFeedback('已讀取老闆全站公版規則；此規則不分縣市、地區、定點或機房。', 'success', {
+        silent: options.silent,
+        toast: !options.silent && !isAutoLoad
+      })
+      return true
+    }
+
     if (ruleScopeLevel.value === 'room' && isOnlineWorkspaceReady()) {
       const onlineRule = await getOnlineRuleForCurrentRoom()
       if (!isOwner.value) {
-        const ownerRule = await getOnlineOwnerRuleForCurrentRoom()
-        ownerBaseRuleData.value = ownerRule || buildDefaultRuleData()
+        const ownerRule = await getOnlineOwnerGlobalRule()
+        if (!ownerRule || typeof ownerRule !== 'object') {
+          throw new Error('讀不到老闆全站公版。請老闆先儲存一次全站公版，並確認第 018-145 批 SQL 已執行。')
+        }
+        ownerBaseRuleData.value = ownerRule
         applyEmployeeSupplementData(onlineRule || buildEmptyEmployeeSupplementData(), { keepPanelsOpen: true })
         const { key } = getScopeBucketAndKey()
         const store = setRuleDataToScope(readScopeRuleStore(), 'room', key, onlineRule || buildEmptyEmployeeSupplementData())
