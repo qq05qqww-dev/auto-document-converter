@@ -1,3 +1,4 @@
+<!-- 第 018-144 批：優惠組合縮寫轉中文、中文原文保留版 -->
 <!-- 第 018-137 批：疑似重複小姐整理與媒體缺失快速處理工具版 -->
 <!-- 第 018-133 批：媒體重複誤判修正，改由伺服器 URL 權威判斷 -->
 <!-- 第 018-130 批：上傳彈窗顯示已上傳媒體與燈箱資訊精簡版（依第 018-129 批延續） -->
@@ -5,6 +6,7 @@
 <!-- 第 018-126 批：中央媒體來源統一與前後台數量同步修正版（依第 018-125 批延續） -->
 <template>
   <!-- 第 018-109 批：待上傳縮圖區禁止拖放版 -->
+  <!-- batch018-144-promotion-shorthand-to-chinese-source-preserve -->
   <!-- batch018-142-alias-delete-persist-fix -->
   <main v-if="!authReady" class="login-page-shell">
     <section class="login-card">
@@ -2399,20 +2401,25 @@ const defaultAliasRules = [
   '艷舞+500=艷舞+500',
   '買兩節3S=買2節3s',
   '買兩節3s=買2節3s',
-  '買2送1=2+1s',
-  '買二送一=2+1s',
-  '買兩送一=2+1s',
-  '買2送一=2+1s',
-  '買二送1=2+1s',
-  '買兩送1=2+1s',
-  '買3送1=3+1',
-  '買三送一=3+1',
-  '買5送3=5+3',
-  '買五送三=5+3',
-  '買5節送3節=5+3',
-  '買五節送三節=5+3',
-  '2+1s=2+1s',
-  '2+1S=2+1s',
+  '買2送1=買2送1',
+  '買二送一=買2送1',
+  '買兩送一=買2送1',
+  '買2送一=買2送1',
+  '買二送1=買2送1',
+  '買兩送1=買2送1',
+  '買3送1=買3送1',
+  '買三送一=買3送1',
+  '買5送3=買5送3',
+  '買五送三=買5送3',
+  '買5節送3節=買5節送3節',
+  '買五節送三節=買5節送3節',
+  '2+1s=買2節送1s',
+  '2+1S=買2節送1s',
+  '2+1=買2送1',
+  '2+3s=買2節送3s',
+  '2+3S=買2節送3s',
+  '3+1=買3送1',
+  '5+3=買5送3',
   '2節3s=買2節3s',
   '2節3S=買2節3s',
   '買2節3s=買2節3s',
@@ -2440,27 +2447,27 @@ const defaultAliasRules = [
   '抓龍筋=按摩',
   '買2節/3s=買2節3s',
   '買2節/3S=買2節3s',
-  '買2節送1s=2+1s',
-  '買2節送1S=2+1s',
+  '買2節送1s=買2節送1s',
+  '買2節送1S=買2節送1s',
   '買2節以上免費送口爆=口爆+500',
   '買2節以上免費 送口爆=口爆+500',
   '買2節送艷舞秀=艷舞',
   '買2節送豔舞秀=艷舞',
   '買兩節送艷舞=艷舞',
   '買兩節 送艷舞=艷舞',
-  '買3節送1節=3+1',
-  '買三節送一節=3+1',
-  '包夜5+3=5+3',
-  '5節送3節包夜=5+3',  '雙飛=雙飛',
+  '買3節送1節=買3節送1節',
+  '買三節送一節=買3節送1節',
+  '包夜5+3=買5送3',
+  '5節送3節包夜=買5節送3節',  '雙飛=雙飛',
   '小女孩淫娃雙飛=雙飛',
   '小女孩/淫娃 雙飛=雙飛',
-  '40/60分鐘2+1模式=2+1',
-  '2+1模式=2+1',
-  '40/60分鐘2+1=2+1',
-  '皆可選擇送一節時間或送一次次數=2+1',
-  '包夜買5送3=5+3',
-  '包夜買5送3 8小時不限時段=5+3',
-  '8小時不限時段=5+3',
+  '40/60分鐘2+1模式=買2送1',
+  '2+1模式=買2送1',
+  '40/60分鐘2+1=買2送1',
+  '皆可選擇送一節時間或送一次次數=買2送1',
+  '包夜買5送3=買5送3',
+  '包夜買5送3 8小時不限時段=買5送3',
+  '8小時不限時段=買5送3',
   '攝影不露臉+1000=攝影不露臉+1000',
   '攝影不露臉=攝影不露臉+1000',
   '攝影+1000不露臉=攝影不露臉+1000',
@@ -2478,10 +2485,10 @@ const defaultAliasRules = [
   '初感001保險套+100=0.01套+100',
   '初感001=0.01套+100',
   '保險套+100=0.01套+100',
-  '可2+1 150分 3S=2+1',
-  '可2+1 150分 3s=2+1',
-  '150分3S=2+1',
-  '150分3s=2+1'
+  '可2+1 150分 3S=買2送1',
+  '可2+1 150分 3s=買2送1',
+  '150分3S=買2送1',
+  '150分3s=買2送1'
 ]
 
 const defaultRemoveWords = [
@@ -6784,6 +6791,7 @@ function extractServices(block) {
     .sort((a, b) => String(b[0]).length - String(a[0]).length)
   const extra = parseList(extraKeepText.value)
   const searchableBlock = normalizeServiceAliasMatchText(block)
+  const explicitPaidAliasOutputs = new Set()
 
   // 第 018-96 批：服務同義詞比對改成「全形半形 / 大小寫 / 中文數字」正規化後比對，
   // 並套用在整筆小姐資料區塊，避免「買2節送1S」有些小姐有出現、有些沒出現。
@@ -6792,24 +6800,36 @@ function extractServices(block) {
     const normalizedFrom = normalizeServiceAliasMatchText(from)
     const isMatched = block.includes(from) || (normalizedFrom && searchableBlock.includes(normalizedFrom))
     if (isMatched) {
-      to.split(/\s+/).filter(Boolean).forEach(item => found.add(normalizeServiceOutputToken(item)))
+      to.split(/\s+/).filter(Boolean).forEach(item => {
+        const outputToken = buildAliasOutputTokenWithExplicitAmount(from, item, block)
+        if (!outputToken) return
+        found.add(outputToken)
+        if (hasMonetaryServiceSuffix(outputToken) && aliasSourceCarriesTargetAmount(from, outputToken, block)) {
+          explicitPaidAliasOutputs.add(outputToken)
+        }
+      })
     }
   })
 
-  // 第 018-96 批：特別補強常見買節贈送寫法。
-  // 即使規則內有全形 / 小寫 / 中文數字，也會穩定轉出 2+1s。
+  // 第 018-144 批：優惠組合採單向中文化。
+  // 文件1已經是中文就保留中文；只有 2+1 / 2+1S / 2+3S / 3+1 / 5+3 縮寫才轉成中文。
   const forcedServiceAliases = [
-    ['買2送1', '2+1s'],
-    ['買2送一', '2+1s'],
-    ['買二送一', '2+1s'],
-    ['買兩送一', '2+1s'],
-    ['買二送1', '2+1s'],
-    ['買兩送1', '2+1s'],
-    ['買2節送1s', '2+1s'],
-    ['買2節送一s', '2+1s'],
-    ['買二節送一s', '2+1s'],
-    ['買兩節送一s', '2+1s'],
-    ['買兩節送1s', '2+1s'],
+    ['買2送1', '買2送1'],
+    ['買2送一', '買2送1'],
+    ['買二送一', '買2送1'],
+    ['買兩送一', '買2送1'],
+    ['買二送1', '買2送1'],
+    ['買兩送1', '買2送1'],
+    ['買2節送1s', '買2節送1s'],
+    ['買2節送一s', '買2節送1s'],
+    ['買二節送一s', '買2節送1s'],
+    ['買兩節送一s', '買2節送1s'],
+    ['買兩節送1s', '買2節送1s'],
+    ['買2節送1節', '買2節送1節'],
+    ['買3送1', '買3送1'],
+    ['買3節送1節', '買3節送1節'],
+    ['買5送3', '買5送3'],
+    ['買5節送3節', '買5節送3節'],
     ['買2節3s', '買2節3s'],
     ['買二節3s', '買2節3s'],
     ['買兩節3s', '買2節3s'],
@@ -6825,15 +6845,17 @@ function extractServices(block) {
     }
   })
 
-  // 第 018-97 批：補強「買幾節送幾節 / S」服務。
-  // 舊邏輯在贈送文字分成多行時，可能只吃到第一個同義詞；
-  // 這裡直接掃整筆小姐區塊的正規化文字，無論同一行或分行都會穩定輸出。
+  // 第 018-144 批：中文優惠原文維持中文，不再反向縮成 2+1 / 3+1 / 5+3。
   const compactServiceText = searchableBlock
   const forcedBuyGiftPatterns = [
-    { output: '2+1s', patterns: [/買2節送1s/g, /買2節送1節/g] },
+    { output: '買2送1', patterns: [/買2送1/g] },
+    { output: '買2節送1s', patterns: [/買2節送1s/g] },
+    { output: '買2節送1節', patterns: [/買2節送1節/g] },
     { output: '買2節3s', patterns: [/買2節3s/g, /買2節\/3s/g] },
-    { output: '3+1', patterns: [/買3節送1節(?!\d+分)/g, /買3送1(?!\d+分)/g] },
-    { output: '5+3', patterns: [/買5節送3節(?!\d+分)/g, /買5送3(?!\d+分)/g] }
+    { output: '買3送1', patterns: [/買3送1(?!\d+分)/g] },
+    { output: '買3節送1節', patterns: [/買3節送1節(?!\d+分)/g] },
+    { output: '買5送3', patterns: [/買5送3(?!\d+分)/g] },
+    { output: '買5節送3節', patterns: [/買5節送3節(?!\d+分)/g] }
   ]
 
   forcedBuyGiftPatterns.forEach(rule => {
@@ -6866,8 +6888,9 @@ function extractServices(block) {
     found.add('艷舞')
   }
 
-  enforceExplicitPaidServices(found, block)
+  enforceExplicitPaidServices(found, block, explicitPaidAliasOutputs)
   normalizeOverlappingServices(found)
+  syncPromotionComboServicesWithSource(found, block)
 
   const orderIndex = new Map(order.map((item, index) => [normalizeServiceOutputToken(item), index]))
   return Array.from(found).sort((a, b) => {
@@ -6885,8 +6908,14 @@ function getServiceOrderIndex(item, orderIndex) {
   // 如果使用者把 2節3S 改顯示成 2+1s，
   // 但服務固定排序仍寫 2節3S，就讓 2+1s 使用 2節3S 的排序位置。
   const aliasOrderMap = new Map([
-    ['2+1s', '2節3S'],
-    ['2+1S', '2節3S'],
+    ['買2送1', '2+1'],
+    ['買2節送1s', '2節3S'],
+    ['買2節送1節', '2+1'],
+    ['買2節送3s', '2節3S'],
+    ['買3送1', '3+1'],
+    ['買3節送1節', '3+1'],
+    ['買5送3', '5+3'],
+    ['買5節送3節', '5+3'],
     ['買2節3s', '2節3S'],
     ['深喉嚨', '深喉'],
     ['口爆', '口爆+500'],
@@ -6906,6 +6935,71 @@ function getServiceOrderIndex(item, orderIndex) {
   if (mapped && orderIndex.has(mapped)) return orderIndex.get(mapped)
 
   return Number.MAX_SAFE_INTEGER
+}
+
+function syncPromotionComboServicesWithSource(found, block) {
+  // 第 018-144 批：先移除舊同義詞可能產生的縮寫或錯誤中文，再只依文件1實際文字重建。
+  // 規則：縮寫轉中文；文件1原本是中文就保留對應中文；文件1沒寫就不自動補。
+  const promotionSignatures = new Set([
+    '2+1', '2+1s', '2+3s', '3+1', '5+3',
+    '買2送1', '買2節送1s', '買2節送1節', '買2節送3s',
+    '買3送1', '買3節送1節',
+    '買5送3', '買5節送3節'
+  ].map(item => normalizeServiceAliasMatchText(item)))
+
+  Array.from(found).forEach(item => {
+    const signature = normalizeServiceAliasMatchText(normalizeServiceOutputToken(item))
+    if (promotionSignatures.has(signature)) found.delete(item)
+  })
+
+  const sourceCompact = normalizeServiceAliasMatchText(block)
+  const sourceSeparated = normalizeDigits(String(block || ''))
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[＋]/g, '+')
+    .replace(/[／]/g, '/')
+    .replace(/兩/g, '2')
+    .replace(/二/g, '2')
+    .replace(/三/g, '3')
+    .replace(/一/g, '1')
+    .replace(/壹/g, '1')
+    .replace(/貳/g, '2')
+    .replace(/參/g, '3')
+    .replace(/[，、,；;｜|\r\n\t]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  if (!sourceCompact && !sourceSeparated) return
+
+  // 中文來源：依文件1原本語意保留，不反向縮寫。
+  const chineseRules = [
+    ['買2節送1s', /買2節送1s/],
+    ['買2節送1節', /買2節送1節/],
+    ['買2節送3s', /買2節送3s/],
+    ['買2送1', /買2送1/],
+    ['買3節送1節', /買3節送1節(?!\d+分)/],
+    ['買3送1', /買3送1(?!\d+分)/],
+    ['買5節送3節', /買5節送3節(?!\d+分)/],
+    ['買5送3', /買5送3(?!\d+分)/]
+  ]
+
+  chineseRules.forEach(([output, pattern]) => {
+    if (pattern.test(sourceCompact)) found.add(output)
+  })
+
+  // 縮寫來源：只在文件1真的出現時轉成中文。
+  // 2+1S / 2+3S 必須先判斷，避免被 2+1 / 2+3 的短規則吃掉。
+  const shorthandRules = [
+    ['買2節送1s', /(^|[^0-9])2\+1s(?![a-z0-9])/i],
+    ['買2節送3s', /(^|[^0-9])2\+3s(?![a-z0-9])/i],
+    ['買2送1', /(^|[^0-9])2\+1(?![a-z0-9])/i],
+    ['買3送1', /(^|[^0-9])3\+1(?![a-z0-9])/i],
+    ['買5送3', /(^|[^0-9])5\+3(?![a-z0-9])/i]
+  ]
+
+  shorthandRules.forEach(([output, pattern]) => {
+    if (pattern.test(sourceSeparated)) found.add(output)
+  })
 }
 
 function normalizeOverlappingServices(found) {
@@ -6933,15 +7027,12 @@ function normalizeOverlappingServices(found) {
 
   // 第 018-103 批：同一筆同時抓到「2+1」與「2+1s」時，保留較完整的 2+1s。
   // 例：買二送一 100分鐘 3S 被不同規則同時抓成 2+1 / 2+1s 時，只輸出 2+1s。
-  if (found.has('2+1s') && found.has('2+1')) {
-    found.delete('2+1')
+  if (found.has('買2節送1s') && found.has('買2送1')) {
+    // 兩者可能分別來自文件1的 2+1S 與 2+1；若文件1兩個都有寫，兩個中文項目都保留。
   }
 
   // 第 018-119 批：買2節3S / 買2節 3s 輸出保留「買2節3s」，並移除舊規則抓到的 2+1s / 2節3S。
   if (found.has('買2節3s')) {
-    found.delete('2+1s')
-    found.delete('2節3S')
-  } else if (found.has('2+1s') && found.has('2節3S')) {
     found.delete('2節3S')
   }
 
@@ -6994,10 +7085,11 @@ function normalizeOverlappingServices(found) {
 
 
 
-function enforceExplicitPaidServices(found, sourceText) {
+function enforceExplicitPaidServices(found, sourceText, explicitPaidAliasOutputs = new Set()) {
   Array.from(found).forEach(item => {
     const normalizedItem = normalizeServiceOutputToken(item)
     if (!hasMonetaryServiceSuffix(normalizedItem)) return
+    if (explicitPaidAliasOutputs.has(normalizedItem)) return
     if (hasExplicitPaidAmountForService(sourceText, normalizedItem)) return
 
     found.delete(item)
@@ -7027,10 +7119,49 @@ function sanitizePaidServiceTokenBySource(sourceText, outputToken) {
   return normalizeServiceOutputToken(stripMonetaryServiceSuffix(token))
 }
 
+function getExplicitAliasAmount(fromText, sourceText = '') {
+  const directAmount = getMonetaryServiceAmount(normalizeServiceOutputToken(fromText))
+  if (directAmount) return directAmount
+
+  const normalizedFrom = normalizeServiceAliasMatchText(stripMonetaryServiceSuffix(fromText))
+  const normalizedSource = normalizeServiceAliasMatchText(sourceText)
+  if (!normalizedFrom || !normalizedSource) return ''
+
+  const match = normalizedSource.match(new RegExp(`${escapeRegExp(normalizedFrom)}(?:\\+|加)(\\d{2,5})(?!\\d)`))
+  return match ? match[1] : ''
+}
+
+function aliasSourceCarriesTargetAmount(fromText, outputToken, sourceText = '') {
+  const amount = getMonetaryServiceAmount(outputToken)
+  if (!amount) return false
+  return getExplicitAliasAmount(fromText, sourceText) === amount
+}
+
+function buildAliasOutputTokenWithExplicitAmount(fromText, toText, sourceText = '') {
+  const token = normalizeServiceOutputToken(toText)
+  if (!token) return ''
+  if (hasMonetaryServiceSuffix(token)) return token
+
+  const amount = getExplicitAliasAmount(fromText, sourceText)
+  return amount ? `${token}+${amount}` : token
+}
+
 function sanitizeAliasTargetBySource(fromText, toText) {
-  return String(toText || '')
-    .split(/\s+/)
-    .map(item => sanitizePaidServiceTokenBySource(fromText, item))
+  const outputItems = String(toText || '').split(/\s+/).filter(Boolean)
+  const sourceAmount = getExplicitAliasAmount(fromText)
+
+  return outputItems
+    .map(item => {
+      const token = normalizeServiceOutputToken(item)
+      if (!token) return ''
+      if (!hasMonetaryServiceSuffix(token) && sourceAmount && outputItems.length === 1) {
+        return `${token}+${sourceAmount}`
+      }
+      if (hasMonetaryServiceSuffix(token) && aliasSourceCarriesTargetAmount(fromText, token)) {
+        return token
+      }
+      return sanitizePaidServiceTokenBySource(fromText, token)
+    })
     .filter(Boolean)
     .join(' ')
 }
@@ -7177,8 +7308,12 @@ function normalizeServiceOutputToken(text) {
   const value = String(text || '').trim()
   if (!value) return ''
 
-  // 第 018-96 批：2+1s 統一小寫 s，避免排序與去重時變成 2+1S / 2+1s 兩種。
-  if (/^2\+1s$/i.test(value)) return '2+1s'
+  // 第 018-144 批：優惠組合縮寫在輸出端統一轉成中文。
+  if (/^2\+1s$/i.test(value)) return '買2節送1s'
+  if (/^2\+3s$/i.test(value)) return '買2節送3s'
+  if (/^2\+1$/i.test(value)) return '買2送1'
+  if (/^3\+1$/i.test(value)) return '買3送1'
+  if (/^5\+3$/i.test(value)) return '買5送3'
 
   // 第 018-119 批：舊服務寫法 2節3S / 買2節3S 統一顯示為「買2節3s」。
   if (/^(?:買)?2節3s$/i.test(value)) return '買2節3s'
@@ -8971,9 +9106,11 @@ function applyRuleData(data, options = {}) {
   countryAliasText.value = data.countryAliasText ?? countryAliasText.value
   amountTransformRules.value = normalizeAmountRules(data.amountTransformRules ?? data.amountTransformRulesText ?? amountTransformRules.value)
   serviceOrderText.value = data.serviceOrderText ?? serviceOrderText.value
-  aliasRulesText.value = Object.prototype.hasOwnProperty.call(data, 'aliasRulesText')
-    ? String(data.aliasRulesText ?? '')
-    : aliasRulesText.value
+  if (Object.prototype.hasOwnProperty.call(data, 'aliasRulesText')) {
+    const loadedAliasText = String(data.aliasRulesText ?? '')
+    const sanitizedAliasText = sanitizeAliasRulesText(loadedAliasText).text
+    aliasRulesText.value = sanitizedAliasText || loadedAliasText
+  }
   removeWordsText.value = data.removeWordsText ?? removeWordsText.value
   extraKeepText.value = data.extraKeepText ?? extraKeepText.value
   countryFieldRulesText.value = data.countryFieldRulesText ?? countryFieldRulesText.value
