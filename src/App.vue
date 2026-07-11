@@ -1,3 +1,4 @@
+<!-- 第 018-149 批：小姐名「小妹妹」完整保留＋空格身材第三碼年齡補抓修正版 -->
 <!-- 第 018-147 批：老闆全站公版改用獨立資料表，徹底避開 employee_rules mode 約束 -->
 <!-- 第 018-146 批：老闆全站公版 mode 約束相容修正版 -->
 <!-- 第 018-145 批：老闆全站公版＋員工地區補充規則正式分層版 -->
@@ -9,6 +10,7 @@
 <!-- 第 018-126 批：中央媒體來源統一與前後台數量同步修正版（依第 018-125 批延續） -->
 <template>
   <!-- 第 018-109 批：待上傳縮圖區禁止拖放版 -->
+  <!-- batch018-149-lady-name-and-spaced-age-fix -->
   <!-- batch018-148-explicit-addon-amount-cleanup-alias-fix -->
   <!-- batch018-147-owner-global-dedicated-table-fix -->
   <!-- batch018-146-owner-global-mode-constraint-fix -->
@@ -6477,9 +6479,14 @@ function removeHeaderNoise(text) {
     .replace(/\d{2,3}\s*(?:分鐘|分).*$/g, '')
 
   value = value
-    .replace(/(新妹|新茶|新人|嫩妹|妹妹|外送妹)$/g, '')
     .replace(/[^\u4e00-\u9fa5A-Za-z0-9]/g, '')
     .trim()
+
+  // 第 018-149 批：像「小妹妹」這種三字小姐名，結尾雖然是「妹妹」，仍是完整姓名。
+  // 舊版會把所有「妹妹」尾綴一律移除，導致「小妹妹」只剩「小」。
+  if (!/^[\u4e00-\u9fa5]妹妹$/.test(value)) {
+    value = value.replace(/(新妹|新茶|新人|嫩妹|妹妹|外送妹)$/g, '')
+  }
 
   return value
 }
@@ -6550,6 +6557,18 @@ function parseBody(text) {
   }
 
   for (const line of lines) {
+    // 第 018-149 批：支援「158 47 20 E」＝身高 158、體重 47、年齡 20、罩杯 E。
+    // 第三個兩位數位於體重與罩杯之間時，視為明確年齡，不再被舊版略過。
+    const spacedBodyWithAgeMatch = line.match(/^\s*(\d{3})\s+(\d{2})\s+(\d{2})\s+(?:(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)\s*)?([A-Za-z])\s*(?:奶|杯)?/)
+    if (spacedBodyWithAgeMatch) {
+      return {
+        height: spacedBodyWithAgeMatch[1],
+        weight: spacedBodyWithAgeMatch[2],
+        cup: spacedBodyWithAgeMatch[4].toUpperCase(),
+        age: `${spacedBodyWithAgeMatch[3]}y`
+      }
+    }
+
     // batch018-71：支援「155.44.莫奶D」「155/44/莫奶D」這種點號身材。
     // 這類資料常把 Cup 放在中文描述最後，原本只認「真D」或「D」，會導致整筆小姐解析失敗。
     const descriptiveBodyMatch = line.match(/(\d{3})\s*[\/.．]\s*(\d{2})\s*[\/.．]\s*(?:[\u4e00-\u9fa5]{0,8})?([A-Za-z])\s*(?:奶|杯)?(?:\s*(\d{2})\s*(?:歲|y|Y))?/)
