@@ -5,7 +5,7 @@
 <!-- 第 018-126 批：中央媒體來源統一與前後台數量同步修正版（依第 018-125 批延續） -->
 <template>
   <!-- 第 018-109 批：待上傳縮圖區禁止拖放版 -->
-  <!-- batch018-76-employee-rules-semantic-verify-fix -->
+  <!-- batch018-139-owner-base-employee-supplement-rules -->
   <main v-if="!authReady" class="login-page-shell">
     <section class="login-card">
       <div class="login-brand">正式線上登入</div>
@@ -426,7 +426,7 @@
         <div class="top-settings-modal-head">
           <div>
             <h3>金額設定</h3>
-            <p>調整加價模式、固定加價、自訂加價與分鐘加價規則。</p>
+            <p>{{ ruleLayerHelpText }}</p>
           </div>
           <button class="top-settings-modal-close" type="button" @click="closeTopSettingModal">關閉</button>
         </div>
@@ -478,7 +478,7 @@
         <div class="top-settings-modal-head">
           <div>
             <h3>輸出格式</h3>
-            <p>設定文件輸出的標題與格式提示。</p>
+            <p>{{ ruleLayerHelpText }}</p>
           </div>
           <button class="top-settings-modal-close" type="button" @click="closeTopSettingModal">關閉</button>
         </div>
@@ -501,14 +501,14 @@
         <div class="quick-rule-header top-settings-modal-head">
           <div>
             <h3>簡單模式｜常用規則</h3>
-            <p>平常主要改這裡；新店家特殊格式再展開進階設定。</p>
+            <p>{{ ruleLayerHelpText }}</p>
           </div>
           <button class="top-settings-modal-close" type="button" @click="closeTopSettingModal">關閉</button>
         </div>
 
         <div class="rule-actions rule-actions-center quick-rules-actions">
-          <button class="ghost-btn" type="button" @click="saveRules">儲存規則</button>
-          <button class="ghost-btn" type="button" @click="loadRules">讀取規則</button>
+          <button class="ghost-btn" type="button" @click="saveRules">{{ isOwner ? '儲存老闆公版' : '儲存我的補充' }}</button>
+          <button class="ghost-btn" type="button" @click="loadRules">{{ isOwner ? '讀取老闆公版' : '讀取老闆＋我的補充' }}</button>
         </div>
 
         <div class="manager-grid">
@@ -577,7 +577,7 @@
         <div class="advanced-title top-settings-modal-head">
           <div>
             <h3>進階設定</h3>
-            <p>一般情況不用改這裡；遇到新店家格式抓不到、身材格式特殊、或詞被誤判成小姐名時再調整。</p>
+            <p>{{ ruleLayerHelpText }}</p>
           </div>
           <button class="top-settings-modal-close" type="button" @click="closeTopSettingModal">關閉</button>
         </div>
@@ -1671,6 +1671,13 @@ const staffLoginInput = ref(currentStaffName.value)
 const authUserEmail = computed(() => authUser.value?.email || '尚未登入')
 const isOwner = computed(() => authProfile.value?.role === 'owner')
 const currentRoleLabel = computed(() => isOwner.value ? '老闆' : '員工')
+const ruleLayerHelpText = computed(() => isOwner.value
+  ? '第一層公司公版規則：所有員工會先讀取並套用這裡的設定。'
+  : '第二層個人補充規則：欄位預設空白；只填自己需要追加或覆蓋的內容。實際轉換會先套老闆公版，再套目前員工補充。')
+const ownerBaseRuleData = ref(null)
+const employeeSupplementLoaded = ref(false)
+const OWNER_BASE_RULE_KIND = 'owner_base_rules_v1'
+const EMPLOYEE_SUPPLEMENT_RULE_KIND = 'employee_supplement_rules_v1'
 
 function cleanStaffName(value) {
   const name = String(value || '').trim().replace(/\s+/g, ' ')
@@ -6005,7 +6012,7 @@ function buildManagerScopeRequiredMessage() {
     : ''
 }
 
-function convertTextWithScopeGuard() {
+async function convertTextWithScopeGuard() {
   // 第 018-116 批：未選完整縣市 / 地區 / 定點外送 / 機房時，不允許產生文件2，避免套錯規則範圍。
   if (!isManagerScopeReadyForConvert.value) {
     const message = buildManagerScopeRequiredMessage()
@@ -6016,7 +6023,7 @@ function convertTextWithScopeGuard() {
     return
   }
 
-  convertText()
+  await withEffectiveRulesForEmployee(async () => convertText())
 }
 
 function convertText() {
@@ -8383,6 +8390,151 @@ const currentRuleScopeLabel = computed(() => {
 
 const effectiveRuleSourceLabel = computed(() => getEffectiveScopedRuleData().label)
 
+function buildEmptyEmployeeSupplementData() {
+  return {
+    kind: EMPLOYEE_SUPPLEMENT_RULE_KIND,
+    priceMode: '',
+    globalIncrease: null,
+    customIncrease: null,
+    amountPriorityMode: '',
+    titleMode: '',
+    formatHint: '',
+    countryPriceRulesText: '',
+    minutePriceAddRulesText: '',
+    countryAliasText: '',
+    amountTransformRules: [],
+    serviceOrderText: '',
+    aliasRulesText: '',
+    removeWordsText: '',
+    extraKeepText: '',
+    countryFieldRulesText: '',
+    bodyCupPrefixText: '',
+    notNameWordsText: ''
+  }
+}
+
+function normalizeSupplementRuleData(data = {}) {
+  const blank = buildEmptyEmployeeSupplementData()
+  return {
+    ...blank,
+    ...data,
+    kind: EMPLOYEE_SUPPLEMENT_RULE_KIND,
+    globalIncrease: data.globalIncrease === '' || data.globalIncrease == null ? null : Number(data.globalIncrease),
+    customIncrease: data.customIncrease === '' || data.customIncrease == null ? null : Number(data.customIncrease),
+    amountTransformRules: normalizeAmountRules(data.amountTransformRules ?? data.amountTransformRulesText ?? [])
+  }
+}
+
+function appendRuleText(baseValue, supplementValue) {
+  const base = String(baseValue || '').trim()
+  const extra = String(supplementValue || '').trim()
+  if (!extra) return base
+  if (!base) return extra
+  const merged = [...new Set(`${base}\n${extra}`.split(/\r?\n/).map(item => item.trim()).filter(Boolean))]
+  return merged.join('\n')
+}
+
+function mergeOwnerAndEmployeeRules(ownerData = {}, supplementData = {}) {
+  const owner = ownerData && typeof ownerData === 'object' ? ownerData : buildDefaultRuleData()
+  const extra = normalizeSupplementRuleData(supplementData)
+  const choose = (key, fallback) => {
+    const value = extra[key]
+    return value === '' || value == null ? (owner[key] ?? fallback) : value
+  }
+  const amountRules = [
+    ...normalizeAmountRules(owner.amountTransformRules ?? owner.amountTransformRulesText ?? []),
+    ...normalizeAmountRules(extra.amountTransformRules ?? [])
+  ]
+  const dedupAmount = []
+  const amountSeen = new Set()
+  amountRules.forEach(rule => {
+    const key = `${rule.from}=>${rule.to}`
+    if (!amountSeen.has(key)) {
+      amountSeen.add(key)
+      dedupAmount.push(rule)
+    }
+  })
+  return {
+    ...owner,
+    priceMode: choose('priceMode', 'country'),
+    globalIncrease: Number(choose('globalIncrease', 500)),
+    customIncrease: Number(choose('customIncrease', 700)),
+    amountPriorityMode: choose('amountPriorityMode', 'higher-price'),
+    titleMode: choose('titleMode', 'country-name'),
+    formatHint: choose('formatHint', owner.formatHint || ''),
+    countryPriceRulesText: appendRuleText(owner.countryPriceRulesText, extra.countryPriceRulesText),
+    minutePriceAddRulesText: appendRuleText(owner.minutePriceAddRulesText, extra.minutePriceAddRulesText),
+    countryAliasText: appendRuleText(owner.countryAliasText, extra.countryAliasText),
+    amountTransformRules: dedupAmount,
+    serviceOrderText: appendRuleText(owner.serviceOrderText, extra.serviceOrderText),
+    aliasRulesText: appendRuleText(owner.aliasRulesText, extra.aliasRulesText),
+    removeWordsText: appendRuleText(owner.removeWordsText, extra.removeWordsText),
+    extraKeepText: appendRuleText(owner.extraKeepText, extra.extraKeepText),
+    countryFieldRulesText: appendRuleText(owner.countryFieldRulesText, extra.countryFieldRulesText),
+    bodyCupPrefixText: appendRuleText(owner.bodyCupPrefixText, extra.bodyCupPrefixText),
+    notNameWordsText: appendRuleText(owner.notNameWordsText, extra.notNameWordsText)
+  }
+}
+
+async function getOnlineOwnerRuleForCurrentRoom() {
+  if (!isOnlineWorkspaceReady()) return null
+  const city = cleanScopeText(ruleScopeCity.value)
+  const district = cleanScopeText(ruleScopeDistrict.value)
+  const mode = cleanScopeText(ruleScopeType.value)
+  const room = cleanScopeText(ruleScopeRoom.value)
+  if (!city || !district || !mode || !room) return null
+
+  if (isOwner.value) {
+    return getOnlineRuleForCurrentRoom()
+  }
+
+  const { data, error } = await supabase.rpc('get_owner_rule_for_scope', {
+    p_city: city,
+    p_district: district,
+    p_mode: mode,
+    p_room: room
+  })
+  if (error) throw error
+  return data && typeof data === 'object' ? data : null
+}
+
+function applyEmployeeSupplementData(data, options = {}) {
+  const extra = normalizeSupplementRuleData(data)
+  priceMode.value = extra.priceMode
+  globalIncrease.value = extra.globalIncrease ?? ''
+  customIncrease.value = extra.customIncrease ?? ''
+  amountPriorityMode.value = extra.amountPriorityMode
+  titleMode.value = extra.titleMode
+  formatHint.value = extra.formatHint
+  countryPriceRulesText.value = extra.countryPriceRulesText
+  minutePriceAddRulesText.value = extra.minutePriceAddRulesText
+  countryAliasText.value = extra.countryAliasText
+  amountTransformRules.value = normalizeAmountRules(extra.amountTransformRules)
+  serviceOrderText.value = extra.serviceOrderText
+  aliasRulesText.value = extra.aliasRulesText
+  removeWordsText.value = extra.removeWordsText
+  extraKeepText.value = extra.extraKeepText
+  countryFieldRulesText.value = extra.countryFieldRulesText
+  bodyCupPrefixText.value = extra.bodyCupPrefixText
+  notNameWordsText.value = extra.notNameWordsText
+  employeeSupplementLoaded.value = true
+  if (!options.keepPanelsOpen) closeTopSettingModal()
+}
+
+async function withEffectiveRulesForEmployee(callback) {
+  if (isOwner.value) return callback()
+  const supplement = normalizeSupplementRuleData(collectRuleData())
+  const owner = ownerBaseRuleData.value || await getOnlineOwnerRuleForCurrentRoom() || buildDefaultRuleData()
+  ownerBaseRuleData.value = owner
+  const effective = mergeOwnerAndEmployeeRules(owner, supplement)
+  applyRuleData(effective, { keepPanelsOpen: true })
+  try {
+    return await callback()
+  } finally {
+    applyEmployeeSupplementData(supplement, { keepPanelsOpen: true })
+  }
+}
+
 function normalizeRuleTextForCompare(value) {
   return String(value ?? '')
     .replace(/\r\n?/g, '\n')
@@ -8444,6 +8596,7 @@ function areRuleDataEquivalent(savedRule, currentRule) {
 }
 
 async function saveOnlineRuleForCurrentRoom(data) {
+  data = isOwner.value ? { ...data, kind: OWNER_BASE_RULE_KIND } : normalizeSupplementRuleData(data)
   const city = cleanScopeText(ruleScopeCity.value)
   const district = cleanScopeText(ruleScopeDistrict.value)
   const type = cleanScopeText(ruleScopeType.value)
@@ -8562,7 +8715,9 @@ async function saveCurrentScopeRules() {
     writeScopeRuleStore(verifiedStore)
     rememberCurrentScopeSelection({ syncOnline: true })
 
-    const message = `已確認線上儲存「${currentRuleScopeLabel.value}」規則；重新登入或換電腦後也會讀得到。`
+    const message = isOwner.value
+      ? `已確認儲存老闆公版規則：${currentRuleScopeLabel.value}；所有員工會先套用這一層。`
+      : `已確認儲存員工個人補充規則：${currentRuleScopeLabel.value}；轉換時會接在老闆公版後套用。`
     setRoomRuleFeedback(message, 'success', { toast: true })
     return true
   } catch (error) {
@@ -8613,7 +8768,21 @@ async function loadCurrentScopeRules(options = {}) {
   try {
     if (ruleScopeLevel.value === 'room' && isOnlineWorkspaceReady()) {
       const onlineRule = await getOnlineRuleForCurrentRoom()
+      if (!isOwner.value) {
+        const ownerRule = await getOnlineOwnerRuleForCurrentRoom()
+        ownerBaseRuleData.value = ownerRule || buildDefaultRuleData()
+        applyEmployeeSupplementData(onlineRule || buildEmptyEmployeeSupplementData(), { keepPanelsOpen: true })
+        const { key } = getScopeBucketAndKey()
+        const store = setRuleDataToScope(readScopeRuleStore(), 'room', key, onlineRule || buildEmptyEmployeeSupplementData())
+        writeScopeRuleStore(store)
+        const message = isAutoLoad
+          ? `已讀取老闆公版＋目前員工補充：${currentRuleScopeLabel.value}`
+          : `已讀取老闆公版＋目前員工補充：${currentRuleScopeLabel.value}`
+        setRoomRuleFeedback(message, 'success', { silent: options.silent, toast: !options.silent && !isAutoLoad })
+        return true
+      }
       if (onlineRule && typeof onlineRule === 'object') {
+        ownerBaseRuleData.value = onlineRule
         applyRuleData(onlineRule, { keepPanelsOpen: true })
         const { key } = getScopeBucketAndKey()
         const store = setRuleDataToScope(readScopeRuleStore(), 'room', key, onlineRule)
@@ -8641,7 +8810,13 @@ async function loadCurrentScopeRules(options = {}) {
       return false
     }
 
-    applyRuleData(resolved.data, { keepPanelsOpen: true })
+    if (isOwner.value) {
+      ownerBaseRuleData.value = resolved.data
+      applyRuleData(resolved.data, { keepPanelsOpen: true })
+    } else {
+      ownerBaseRuleData.value = resolved.data || buildDefaultRuleData()
+      applyEmployeeSupplementData(buildEmptyEmployeeSupplementData(), { keepPanelsOpen: true })
+    }
 
     const message = isAutoLoad
       ? `此機房尚無線上專屬規則，已自動套用：${resolved.label}`
@@ -8697,6 +8872,7 @@ function clearCurrentScopeRules() {
 
 function collectRuleData() {
   return {
+    kind: isOwner.value ? OWNER_BASE_RULE_KIND : EMPLOYEE_SUPPLEMENT_RULE_KIND,
     priceMode: priceMode.value,
     globalIncrease: globalIncrease.value,
     customIncrease: customIncrease.value,
@@ -15265,4 +15441,6 @@ button:disabled {
 }
 
 
+
+/* batch018-139：老闆第一層公版＋員工第二層補充 */
 </style>
