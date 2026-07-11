@@ -1,3 +1,5 @@
+<!-- 第 018-147 批：老闆全站公版改用獨立資料表，徹底避開 employee_rules mode 約束 -->
+<!-- 第 018-146 批：老闆全站公版 mode 約束相容修正版 -->
 <!-- 第 018-145 批：老闆全站公版＋員工地區補充規則正式分層版 -->
 <!-- 第 018-144 批：優惠組合縮寫轉中文、中文原文保留版 -->
 <!-- 第 018-137 批：疑似重複小姐整理與媒體缺失快速處理工具版 -->
@@ -7,7 +9,9 @@
 <!-- 第 018-126 批：中央媒體來源統一與前後台數量同步修正版（依第 018-125 批延續） -->
 <template>
   <!-- 第 018-109 批：待上傳縮圖區禁止拖放版 -->
-  <!-- batch018-145-owner-global-employee-location-supplement -->
+  <!-- batch018-148-explicit-addon-amount-cleanup-alias-fix -->
+  <!-- batch018-147-owner-global-dedicated-table-fix -->
+  <!-- batch018-146-owner-global-mode-constraint-fix -->
   <!-- batch018-144-promotion-shorthand-to-chinese-source-preserve -->
   <!-- batch018-142-alias-delete-persist-fix -->
   <main v-if="!authReady" class="login-page-shell">
@@ -1497,6 +1501,7 @@
 <!-- batch018-120-sync-id-backfill-media-upload-fix -->
 <!-- batch018-138-central-direct-media-upload-bind-fix -->
 <script setup>
+// batch018-148-explicit-addon-amount-cleanup-alias-fix
 // batch018-140-individual-setting-save-buttons
 // 第 018-107 批：登入後預設展開地區機房管理，並記住最後使用的縣市 / 地區 / 定點外送 / 機房。
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -1732,7 +1737,8 @@ const ownerBaseRuleData = ref(null)
 const employeeSupplementLoaded = ref(false)
 const OWNER_BASE_RULE_KIND = 'owner_base_rules_v1'
 const EMPLOYEE_SUPPLEMENT_RULE_KIND = 'employee_supplement_rules_v1'
-const OWNER_GLOBAL_SCOPE_VALUE = '__OWNER_GLOBAL__'
+// 第 018-147 批起：老闆全站公版改存 converter_global_rules，不再塞進 employee_rules。
+// employee_rules 僅保留員工縣市／地區／定點外送／機房補充規則。
 
 function cleanStaffName(value) {
   const name = String(value || '').trim().replace(/\s+/g, ' ')
@@ -2717,7 +2723,7 @@ const bodyCupPrefixText = ref(defaultBodyCupPrefixes.join('\n'))
 const notNameWordsText = ref(defaultNotNameWords.join('\n'))
 
 const aliasRuleItems = computed(() => parseAliasRules(aliasRulesText.value).map(([from, to]) => ({ from, to })))
-const removeWordItems = computed(() => parseList(removeWordsText.value))
+const removeWordItems = computed(() => parseCleanupWords(removeWordsText.value))
 const countryFieldRuleItems = computed(() => parseKeyValueLines(countryFieldRulesText.value).map(([from, to]) => ({ from, to })))
 
 const sampleText = `💢超性感搖搖馬💢
@@ -6151,10 +6157,15 @@ function cleanupSourceText(text) {
     .replace(/[：]/g, ':')
     .replace(/[ \t]+/g, ' ')
 
-  parseList(removeWordsText.value).forEach(word => {
-    if (!word) return
-    cleaned = cleaned.replace(new RegExp(escapeRegExp(word), 'g'), '')
-  })
+  // 第 018-148 批：不想出現文字改成逐行／逗號／斜線解析，禁止把句子中的空格拆成獨立數字。
+  // 舊版使用 parseList() 會把「仟色好評截圖 退 100」拆成「100」，
+  // 進而把文件1的「吞精+1000／無套外+1000」錯刪成「+0」。
+  parseCleanupWords(removeWordsText.value)
+    .sort((a, b) => b.length - a.length)
+    .forEach(word => {
+      if (!word || isUnsafeNumericCleanupToken(word)) return
+      cleaned = cleaned.replace(new RegExp(escapeRegExp(word), 'g'), '')
+    })
 
   const normalizedLines = cleaned
     .split('\n')
@@ -7485,6 +7496,31 @@ function parseList(text) {
   return String(text || '').split(/[\n,，、\s]+/).map(item => item.trim()).filter(Boolean)
 }
 
+// 第 018-148 批：清理文字不可用一般 parseList，否則含空格句子會被拆成「100」等數字碎片。
+function parseCleanupWords(text) {
+  const items = []
+  String(text || '')
+    .replace(/\r\n?/g, '\n')
+    .split(/[\n,，、]+/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .forEach(line => {
+      items.push(line)
+      // 斜線常用來列舉「酒客/入珠/吸毒」，可分別清理；但保留每一段內的空格與數字。
+      if (/[\/／]/.test(line)) {
+        line.split(/[\/／]+/).map(part => part.trim()).filter(Boolean).forEach(part => items.push(part))
+      }
+    })
+
+  return Array.from(new Set(items))
+}
+
+function isUnsafeNumericCleanupToken(value) {
+  const token = String(value || '').trim()
+  // 純數字或單純 +金額 不可當成清理字詞，避免 1000 被刪成 0。
+  return /^[+＋-]?\d+(?:\.\d+)?$/.test(token)
+}
+
 function parseKeyValueLines(text) {
   return String(text || '').split('\n').map(line => line.trim()).filter(Boolean).map(line => {
     const separator = line.includes('=') ? '=' : line.includes('：') ? '：' : line.includes(':') ? ':' : null
@@ -8705,29 +8741,17 @@ function mergeOwnerAndEmployeeRules(ownerData = {}, supplementData = {}) {
 async function getOnlineOwnerGlobalRule() {
   if (!isOnlineWorkspaceReady()) return null
 
-  if (isOwner.value) {
-    const { data, error } = await supabase
-      .from('employee_rules')
-      .select('rules')
-      .eq('user_id', authUser.value.id)
-      .eq('city', OWNER_GLOBAL_SCOPE_VALUE)
-      .eq('district', OWNER_GLOBAL_SCOPE_VALUE)
-      .eq('mode', OWNER_GLOBAL_SCOPE_VALUE)
-      .eq('room', OWNER_GLOBAL_SCOPE_VALUE)
-      .maybeSingle()
-
-    if (error) throw error
-    if (data?.rules && typeof data.rules === 'object') return data.rules
-
-    // 相容舊版：尚未建立全站公版時，若老闆目前有選完整機房，先讀舊機房規則供畫面帶入。
-    return getOnlineRuleForCurrentRoom()
-  }
-
   const { data, error } = await supabase.rpc('get_owner_global_rule')
   if (error) throw error
   if (data && typeof data === 'object') return data
 
-  // 相容第 018-144 前的舊機房公版；老闆重新儲存全站公版後即不再使用此路徑。
+  // 尚未完成第 018-147 批資料庫遷移或尚未建立全站公版時，
+  // 老闆可先從目前畫面／舊機房公版帶入，儲存後即改走獨立全站公版資料表。
+  if (isOwner.value) {
+    return getOnlineRuleForCurrentRoom()
+  }
+
+  // 相容第 018-144 前的舊機房公版；老闆完成第 018-147 批儲存後不再使用此路徑。
   const city = cleanScopeText(ruleScopeCity.value)
   const district = cleanScopeText(ruleScopeDistrict.value)
   const mode = cleanScopeText(ruleScopeType.value)
@@ -8752,37 +8776,18 @@ async function saveOnlineOwnerGlobalRule(data) {
   if (!isOwner.value || !isOnlineWorkspaceReady()) return null
 
   const globalRule = { ...data, kind: OWNER_BASE_RULE_KIND }
-  const row = {
-    user_id: authUser.value.id,
-    city: OWNER_GLOBAL_SCOPE_VALUE,
-    district: OWNER_GLOBAL_SCOPE_VALUE,
-    mode: OWNER_GLOBAL_SCOPE_VALUE,
-    room: OWNER_GLOBAL_SCOPE_VALUE,
-    rules: globalRule
-  }
 
-  const { data: savedRows, error } = await supabase
-    .from('employee_rules')
-    .upsert(row, { onConflict: 'user_id,city,district,mode,room' })
-    .select('rules')
+  const { data: savedRule, error } = await supabase.rpc('save_owner_global_rule', {
+    p_rules: globalRule
+  })
 
   if (error) throw error
-  if (!Array.isArray(savedRows) || !savedRows.length) {
-    throw new Error('老闆全站公版寫入 0 筆；請確認 employee_rules 的 RLS 與唯一索引。')
+  if (!savedRule || typeof savedRule !== 'object') {
+    throw new Error('老闆全站公版寫入 0 筆；請確認已執行第 018-147 批 SQL。')
   }
 
-  const { data: verifiedRow, error: verifyError } = await supabase
-    .from('employee_rules')
-    .select('rules')
-    .eq('user_id', authUser.value.id)
-    .eq('city', OWNER_GLOBAL_SCOPE_VALUE)
-    .eq('district', OWNER_GLOBAL_SCOPE_VALUE)
-    .eq('mode', OWNER_GLOBAL_SCOPE_VALUE)
-    .eq('room', OWNER_GLOBAL_SCOPE_VALUE)
-    .maybeSingle()
-
+  const { data: verifiedRule, error: verifyError } = await supabase.rpc('get_owner_global_rule')
   if (verifyError) throw verifyError
-  const verifiedRule = verifiedRow?.rules
   if (!verifiedRule || typeof verifiedRule !== 'object') {
     throw new Error('老闆全站公版送出後未能重新讀回。')
   }
@@ -8832,7 +8837,7 @@ async function withEffectiveRulesForEmployee(callback) {
 
   const owner = onlineOwnerRule || ownerBaseRuleData.value
   if (!owner || typeof owner !== 'object') {
-    throw new Error('讀不到老闆全站公版規則。請老闆先登入任一設定頁按「儲存」，並確認已執行第 018-145 批 SQL。')
+    throw new Error('讀不到老闆全站公版規則。請老闆先登入任一設定頁按「儲存」，並確認已執行第 018-147 批 SQL。')
   }
 
   ownerBaseRuleData.value = owner
@@ -9059,9 +9064,11 @@ async function saveCurrentScopeRules(options = {}) {
     setRoomRuleFeedback(message, 'success', { toast: true })
     return true
   } catch (error) {
-    const message = itemLabel
-      ? `「${itemLabel}」已保留在本機，但線上個別儲存失敗：${error.message || error}`
-      : `本機已保留，但線上儲存機房規則失敗：${error.message || error}`
+    const message = isOwner.value
+      ? `老闆全站公版已保留在本機，但線上儲存失敗：${error.message || error}`
+      : (itemLabel
+        ? `「${itemLabel}」已保留在本機，但線上個別儲存失敗：${error.message || error}`
+        : `本機已保留，但線上儲存機房規則失敗：${error.message || error}`)
     setRoomRuleFeedback(message, 'error', { toast: true })
     return false
   } finally {
@@ -9130,7 +9137,7 @@ async function loadCurrentScopeRules(options = {}) {
       if (!isOwner.value) {
         const ownerRule = await getOnlineOwnerGlobalRule()
         if (!ownerRule || typeof ownerRule !== 'object') {
-          throw new Error('讀不到老闆全站公版。請老闆先儲存一次全站公版，並確認第 018-145 批 SQL 已執行。')
+          throw new Error('讀不到老闆全站公版。請老闆先儲存一次全站公版，並確認第 018-147 批 SQL 已執行。')
         }
         ownerBaseRuleData.value = ownerRule
         applyEmployeeSupplementData(onlineRule || buildEmptyEmployeeSupplementData(), { keepPanelsOpen: true })
