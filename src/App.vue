@@ -5,7 +5,7 @@
 <!-- 第 018-126 批：中央媒體來源統一與前後台數量同步修正版（依第 018-125 批延續） -->
 <template>
   <!-- 第 018-109 批：待上傳縮圖區禁止拖放版 -->
-  <!-- batch018-139-owner-base-employee-supplement-rules -->
+  <!-- batch018-141-modal-single-save-buttons -->
   <main v-if="!authReady" class="login-page-shell">
     <section class="login-card">
       <div class="login-brand">正式線上登入</div>
@@ -439,9 +439,6 @@
               <option value="custom">全部自訂加價</option>
             </select>
           </label>
-          <button class="item-save-btn" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('加價模式', ['priceMode'])">
-            {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
-          </button>
         </div>
 
         <div class="setting-save-item">
@@ -454,9 +451,6 @@
               <option :value="1000">+1000</option>
             </select>
           </label>
-          <button class="item-save-btn" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('固定加價', ['globalIncrease'])">
-            {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
-          </button>
         </div>
 
         <div class="setting-save-item">
@@ -464,9 +458,6 @@
             自訂加價
             <input v-model.number="customIncrease" type="number" min="0" step="100" />
           </label>
-          <button class="item-save-btn" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('自訂加價', ['customIncrease'])">
-            {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
-          </button>
         </div>
 
         <div class="setting-save-item">
@@ -478,9 +469,6 @@
               <option value="transform-first">金額轉換優先</option>
             </select>
           </label>
-          <button class="item-save-btn" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('金額計算優先', ['amountPriorityMode'])">
-            {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
-          </button>
         </div>
         <div class="setting-save-item wide-price-rule">
           <label>
@@ -493,11 +481,13 @@
             <small>例：90=1000 代表只有 90 分鐘方案額外 +1000。</small>
             <small>另外會自動補差：3.1K→3.2K、3.4K→3.5K、4.9K→5K。</small>
           </label>
-          <button class="item-save-btn align-end" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('分鐘方案加價規則', ['minutePriceAddRulesText'])">
+        </div>
+
+        <div class="modal-bottom-save-row">
+          <button class="ghost-btn" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('金額設定', ['priceMode', 'globalIncrease', 'customIncrease', 'amountPriorityMode', 'minutePriceAddRulesText'])">
             {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
           </button>
         </div>
-
         </div>
       <div v-if="showFormatSettings" class="rule-grid top-rules setting-content-block compact-control-content top-settings-modal-card top-settings-format-modal">
         <div class="top-settings-modal-head">
@@ -505,16 +495,16 @@
             <h3>輸出格式</h3>
             <p>{{ ruleLayerHelpText }}</p>
           </div>
-          <button class="top-settings-modal-close" type="button" @click="closeTopSettingModal">關閉</button>
+          <div class="top-settings-modal-head-actions single-save-head-actions">
+            <button class="ghost-btn" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('輸出格式', ['formatHint', 'titleMode'])">{{ isSavingScopeRules ? '儲存中...' : '儲存' }}</button>
+            <button class="top-settings-modal-close" type="button" @click="closeTopSettingModal">關閉</button>
+          </div>
         </div>
         <div class="setting-save-item">
           <label>
             輸出格式說明
             <input v-model="formatHint" />
           </label>
-          <button class="item-save-btn" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('輸出格式說明', ['formatHint'])">
-            {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
-          </button>
         </div>
 
         <div class="setting-save-item">
@@ -526,9 +516,6 @@
               <option value="name-only">【名稱】</option>
             </select>
           </label>
-          <button class="item-save-btn" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('標題格式', ['titleMode'])">
-            {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
-          </button>
         </div>
         </div>
 
@@ -538,12 +525,10 @@
             <h3>簡單模式｜常用規則</h3>
             <p>{{ ruleLayerHelpText }}</p>
           </div>
-          <button class="top-settings-modal-close" type="button" @click="closeTopSettingModal">關閉</button>
-        </div>
-
-        <div class="rule-actions rule-actions-center quick-rules-actions">
-          <button class="ghost-btn" type="button" @click="saveRules">{{ isOwner ? '儲存老闆公版' : '儲存我的補充' }}</button>
-          <button class="ghost-btn" type="button" @click="loadRules">{{ isOwner ? '讀取老闆公版' : '讀取老闆＋我的補充' }}</button>
+          <div class="top-settings-modal-head-actions single-save-head-actions">
+            <button class="ghost-btn" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('常用規則', ['aliasRulesText', 'removeWordsText'])">{{ isSavingScopeRules ? '儲存中...' : '儲存' }}</button>
+            <button class="top-settings-modal-close" type="button" @click="closeTopSettingModal">關閉</button>
+          </div>
         </div>
 
         <div class="manager-grid">
@@ -554,9 +539,6 @@
                 <p>店家寫法轉成你的固定顯示。</p>
               </div>
               <div class="manager-title-actions">
-                <button class="item-save-btn compact" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('服務同義詞', ['aliasRulesText'])">
-                  {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
-                </button>
                 <button class="mini-toggle-btn" type="button" @click="showAliasList = !showAliasList">
                   {{ showAliasList ? '收合列表' : `展開列表（${aliasRuleItems.length}）` }}
                 </button>
@@ -589,9 +571,6 @@
                 <p>套用時會從文件1清掉。</p>
               </div>
               <div class="manager-title-actions">
-                <button class="item-save-btn compact" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('不想出現文字', ['removeWordsText'])">
-                  {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
-                </button>
                 <button class="mini-toggle-btn" type="button" @click="showRemoveWordList = !showRemoveWordList">
                   {{ showRemoveWordList ? '收合列表' : `展開列表（${removeWordItems.length}）` }}
                 </button>
@@ -624,7 +603,10 @@
             <h3>進階設定</h3>
             <p>{{ ruleLayerHelpText }}</p>
           </div>
-          <button class="top-settings-modal-close" type="button" @click="closeTopSettingModal">關閉</button>
+          <div class="top-settings-modal-head-actions single-save-head-actions">
+            <button class="ghost-btn" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('進階設定', ['countryFieldRulesText', 'bodyCupPrefixText', 'notNameWordsText', 'countryPriceRulesText', 'countryAliasText', 'serviceOrderText', 'aliasRulesText', 'removeWordsText', 'extraKeepText'])">{{ isSavingScopeRules ? '儲存中...' : '儲存' }}</button>
+            <button class="top-settings-modal-close" type="button" @click="closeTopSettingModal">關閉</button>
+          </div>
         </div>
 
                 <div class="advanced-inner-tabs">
@@ -696,9 +678,6 @@
                 <h4>國籍欄位規則</h4>
                 <p>把店家的國籍寫法轉成固定國籍。</p>
               </div>
-              <button class="item-save-btn compact" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('國籍欄位規則', ['countryFieldRulesText'])">
-                {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
-              </button>
             </div>
             <div class="rule-inline-row">
               <input v-model="newCountryRuleFrom" type="text" placeholder="店家寫法，例如 國家:馬來" />
@@ -735,27 +714,18 @@
                 國籍欄位規則，一行一組，格式：店家寫法=固定國籍
                 <textarea v-model="countryFieldRulesText"></textarea>
               </label>
-              <button class="item-save-btn align-end" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('國籍欄位規則', ['countryFieldRulesText'])">
-                {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
-              </button>
             </div>
             <div class="setting-save-item advanced-save-item">
               <label>
                 身材補字規則，一行一個，例如：真、大、小、巨、自然
                 <textarea v-model="bodyCupPrefixText"></textarea>
               </label>
-              <button class="item-save-btn align-end" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('身材補字規則', ['bodyCupPrefixText'])">
-                {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
-              </button>
             </div>
             <div class="setting-save-item advanced-save-item">
               <label>
                 不要誤判成小姐名，一行一個
                 <textarea v-model="notNameWordsText"></textarea>
               </label>
-              <button class="item-save-btn align-end" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('不要誤判成小姐名', ['notNameWordsText'])">
-                {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
-              </button>
             </div>
             <div class="readonly-note-box">
               <strong>說明區（不用輸入）</strong>
@@ -770,9 +740,6 @@
               國籍加價規則，一行一個，格式：國籍=加價
               <textarea v-model="countryPriceRulesText"></textarea>
             </label>
-            <button class="item-save-btn align-end" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('國籍加價規則', ['countryPriceRulesText'])">
-              {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
-            </button>
           </div>
         </div>
 
@@ -782,9 +749,6 @@
               國籍同義詞，一行一組，格式：來源=固定國籍
               <textarea v-model="countryAliasText"></textarea>
             </label>
-            <button class="item-save-btn align-end" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('國籍同義詞', ['countryAliasText'])">
-              {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
-            </button>
           </div>
         </div>
 
@@ -794,9 +758,6 @@
               服務固定排序，一行一個或空格分隔
               <textarea v-model="serviceOrderText"></textarea>
             </label>
-            <button class="item-save-btn align-end" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('服務固定排序', ['serviceOrderText'])">
-              {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
-            </button>
           </div>
         </div>
 
@@ -806,9 +767,6 @@
               服務同義詞規則，一行一組，格式：店家寫法=固定寫法
               <textarea v-model="aliasRulesText"></textarea>
             </label>
-            <button class="item-save-btn align-end" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('服務同義詞規則', ['aliasRulesText'])">
-              {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
-            </button>
           </div>
         </div>
 
@@ -818,9 +776,6 @@
               不想出現的文字，一行一個（套用時會清理文件1）
               <textarea v-model="removeWordsText"></textarea>
             </label>
-            <button class="item-save-btn align-end" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('不想出現的文字', ['removeWordsText'])">
-              {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
-            </button>
           </div>
         </div>
 
@@ -830,9 +785,6 @@
               額外保留關鍵字，一行一個
               <textarea v-model="extraKeepText"></textarea>
             </label>
-            <button class="item-save-btn align-end" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('額外保留關鍵字', ['extraKeepText'])">
-              {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
-            </button>
           </div>
         </div>
 
@@ -15624,6 +15576,19 @@ button:disabled {
 
 /* batch018-139：老闆第一層公版＋員工第二層補充 */
 
+
+/* 第 018-141 批：各設定視窗改單一儲存按鈕版 */
+.single-save-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.modal-bottom-save-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
 
 /* 第 018-140 批：各設定項目旁新增獨立儲存按鈕 */
 .setting-save-item {
