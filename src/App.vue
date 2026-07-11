@@ -5,7 +5,7 @@
 <!-- 第 018-126 批：中央媒體來源統一與前後台數量同步修正版（依第 018-125 批延續） -->
 <template>
   <!-- 第 018-109 批：待上傳縮圖區禁止拖放版 -->
-  <!-- batch018-141-modal-single-save-buttons -->
+  <!-- batch018-142-alias-delete-persist-fix -->
   <main v-if="!authReady" class="login-page-shell">
     <section class="login-card">
       <div class="login-brand">正式線上登入</div>
@@ -8959,6 +8959,7 @@ function collectRuleData() {
 }
 
 function applyRuleData(data, options = {}) {
+  // 第 018-142 批：服務同義詞讀取已儲存內容時不再強制補回預設項目，讓老闆刪除後可永久保留。
   priceMode.value = data.priceMode ?? 'country'
   globalIncrease.value = Number(data.globalIncrease ?? 500)
   customIncrease.value = Number(data.customIncrease ?? 700)
@@ -8970,7 +8971,9 @@ function applyRuleData(data, options = {}) {
   countryAliasText.value = data.countryAliasText ?? countryAliasText.value
   amountTransformRules.value = normalizeAmountRules(data.amountTransformRules ?? data.amountTransformRulesText ?? amountTransformRules.value)
   serviceOrderText.value = data.serviceOrderText ?? serviceOrderText.value
-  aliasRulesText.value = mergeAliasRulesWithDefaults(data.aliasRulesText ?? aliasRulesText.value)
+  aliasRulesText.value = Object.prototype.hasOwnProperty.call(data, 'aliasRulesText')
+    ? String(data.aliasRulesText ?? '')
+    : aliasRulesText.value
   removeWordsText.value = data.removeWordsText ?? removeWordsText.value
   extraKeepText.value = data.extraKeepText ?? extraKeepText.value
   countryFieldRulesText.value = data.countryFieldRulesText ?? countryFieldRulesText.value
