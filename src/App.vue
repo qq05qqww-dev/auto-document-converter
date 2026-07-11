@@ -430,48 +430,73 @@
           </div>
           <button class="top-settings-modal-close" type="button" @click="closeTopSettingModal">關閉</button>
         </div>
-        <label>
-          加價模式
-          <select v-model="priceMode">
-            <option value="country">依國籍自動加價</option>
-            <option value="global">全部固定加價</option>
-            <option value="custom">全部自訂加價</option>
-          </select>
-        </label>
+        <div class="setting-save-item">
+          <label>
+            加價模式
+            <select v-model="priceMode">
+              <option value="country">依國籍自動加價</option>
+              <option value="global">全部固定加價</option>
+              <option value="custom">全部自訂加價</option>
+            </select>
+          </label>
+          <button class="item-save-btn" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('加價模式', ['priceMode'])">
+            {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
+          </button>
+        </div>
 
-        <label>
-          固定加價
-          <select v-model.number="globalIncrease">
-            <option :value="0">+0</option>
-            <option :value="500">+500</option>
-            <option :value="600">+600</option>
-            <option :value="1000">+1000</option>
-          </select>
-        </label>
+        <div class="setting-save-item">
+          <label>
+            固定加價
+            <select v-model.number="globalIncrease">
+              <option :value="0">+0</option>
+              <option :value="500">+500</option>
+              <option :value="600">+600</option>
+              <option :value="1000">+1000</option>
+            </select>
+          </label>
+          <button class="item-save-btn" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('固定加價', ['globalIncrease'])">
+            {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
+          </button>
+        </div>
 
-        <label>
-          自訂加價
-          <input v-model.number="customIncrease" type="number" min="0" step="100" />
-        </label>
+        <div class="setting-save-item">
+          <label>
+            自訂加價
+            <input v-model.number="customIncrease" type="number" min="0" step="100" />
+          </label>
+          <button class="item-save-btn" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('自訂加價', ['customIncrease'])">
+            {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
+          </button>
+        </div>
 
-        <label>
-          金額計算優先
-          <select v-model="amountPriorityMode">
-            <option value="higher-price">自動取較高金額</option>
-            <option value="country-first">國籍加價優先</option>
-            <option value="transform-first">金額轉換優先</option>
-          </select>
-        </label>
-        <label class="wide-price-rule">
-          分鐘方案加價規則，一行一個，格式：分鐘=加價
-          <textarea
-            v-model="minutePriceAddRulesText"
-            class="rule-textarea small"
-            placeholder="例如：90=1000"
-          ></textarea>
-          <small>例：90=1000 代表只有 90 分鐘方案額外 +1000。</small>
-          <small>另外會自動補差：3.1K→3.2K、3.4K→3.5K、4.9K→5K。</small>
-        </label>
+        <div class="setting-save-item">
+          <label>
+            金額計算優先
+            <select v-model="amountPriorityMode">
+              <option value="higher-price">自動取較高金額</option>
+              <option value="country-first">國籍加價優先</option>
+              <option value="transform-first">金額轉換優先</option>
+            </select>
+          </label>
+          <button class="item-save-btn" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('金額計算優先', ['amountPriorityMode'])">
+            {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
+          </button>
+        </div>
+        <div class="setting-save-item wide-price-rule">
+          <label>
+            分鐘方案加價規則，一行一個，格式：分鐘=加價
+            <textarea
+              v-model="minutePriceAddRulesText"
+              class="rule-textarea small"
+              placeholder="例如：90=1000"
+            ></textarea>
+            <small>例：90=1000 代表只有 90 分鐘方案額外 +1000。</small>
+            <small>另外會自動補差：3.1K→3.2K、3.4K→3.5K、4.9K→5K。</small>
+          </label>
+          <button class="item-save-btn align-end" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('分鐘方案加價規則', ['minutePriceAddRulesText'])">
+            {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
+          </button>
+        </div>
 
         </div>
       <div v-if="showFormatSettings" class="rule-grid top-rules setting-content-block compact-control-content top-settings-modal-card top-settings-format-modal">
@@ -482,19 +507,29 @@
           </div>
           <button class="top-settings-modal-close" type="button" @click="closeTopSettingModal">關閉</button>
         </div>
-        <label>
-          輸出格式說明
-          <input v-model="formatHint" />
-        </label>
+        <div class="setting-save-item">
+          <label>
+            輸出格式說明
+            <input v-model="formatHint" />
+          </label>
+          <button class="item-save-btn" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('輸出格式說明', ['formatHint'])">
+            {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
+          </button>
+        </div>
 
-        <label>
-          標題格式
-          <select v-model="titleMode">
-            <option value="country-name">【國籍 名稱】</option>
-            <option value="name-country">【名稱 國籍】</option>
-            <option value="name-only">【名稱】</option>
-          </select>
-        </label>
+        <div class="setting-save-item">
+          <label>
+            標題格式
+            <select v-model="titleMode">
+              <option value="country-name">【國籍 名稱】</option>
+              <option value="name-country">【名稱 國籍】</option>
+              <option value="name-only">【名稱】</option>
+            </select>
+          </label>
+          <button class="item-save-btn" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('標題格式', ['titleMode'])">
+            {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
+          </button>
+        </div>
         </div>
 
       <section v-if="showQuickRules" class="quick-rule-section setting-content-block compact-control-content top-settings-modal-card top-settings-quick-modal">
@@ -518,9 +553,14 @@
                 <h4>服務同義詞</h4>
                 <p>店家寫法轉成你的固定顯示。</p>
               </div>
-              <button class="mini-toggle-btn" type="button" @click="showAliasList = !showAliasList">
-                {{ showAliasList ? '收合列表' : `展開列表（${aliasRuleItems.length}）` }}
-              </button>
+              <div class="manager-title-actions">
+                <button class="item-save-btn compact" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('服務同義詞', ['aliasRulesText'])">
+                  {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
+                </button>
+                <button class="mini-toggle-btn" type="button" @click="showAliasList = !showAliasList">
+                  {{ showAliasList ? '收合列表' : `展開列表（${aliasRuleItems.length}）` }}
+                </button>
+              </div>
             </div>
 
             <div class="manager-inputs two-cols">
@@ -548,9 +588,14 @@
                 <h4>不想出現文字</h4>
                 <p>套用時會從文件1清掉。</p>
               </div>
-              <button class="mini-toggle-btn" type="button" @click="showRemoveWordList = !showRemoveWordList">
-                {{ showRemoveWordList ? '收合列表' : `展開列表（${removeWordItems.length}）` }}
-              </button>
+              <div class="manager-title-actions">
+                <button class="item-save-btn compact" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('不想出現文字', ['removeWordsText'])">
+                  {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
+                </button>
+                <button class="mini-toggle-btn" type="button" @click="showRemoveWordList = !showRemoveWordList">
+                  {{ showRemoveWordList ? '收合列表' : `展開列表（${removeWordItems.length}）` }}
+                </button>
+              </div>
             </div>
 
             <div class="manager-inputs one-col">
@@ -646,10 +691,17 @@
 
         <div v-if="activeAdvancedPanel === 'country-map'" class="advanced-panel-clean">
           <div class="rule-card full-width-rule-card">
-            <h4>國籍欄位規則</h4>
-            <p>把店家的國籍寫法轉成固定國籍。</p>
+            <div class="advanced-card-title-row">
+              <div>
+                <h4>國籍欄位規則</h4>
+                <p>把店家的國籍寫法轉成固定國籍。</p>
+              </div>
+              <button class="item-save-btn compact" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('國籍欄位規則', ['countryFieldRulesText'])">
+                {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
+              </button>
+            </div>
             <div class="rule-inline-row">
-              <input v-model="newCountryRuleTo" type="text" placeholder="店家寫法，例如 國家:馬來" />
+              <input v-model="newCountryRuleFrom" type="text" placeholder="店家寫法，例如 國家:馬來" />
               <select v-model="newCountryRuleTo">
                 <option value="">請選擇固定國籍</option>
                 <option value="台灣">台灣</option>
@@ -678,18 +730,33 @@
           </div>
 
           <div class="advanced-two-col-grid">
-            <label>
-              國籍欄位規則，一行一組，格式：店家寫法=固定國籍
-              <textarea v-model="newCountryRuleFrom"></textarea>
-            </label>
-            <label>
-              身材補字規則，一行一個，例如：真、大、小、巨、自然
-              <textarea v-model="bodyCupPrefixText"></textarea>
-            </label>
-            <label>
-              不要誤判成小姐名，一行一個
-              <textarea v-model="notNameWordsText"></textarea>
-            </label>
+            <div class="setting-save-item advanced-save-item">
+              <label>
+                國籍欄位規則，一行一組，格式：店家寫法=固定國籍
+                <textarea v-model="countryFieldRulesText"></textarea>
+              </label>
+              <button class="item-save-btn align-end" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('國籍欄位規則', ['countryFieldRulesText'])">
+                {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
+              </button>
+            </div>
+            <div class="setting-save-item advanced-save-item">
+              <label>
+                身材補字規則，一行一個，例如：真、大、小、巨、自然
+                <textarea v-model="bodyCupPrefixText"></textarea>
+              </label>
+              <button class="item-save-btn align-end" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('身材補字規則', ['bodyCupPrefixText'])">
+                {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
+              </button>
+            </div>
+            <div class="setting-save-item advanced-save-item">
+              <label>
+                不要誤判成小姐名，一行一個
+                <textarea v-model="notNameWordsText"></textarea>
+              </label>
+              <button class="item-save-btn align-end" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('不要誤判成小姐名', ['notNameWordsText'])">
+                {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
+              </button>
+            </div>
             <div class="readonly-note-box">
               <strong>說明區（不用輸入）</strong>
               <p>這裡只放國籍欄位相關規則，不混入其他分頁內容。</p>
@@ -698,45 +765,75 @@
         </div>
 
         <div v-if="activeAdvancedPanel === 'country-price'" class="advanced-panel-clean">
-          <label>
-            國籍加價規則，一行一個，格式：國籍=加價
-            <textarea v-model="countryPriceRulesText"></textarea>
-          </label>
+          <div class="setting-save-item advanced-save-item">
+            <label>
+              國籍加價規則，一行一個，格式：國籍=加價
+              <textarea v-model="countryPriceRulesText"></textarea>
+            </label>
+            <button class="item-save-btn align-end" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('國籍加價規則', ['countryPriceRulesText'])">
+              {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
+            </button>
+          </div>
         </div>
 
         <div v-if="activeAdvancedPanel === 'country-alias'" class="advanced-panel-clean">
-          <label>
-            國籍同義詞，一行一組，格式：來源=固定國籍
-            <textarea v-model="newCountryRuleFrom"></textarea>
-          </label>
+          <div class="setting-save-item advanced-save-item">
+            <label>
+              國籍同義詞，一行一組，格式：來源=固定國籍
+              <textarea v-model="countryAliasText"></textarea>
+            </label>
+            <button class="item-save-btn align-end" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('國籍同義詞', ['countryAliasText'])">
+              {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
+            </button>
+          </div>
         </div>
 
         <div v-if="activeAdvancedPanel === 'service-order'" class="advanced-panel-clean">
-          <label>
-            服務固定排序，一行一個或空格分隔
-            <textarea v-model="serviceOrderText"></textarea>
-          </label>
+          <div class="setting-save-item advanced-save-item">
+            <label>
+              服務固定排序，一行一個或空格分隔
+              <textarea v-model="serviceOrderText"></textarea>
+            </label>
+            <button class="item-save-btn align-end" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('服務固定排序', ['serviceOrderText'])">
+              {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
+            </button>
+          </div>
         </div>
 
         <div v-if="activeAdvancedPanel === 'service-alias'" class="advanced-panel-clean">
-          <label>
-            服務同義詞規則，一行一組，格式：店家寫法=固定寫法
-            <textarea v-model="aliasRulesText"></textarea>
-          </label>
+          <div class="setting-save-item advanced-save-item">
+            <label>
+              服務同義詞規則，一行一組，格式：店家寫法=固定寫法
+              <textarea v-model="aliasRulesText"></textarea>
+            </label>
+            <button class="item-save-btn align-end" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('服務同義詞規則', ['aliasRulesText'])">
+              {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
+            </button>
+          </div>
         </div>
 
         <div v-if="activeAdvancedPanel === 'remove-text'" class="advanced-panel-clean">
-          <label>
-            不想出現的文字，一行一個（套用時會清理文件1）
-            <textarea v-model="removeWordsText"></textarea>
-          </label>
+          <div class="setting-save-item advanced-save-item">
+            <label>
+              不想出現的文字，一行一個（套用時會清理文件1）
+              <textarea v-model="removeWordsText"></textarea>
+            </label>
+            <button class="item-save-btn align-end" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('不想出現的文字', ['removeWordsText'])">
+              {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
+            </button>
+          </div>
         </div>
 
         <div v-if="activeAdvancedPanel === 'keep-keyword'" class="advanced-panel-clean">
-          <label>
-            額外保留關鍵字，一行一個
-            <textarea v-model="newCountryRuleFrom"></textarea>
-          </label>
+          <div class="setting-save-item advanced-save-item">
+            <label>
+              額外保留關鍵字，一行一個
+              <textarea v-model="extraKeepText"></textarea>
+            </label>
+            <button class="item-save-btn align-end" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('額外保留關鍵字', ['extraKeepText'])">
+              {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
+            </button>
+          </div>
         </div>
 
       
@@ -1444,6 +1541,7 @@
 <!-- batch018-120-sync-id-backfill-media-upload-fix -->
 <!-- batch018-138-central-direct-media-upload-bind-fix -->
 <script setup>
+// batch018-140-individual-setting-save-buttons
 // 第 018-107 批：登入後預設展開地區機房管理，並記住最後使用的縣市 / 地區 / 定點外送 / 機房。
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { isSupabaseConfigured, supabase } from './supabaseClient'
@@ -8669,10 +8767,11 @@ async function saveOnlineRuleForCurrentRoom(data) {
   return verifiedRule
 }
 
-async function saveCurrentScopeRules() {
+async function saveCurrentScopeRules(options = {}) {
   if (isSavingScopeRules.value) return false
   if (!validateCurrentRuleScope()) return false
 
+  const itemLabel = cleanScopeText(options.itemLabel || '')
   const { key } = getScopeBucketAndKey()
   if (!key) {
     const message = '請先把目前範圍填完整再儲存。'
@@ -8684,13 +8783,17 @@ async function saveCurrentScopeRules() {
   setRoomRuleFeedback(`正在儲存「${currentRuleScopeLabel.value}」規則...`, 'pending', { silent: true })
 
   try {
-    const data = collectRuleData()
+    const data = options.dataOverride && typeof options.dataOverride === 'object'
+      ? options.dataOverride
+      : collectRuleData()
     const store = setRuleDataToScope(readScopeRuleStore(), ruleScopeLevel.value, key, data)
     writeScopeRuleStore(store)
 
     if (ruleScopeLevel.value === 'global') {
       localStorage.setItem(getStaffScopedStorageKey(RULE_STORAGE_KEY), JSON.stringify(data))
-      const message = '已儲存本機公版規則；線上員工規則請選到完整機房後儲存。'
+      const message = itemLabel
+        ? `已個別儲存「${itemLabel}」到本機公版；線上員工規則請選到完整機房後儲存。`
+        : '已儲存本機公版規則；線上員工規則請選到完整機房後儲存。'
       setRoomRuleFeedback(message, 'success', { toast: true })
       return true
     }
@@ -8698,14 +8801,18 @@ async function saveCurrentScopeRules() {
     repairProtectedGlobalRules()
 
     if (ruleScopeLevel.value !== 'room') {
-      const message = `已儲存「${currentRuleScopeLabel.value}」本機專屬規則。線上同步以完整機房為主。`
+      const message = itemLabel
+        ? `已個別儲存「${itemLabel}」到「${currentRuleScopeLabel.value}」；線上同步以完整機房為主。`
+        : `已儲存「${currentRuleScopeLabel.value}」本機專屬規則。線上同步以完整機房為主。`
       setRoomRuleFeedback(message, 'success', { toast: true })
       return true
     }
 
     if (!isOnlineWorkspaceReady()) {
       rememberCurrentScopeSelection()
-      const message = `已儲存「${currentRuleScopeLabel.value}」本機規則；尚未登入線上帳號，無法同步。`
+      const message = itemLabel
+        ? `已個別儲存「${itemLabel}」到本機；尚未登入線上帳號，無法同步。`
+        : `已儲存「${currentRuleScopeLabel.value}」本機規則；尚未登入線上帳號，無法同步。`
       setRoomRuleFeedback(message, 'warning', { toast: true })
       return true
     }
@@ -8715,13 +8822,19 @@ async function saveCurrentScopeRules() {
     writeScopeRuleStore(verifiedStore)
     rememberCurrentScopeSelection({ syncOnline: true })
 
-    const message = isOwner.value
-      ? `已確認儲存老闆公版規則：${currentRuleScopeLabel.value}；所有員工會先套用這一層。`
-      : `已確認儲存員工個人補充規則：${currentRuleScopeLabel.value}；轉換時會接在老闆公版後套用。`
+    const message = itemLabel
+      ? (isOwner.value
+          ? `已個別儲存老闆公版「${itemLabel}」：${currentRuleScopeLabel.value}；所有員工會先套用這一層。`
+          : `已個別儲存我的補充「${itemLabel}」：${currentRuleScopeLabel.value}；轉換時會接在老闆公版後套用。`)
+      : (isOwner.value
+          ? `已確認儲存老闆公版規則：${currentRuleScopeLabel.value}；所有員工會先套用這一層。`
+          : `已確認儲存員工個人補充規則：${currentRuleScopeLabel.value}；轉換時會接在老闆公版後套用。`)
     setRoomRuleFeedback(message, 'success', { toast: true })
     return true
   } catch (error) {
-    const message = `本機已保留，但線上儲存機房規則失敗：${error.message || error}`
+    const message = itemLabel
+      ? `「${itemLabel}」已保留在本機，但線上個別儲存失敗：${error.message || error}`
+      : `本機已保留，但線上儲存機房規則失敗：${error.message || error}`
     setRoomRuleFeedback(message, 'error', { toast: true })
     return false
   } finally {
@@ -8997,6 +9110,73 @@ function removeCountryFieldRule(index) {
   items.splice(index, 1)
   countryFieldRulesText.value = items.map(rule => `${rule.from}=${rule.to}`).join('\n')
   statusMessage.value = '已刪除國籍欄位規則。'
+}
+
+function cloneRuleFieldValue(value) {
+  if (Array.isArray(value)) return value.map(item => cloneRuleFieldValue(item))
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, cloneRuleFieldValue(item)]))
+  }
+  return value
+}
+
+async function getCurrentSavedLayerForPartialSave() {
+  const ownerFallback = getEffectiveScopedRuleData().data || ownerBaseRuleData.value || buildDefaultRuleData()
+  const fallback = isOwner.value
+    ? { ...ownerFallback, kind: OWNER_BASE_RULE_KIND }
+    : buildEmptyEmployeeSupplementData()
+
+  if (ruleScopeLevel.value === 'room' && isOnlineWorkspaceReady()) {
+    const onlineRule = await getOnlineRuleForCurrentRoom()
+    if (onlineRule && typeof onlineRule === 'object') {
+      if (isOwner.value || onlineRule.kind === EMPLOYEE_SUPPLEMENT_RULE_KIND) {
+        return onlineRule
+      }
+    }
+    return fallback
+  }
+
+  const { key } = getScopeBucketAndKey()
+  const saved = getRuleDataFromScope(readScopeRuleStore(), ruleScopeLevel.value, key)
+  if (!saved || typeof saved !== 'object') return fallback
+  if (!isOwner.value && saved.kind !== EMPLOYEE_SUPPLEMENT_RULE_KIND) return fallback
+  return saved
+}
+
+async function saveRuleFields(itemLabel, fieldNames = []) {
+  if (isSavingScopeRules.value) return false
+  if (!validateCurrentRuleScope()) return false
+
+  const fields = [...new Set((Array.isArray(fieldNames) ? fieldNames : [fieldNames]).filter(Boolean))]
+  if (!fields.length) return saveCurrentScopeRules({ itemLabel })
+
+  if (fields.includes('aliasRulesText')) {
+    cleanupAliasRulesBeforeSave()
+  }
+
+  try {
+    const current = collectRuleData()
+    const saved = await getCurrentSavedLayerForPartialSave()
+    const merged = {
+      ...saved,
+      kind: isOwner.value ? OWNER_BASE_RULE_KIND : EMPLOYEE_SUPPLEMENT_RULE_KIND
+    }
+
+    fields.forEach(field => {
+      if (Object.prototype.hasOwnProperty.call(current, field)) {
+        merged[field] = cloneRuleFieldValue(current[field])
+      }
+    })
+
+    return saveCurrentScopeRules({
+      dataOverride: merged,
+      itemLabel
+    })
+  } catch (error) {
+    const message = `「${itemLabel || '目前項目'}」個別儲存失敗：${error.message || error}`
+    setRoomRuleFeedback(message, 'error', { toast: true })
+    return false
+  }
 }
 
 function saveRules() {
@@ -15443,4 +15623,92 @@ button:disabled {
 
 
 /* batch018-139：老闆第一層公版＋員工第二層補充 */
+
+
+/* 第 018-140 批：各設定項目旁新增獨立儲存按鈕 */
+.setting-save-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  min-width: 0;
+}
+
+.setting-save-item > label {
+  min-width: 0;
+}
+
+.item-save-btn {
+  min-width: 72px;
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 15px;
+  background: linear-gradient(135deg, #2563eb, #0891b2);
+  color: #fff;
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.22);
+  white-space: nowrap;
+}
+
+.item-save-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 28px rgba(37, 99, 235, 0.28);
+}
+
+.item-save-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.item-save-btn.compact {
+  min-width: 64px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.item-save-btn.align-end {
+  align-self: end;
+  margin-bottom: 2px;
+}
+
+.manager-title-actions,
+.advanced-card-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.manager-title-actions {
+  justify-content: flex-end;
+}
+
+.advanced-save-item {
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.78);
+  padding: 16px;
+}
+
+.advanced-panel-clean > .advanced-save-item {
+  width: 100%;
+}
+
+.advanced-two-col-grid > .advanced-save-item {
+  min-width: 0;
+}
+
+@media (max-width: 760px) {
+  .setting-save-item {
+    grid-template-columns: 1fr;
+  }
+
+  .item-save-btn,
+  .item-save-btn.align-end {
+    width: 100%;
+    margin-bottom: 0;
+  }
+}
 </style>
