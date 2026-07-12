@@ -1,3 +1,4 @@
+<!-- 第 018-156 批：同義詞來源內嵌金額保留＋分鐘加價不重複累加修正版 -->
 <!-- 第 018-155 批：不完整資料文件2預覽＋缺少欄位提示＋禁止加入文件3版 -->
 <!-- 第 018-153 批：攝影加值金額空格保留修正版 -->
 <!-- 第 018-152 批：服務同義詞原文完整儲存不自動刪字修正版 -->
@@ -15,6 +16,7 @@
 <!-- 第 018-126 批：中央媒體來源統一與前後台數量同步修正版（依第 018-125 批延續） -->
 <template>
   <!-- 第 018-109 批：待上傳縮圖區禁止拖放版 -->
+  <!-- batch018-156-alias-embedded-amount-minute-add-no-double-stack -->
   <!-- batch018-155-incomplete-record-preview-missing-fields-guard -->
   <!-- batch018-152-alias-rules-exact-save-preserve -->
   <!-- batch018-154-photography-regex-escape-fix -->
@@ -518,7 +520,7 @@
               class="rule-textarea small"
               placeholder="例如：90=1000"
             ></textarea>
-            <small>例：90=1000 代表只有 90 分鐘方案額外 +1000。</small>
+            <small>例：90=1000 代表 90 分鐘方案使用 +1000；不會再和國籍／固定加價重複累加，會取較高加價。</small>
             <small>另外會自動補差：3.1K→3.2K、3.4K→3.5K、4.9K→5K。</small>
           </label>
         </div>
@@ -6809,7 +6811,7 @@ function parsePrices(text, increase) {
       minutes: min,
       sessionSort: getPriceSessionSortValue(sessionLabel),
       sessionLabel,
-      text: `${formatAmount(applyMinutePriceAdd(resolveFinalAmount(rawAmount, increase), min))}/${min}/${sessionLabel}`
+      text: `${formatAmount(resolveFinalAmountWithMinuteRule(rawAmount, increase, min))}/${min}/${sessionLabel}`
     })
   }
 
@@ -7189,7 +7191,13 @@ function reconcileExplicitServiceAmounts(found, sourceText, aliases = []) {
   const amountByOutputBase = new Map()
 
   ;(Array.isArray(aliases) ? aliases : []).forEach(([from, to]) => {
-    const amount = findExplicitAmountForServiceName(sourceText, from)
+    const normalizedFrom = normalizeServiceAliasMatchText(from)
+    const searchableSource = normalizeServiceAliasMatchText(sourceText)
+    const isMatched = String(sourceText || '').includes(String(from || ''))
+      || (normalizedFrom && searchableSource.includes(normalizedFrom))
+    if (!isMatched) return
+
+    const amount = getExplicitAliasAmount(from, sourceText)
     if (!amount) return
 
     String(to || '').split(/\s+/).filter(Boolean).forEach(item => {
@@ -7342,6 +7350,16 @@ function sanitizePaidServiceTokenBySource(sourceText, outputToken) {
 }
 
 function getExplicitAliasAmount(fromText, sourceText = '') {
+  const normalizedFrom = normalizeDigits(String(fromText || ''))
+    .normalize('NFKC')
+    .replace(/[＋]/g, '+')
+
+  // 第 018-156 批：同義詞來源的金額不一定在整句最後。
+  // 例如「無套+1000 可內射=無套內射+1000」，舊版只看結尾會漏掉 +1000，
+  // 後續又把輸出降成「無套內射」。現在只要來源規則內明確寫出金額就保留。
+  const embeddedAmountMatch = normalizedFrom.match(/(?:\+|加)\s*(\d{2,5})(?=$|[\s，、,；;／/]|[^\d.])/)
+  if (embeddedAmountMatch) return embeddedAmountMatch[1]
+
   const directAmount = getMonetaryServiceAmount(normalizeServiceOutputToken(fromText))
   if (directAmount) return directAmount
 
@@ -7564,6 +7582,19 @@ function applyMinutePriceAdd(amount, minutes) {
   const rules = parseMinutePriceAddRules()
   const add = rules.get(Number(minutes)) || 0
   return Number(amount || 0) + add
+}
+
+function resolveFinalAmountWithMinuteRule(rawAmount, increase, minutes) {
+  const raw = Number(rawAmount || 0)
+  const normalFinal = resolveFinalAmount(raw, increase)
+  const minuteAdd = parseMinutePriceAddRules().get(Number(minutes)) || 0
+
+  if (!minuteAdd) return normalFinal
+
+  // 第 018-156 批：分鐘加價與國籍／固定加價是同一層加價候選，不可重複相加。
+  // 例：原價 4000、國籍 +500、90 分鐘 +1000，應輸出 5000，不是 5500。
+  const minuteFinal = raw + Number(minuteAdd)
+  return Math.max(normalFinal, minuteFinal)
 }
 
 function resolveFinalAmount(rawAmount, increase) {
