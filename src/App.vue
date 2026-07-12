@@ -1,3 +1,4 @@
+<!-- 第 018-150 批：機房清單可選修改刪除＋加值服務明確金額不放大修正版 -->
 <!-- 第 018-149 批：小姐名「小妹妹」完整保留＋空格身材第三碼年齡補抓修正版 -->
 <!-- 第 018-147 批：老闆全站公版改用獨立資料表，徹底避開 employee_rules mode 約束 -->
 <!-- 第 018-146 批：老闆全站公版 mode 約束相容修正版 -->
@@ -10,6 +11,7 @@
 <!-- 第 018-126 批：中央媒體來源統一與前後台數量同步修正版（依第 018-125 批延續） -->
 <template>
   <!-- 第 018-109 批：待上傳縮圖區禁止拖放版 -->
+  <!-- batch018-150-room-list-manage-explicit-addon-amount-fix -->
   <!-- batch018-149-lady-name-and-spaced-age-fix -->
   <!-- batch018-148-explicit-addon-amount-cleanup-alias-fix -->
   <!-- batch018-147-owner-global-dedicated-table-fix -->
@@ -338,10 +340,30 @@
                     @click="addLocationRoom"
                   >新增</button>
                 </div>
-                <div class="option-current-text">目前：{{ ruleScopeRoom || '未選機房' }}</div>
+                <div class="managed-room-list-shell">
+                  <div class="managed-room-list-title">
+                    <span>目前範圍已建立機房</span>
+                    <strong>{{ roomManagerRooms.length }} 間</strong>
+                  </div>
+                  <div v-if="roomManagerRooms.length" class="managed-room-chip-list">
+                    <button
+                      v-for="room in roomManagerRooms"
+                      :key="`managed-room-${room}`"
+                      type="button"
+                      class="managed-room-chip"
+                      :class="{ active: currentManagedRoom === room }"
+                      @click="selectRoomForManagement(room)"
+                    >
+                      <span>{{ room }}</span>
+                      <em>{{ currentManagedRoom === room ? '已選' : '選取' }}</em>
+                    </button>
+                  </div>
+                  <div v-else class="managed-room-empty">此縣市／地區／類型目前尚未建立機房。</div>
+                </div>
+                <div class="option-current-text">目前：{{ currentManagedRoom || '請從上方清單選擇機房' }}</div>
                 <div class="option-action-row">
-                  <button type="button" :disabled="!ruleScopeRoom" @click="renameLocationRoom(ruleScopeRoom)">修改目前機房</button>
-                  <button type="button" class="danger-mini" :disabled="!ruleScopeRoom" @click="removeLocationRoom(ruleScopeRoom)">刪除目前機房</button>
+                  <button type="button" :disabled="!currentManagedRoom" @click="renameLocationRoom(currentManagedRoom)">修改目前機房</button>
+                  <button type="button" class="danger-mini" :disabled="!currentManagedRoom" @click="removeLocationRoom(currentManagedRoom)">刪除目前機房</button>
                 </div>
               </div>
             
@@ -6939,6 +6961,7 @@ function extractServices(block) {
   }
 
   enforceExplicitPaidServices(found, block, explicitPaidAliasOutputs)
+  reconcileExplicitServiceAmounts(found, block, aliases)
   normalizeOverlappingServices(found)
   syncPromotionComboServicesWithSource(found, block)
 
@@ -7050,6 +7073,54 @@ function syncPromotionComboServicesWithSource(found, block) {
   shorthandRules.forEach(([output, pattern]) => {
     if (pattern.test(sourceSeparated)) found.add(output)
   })
+}
+
+function findExplicitAmountForServiceName(sourceText, serviceName) {
+  const source = normalizeServiceAliasMatchText(sourceText)
+  const base = normalizeServiceAliasMatchText(stripMonetaryServiceSuffix(serviceName))
+  if (!source || !base) return ''
+
+  const match = source.match(new RegExp(`${escapeRegExp(base)}(?:\\+|加)(\\d{2,5})(?!\\d)`))
+  return match ? match[1] : ''
+}
+
+function reconcileExplicitServiceAmounts(found, sourceText, aliases = []) {
+  const amountByOutputBase = new Map()
+
+  ;(Array.isArray(aliases) ? aliases : []).forEach(([from, to]) => {
+    const amount = findExplicitAmountForServiceName(sourceText, from)
+    if (!amount) return
+
+    String(to || '').split(/\s+/).filter(Boolean).forEach(item => {
+      const outputToken = normalizeServiceOutputToken(item)
+      const outputBase = stripMonetaryServiceSuffix(outputToken)
+      const outputKey = normalizeServiceAliasMatchText(outputBase)
+      if (outputKey) amountByOutputBase.set(outputKey, amount)
+    })
+  })
+
+  Array.from(found).forEach(item => {
+    const outputToken = normalizeServiceOutputToken(item)
+    const outputBase = stripMonetaryServiceSuffix(outputToken)
+    const outputKey = normalizeServiceAliasMatchText(outputBase)
+    const directAmount = findExplicitAmountForServiceName(sourceText, outputBase)
+    if (outputKey && directAmount) amountByOutputBase.set(outputKey, directAmount)
+  })
+
+  if (!amountByOutputBase.size) return
+
+  const corrected = new Set()
+  Array.from(found).forEach(item => {
+    const outputToken = normalizeServiceOutputToken(item)
+    const outputBase = stripMonetaryServiceSuffix(outputToken)
+    const outputKey = normalizeServiceAliasMatchText(outputBase)
+    const explicitAmount = amountByOutputBase.get(outputKey)
+
+    corrected.add(explicitAmount ? `${outputBase}+${explicitAmount}` : outputToken)
+  })
+
+  found.clear()
+  corrected.forEach(item => found.add(item))
 }
 
 function normalizeOverlappingServices(found) {
@@ -7749,6 +7820,18 @@ const roomManagerRooms = computed(() => {
   const key = `${cleanScopeText(roomManagerSelectedCity.value)}__${cleanScopeText(roomManagerSelectedDistrict.value)}__${cleanScopeText(roomManagerSelectedType.value)}`
   return locationOptions.value.rooms?.[key] || []
 })
+const currentManagedRoom = computed(() => {
+  const city = cleanScopeText(roomManagerSelectedCity.value)
+  const district = cleanScopeText(roomManagerSelectedDistrict.value)
+  const type = cleanScopeText(roomManagerSelectedType.value)
+  const room = cleanScopeText(ruleScopeRoom.value)
+
+  if (!city || !district || !type || !room) return ''
+  if (cleanScopeText(ruleScopeCity.value) !== city) return ''
+  if (cleanScopeText(ruleScopeDistrict.value) !== district) return ''
+  if (cleanScopeText(ruleScopeType.value) !== type) return ''
+  return roomManagerRooms.value.includes(room) ? room : ''
+})
 const totalDistrictCount = computed(() => Object.values(locationOptions.value.districts || {}).reduce((sum, list) => sum + (Array.isArray(list) ? list.length : 0), 0))
 const totalRoomCount = computed(() => Object.values(locationOptions.value.rooms || {}).reduce((sum, list) => sum + (Array.isArray(list) ? list.length : 0), 0))
 
@@ -8294,6 +8377,27 @@ function removeLocationType(type) {
   statusMessage.value = `已刪除類型：${type}`
 }
 
+function selectRoomForManagement(room) {
+  const city = cleanScopeText(roomManagerSelectedCity.value)
+  const district = cleanScopeText(roomManagerSelectedDistrict.value)
+  const type = cleanScopeText(roomManagerSelectedType.value)
+  const targetRoom = cleanScopeText(room)
+
+  if (!city || !district || !type || !targetRoom || !roomManagerRooms.value.includes(targetRoom)) {
+    statusMessage.value = '請先選擇有效的縣市、地區、定點／外送與機房。'
+    return false
+  }
+
+  ruleScopeCity.value = city
+  ruleScopeDistrict.value = district
+  ruleScopeType.value = type
+  ruleScopeRoom.value = targetRoom
+  syncRuleScopeLevelFromSelection()
+  rememberCurrentScopeSelection({ syncOnline: true })
+  statusMessage.value = `已選取機房：${city} / ${district} / ${type} / ${targetRoom}`
+  return true
+}
+
 function addLocationRoom() {
   const city = cleanScopeText(roomManagerSelectedCity.value)
   const district = cleanScopeText(roomManagerSelectedDistrict.value)
@@ -8307,20 +8411,28 @@ function addLocationRoom() {
   locationOptions.value.rooms[key] = addUniqueToList(locationOptions.value.rooms[key], room)
   newRoomName.value = ''
   saveLocationOptions()
-  statusMessage.value = `已新增機房/店家：${city} / ${district} / ${type} / ${room}`
+  selectRoomForManagement(room)
+  statusMessage.value = `已新增並選取機房/店家：${city} / ${district} / ${type} / ${room}`
 }
 
 function removeLocationRoom(room) {
   const city = cleanScopeText(roomManagerSelectedCity.value)
   const district = cleanScopeText(roomManagerSelectedDistrict.value)
   const type = cleanScopeText(roomManagerSelectedType.value)
+  const targetRoom = cleanScopeText(room)
   const key = `${city}__${district}__${type}`
-  locationOptions.value.rooms[key] = removeFromList(locationOptions.value.rooms[key], room)
-  if (ruleScopeCity.value === city && ruleScopeDistrict.value === district && ruleScopeType.value === type && ruleScopeRoom.value === room) {
+
+  if (!city || !district || !type || !targetRoom || !roomManagerRooms.value.includes(targetRoom)) {
+    statusMessage.value = '請先從目前已建立機房清單選擇要刪除的機房。'
+    return
+  }
+
+  locationOptions.value.rooms[key] = removeFromList(locationOptions.value.rooms[key], targetRoom)
+  if (cleanScopeText(ruleScopeCity.value) === city && cleanScopeText(ruleScopeDistrict.value) === district && cleanScopeText(ruleScopeType.value) === type && cleanScopeText(ruleScopeRoom.value) === targetRoom) {
     ruleScopeRoom.value = ''
   }
   saveLocationOptions()
-  statusMessage.value = `已刪除機房/店家：${room}`
+  statusMessage.value = `已刪除機房/店家：${targetRoom}`
 }
 
 function replaceInList(list, oldValue, newValue) {
@@ -8398,16 +8510,27 @@ function renameLocationRoom(room) {
   const city = cleanScopeText(roomManagerSelectedCity.value)
   const district = cleanScopeText(roomManagerSelectedDistrict.value)
   const type = cleanScopeText(roomManagerSelectedType.value)
+  const targetRoom = cleanScopeText(room)
   const key = `${city}__${district}__${type}`
-  const next = askRenameValue('機房', room)
-  if (!key || !next) return
 
-  locationOptions.value.rooms[key] = replaceInList(locationOptions.value.rooms[key], room, next)
+  if (!city || !district || !type || !targetRoom || !roomManagerRooms.value.includes(targetRoom)) {
+    statusMessage.value = '請先從目前已建立機房清單選擇要修改的機房。'
+    return
+  }
 
-  if (ruleScopeRoom.value === room) ruleScopeRoom.value = next
+  const next = askRenameValue('機房', targetRoom)
+  if (!next) return
+
+  locationOptions.value.rooms[key] = addUniqueToList(
+    removeFromList(locationOptions.value.rooms[key], targetRoom),
+    next
+  )
+
+  if (cleanScopeText(ruleScopeRoom.value) === targetRoom) ruleScopeRoom.value = next
 
   saveLocationOptions()
-  statusMessage.value = `已修改機房：${room} → ${next}`
+  selectRoomForManagement(next)
+  statusMessage.value = `已修改機房：${targetRoom} → ${next}`
 }
 
 watch(managerSelectedCity, value => {
@@ -16004,4 +16127,76 @@ button:disabled {
     margin-bottom: 0;
   }
 }
+
+/* 第 018-150 批：目前範圍已建立機房清單與可選取管理 */
+.managed-room-list-shell {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid rgba(96, 165, 250, 0.24);
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.34);
+}
+
+.managed-room-list-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 9px;
+  color: rgba(226, 232, 240, 0.9);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.managed-room-list-title strong {
+  color: #7dd3fc;
+}
+
+.managed-room-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-height: 118px;
+  overflow-y: auto;
+  padding-right: 3px;
+}
+
+.managed-room-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 999px;
+  background: rgba(30, 41, 59, 0.82);
+  color: #f8fafc;
+  cursor: pointer;
+}
+
+.managed-room-chip em {
+  color: #94a3b8;
+  font-size: 11px;
+  font-style: normal;
+}
+
+.managed-room-chip:hover,
+.managed-room-chip.active {
+  border-color: rgba(56, 189, 248, 0.82);
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.92), rgba(14, 165, 233, 0.86));
+  box-shadow: 0 8px 20px rgba(14, 165, 233, 0.2);
+}
+
+.managed-room-chip.active em {
+  color: #e0f2fe;
+}
+
+.managed-room-empty {
+  padding: 9px 10px;
+  border: 1px dashed rgba(148, 163, 184, 0.3);
+  border-radius: 10px;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
 </style>
