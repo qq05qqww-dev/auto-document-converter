@@ -1,3 +1,5 @@
+<!-- 第 018-152 批：服務同義詞原文完整儲存不自動刪字修正版 -->
+<!-- 第 018-151 批：加值金額跨行黏連誤判修正版 -->
 <!-- 第 018-150 批：機房清單可選修改刪除＋加值服務明確金額不放大修正版 -->
 <!-- 第 018-149 批：小姐名「小妹妹」完整保留＋空格身材第三碼年齡補抓修正版 -->
 <!-- 第 018-147 批：老闆全站公版改用獨立資料表，徹底避開 employee_rules mode 約束 -->
@@ -11,6 +13,8 @@
 <!-- 第 018-126 批：中央媒體來源統一與前後台數量同步修正版（依第 018-125 批延續） -->
 <template>
   <!-- 第 018-109 批：待上傳縮圖區禁止拖放版 -->
+  <!-- batch018-152-alias-rules-exact-save-preserve -->
+  <!-- batch018-151-addon-amount-line-boundary-fix -->
   <!-- batch018-150-room-list-manage-explicit-addon-amount-fix -->
   <!-- batch018-149-lady-name-and-spaced-age-fix -->
   <!-- batch018-148-explicit-addon-amount-cleanup-alias-fix -->
@@ -7075,12 +7079,38 @@ function syncPromotionComboServicesWithSource(found, block) {
   })
 }
 
+// 第 018-151 批：金額比對必須保留換行／空白邊界。
+// 舊版把整個區塊所有空白移除，會讓「絲襪+100」下一行的「0.01套子+100」
+// 黏成「絲襪+1000.01套子+100」，因此誤抓成 1000。
+function normalizeServiceAmountMatchText(text) {
+  return normalizeDigits(String(text || ''))
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[＋]/g, '+')
+    .replace(/[／]/g, '/')
+    .replace(/兩/g, '2')
+    .replace(/二/g, '2')
+    .replace(/三/g, '3')
+    .replace(/一/g, '1')
+    .replace(/壹/g, '1')
+    .replace(/貳/g, '2')
+    .replace(/參/g, '3')
+    .replace(/\r\n?/g, '\n')
+    .replace(/[，、,；;｜|]+/g, ' ')
+    .replace(/[\t ]+/g, ' ')
+    .replace(/\n+/g, ' | ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 function findExplicitAmountForServiceName(sourceText, serviceName) {
-  const source = normalizeServiceAliasMatchText(sourceText)
+  const source = normalizeServiceAmountMatchText(sourceText)
   const base = normalizeServiceAliasMatchText(stripMonetaryServiceSuffix(serviceName))
   if (!source || !base) return ''
 
-  const match = source.match(new RegExp(`${escapeRegExp(base)}(?:\\+|加)(\\d{2,5})(?!\\d)`))
+  // 金額後面必須遇到分隔或行尾，不能跨到下一行 0.01 的第一個 0。
+  const pattern = new RegExp(`${escapeRegExp(base)}\\s*(?:\\+|加)\\s*(\\d{1,5})(?=$|[\\s|，、,；;／/]|[^\\d.])`)
+  const match = source.match(pattern)
   return match ? match[1] : ''
 }
 
@@ -7244,12 +7274,7 @@ function getExplicitAliasAmount(fromText, sourceText = '') {
   const directAmount = getMonetaryServiceAmount(normalizeServiceOutputToken(fromText))
   if (directAmount) return directAmount
 
-  const normalizedFrom = normalizeServiceAliasMatchText(stripMonetaryServiceSuffix(fromText))
-  const normalizedSource = normalizeServiceAliasMatchText(sourceText)
-  if (!normalizedFrom || !normalizedSource) return ''
-
-  const match = normalizedSource.match(new RegExp(`${escapeRegExp(normalizedFrom)}(?:\\+|加)(\\d{2,5})(?!\\d)`))
-  return match ? match[1] : ''
+  return findExplicitAmountForServiceName(sourceText, stripMonetaryServiceSuffix(fromText))
 }
 
 function aliasSourceCarriesTargetAmount(fromText, outputToken, sourceText = '') {
@@ -7293,12 +7318,12 @@ function hasExplicitPaidAmountForService(sourceText, outputToken) {
 
   const amount = getMonetaryServiceAmount(token)
   const base = stripMonetaryServiceSuffix(token)
-  const source = normalizeServiceAliasMatchText(sourceText)
-  const normalizedToken = normalizeServiceAliasMatchText(token)
+  const source = normalizeServiceAmountMatchText(sourceText)
   const normalizedBase = normalizeServiceAliasMatchText(base)
   if (!source || !amount || !normalizedBase) return false
 
-  if (source.includes(normalizedToken)) return true
+  // 一般服務以文件1的有邊界明確金額為準，避免跨行黏成較大數字。
+  if (findExplicitAmountForServiceName(sourceText, base) === amount) return true
 
   // 攝影文字常寫成「攝影+1000 不露臉」，與標準輸出「攝影不露臉+1000」不同序。
   if (normalizedBase === normalizeServiceAliasMatchText('攝影不露臉')) {
@@ -7624,18 +7649,14 @@ function parseAliasRules(text) {
   const map = new Map()
 
   parseKeyValueLines(text).forEach(([from, to]) => {
-    if (!from || !to) return
+    const cleanFrom = String(from || '').trim()
+    const cleanTo = String(to || '').trim()
+    if (!cleanFrom || !cleanTo) return
 
-    // 第 018-115 批：舊機房規則若把「沒有明確 +金額」的普通服務存成加價版，
-    // 讀取時自動降回普通服務，避免文件1沒寫加價卻輸出 +500 / +1000。
-    const fixedTo = sanitizeAliasTargetBySource(from, to)
-
-    // 同一個店家寫法重複時，以最後一條為準。
-    // 例如：
-    // 2節3s=2節3S
-    // 2節3s=2+1s
-    // 最後會使用 2+1s。
-    map.set(from, fixedTo)
+    // 第 018-152 批：服務同義詞是使用者明確輸入的規則，
+    // 解析與套用時只去除行首尾空白，不再自動刪除 +金額、文字或改寫輸出內容。
+    // 同一個店家寫法重複時，執行階段仍以最後一條為準；儲存文字本身保持原樣。
+    map.set(cleanFrom, cleanTo)
   })
 
   return Array.from(map.entries())
@@ -7690,17 +7711,9 @@ function sanitizeAliasRulesText(text) {
 }
 
 function cleanupAliasRulesBeforeSave() {
-  const result = sanitizeAliasRulesText(aliasRulesText.value)
-  const currentText = String(aliasRulesText.value || '').trim()
-  if (result.text && result.text !== currentText) {
-    aliasRulesText.value = result.text
-  }
-
-  const parts = []
-  if (result.duplicateCount > 0) parts.push(`自動移除重複服務同義詞 ${result.duplicateCount} 筆`)
-  if (result.conflictCount > 0) parts.push(`同一店家寫法有衝突 ${result.conflictCount} 筆，已保留最後一筆`)
-
-  return parts.join('，')
+  // 第 018-152 批：儲存服務同義詞時完全保留使用者輸入原文。
+  // 不自動刪除金額、不去重、不改字、不重排，也不把任何內容替換成系統判斷結果。
+  return ''
 }
 
 function mergeAliasRulesWithDefaults(text) {
@@ -9418,9 +9431,8 @@ function applyRuleData(data, options = {}) {
   amountTransformRules.value = normalizeAmountRules(data.amountTransformRules ?? data.amountTransformRulesText ?? amountTransformRules.value)
   serviceOrderText.value = data.serviceOrderText ?? serviceOrderText.value
   if (Object.prototype.hasOwnProperty.call(data, 'aliasRulesText')) {
-    const loadedAliasText = String(data.aliasRulesText ?? '')
-    const sanitizedAliasText = sanitizeAliasRulesText(loadedAliasText).text
-    aliasRulesText.value = sanitizedAliasText || loadedAliasText
+    // 第 018-152 批：重新登入／重新讀取時直接還原資料庫原文，禁止再次自動清理。
+    aliasRulesText.value = String(data.aliasRulesText ?? '')
   }
   removeWordsText.value = data.removeWordsText ?? removeWordsText.value
   extraKeepText.value = data.extraKeepText ?? extraKeepText.value
