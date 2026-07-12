@@ -1,3 +1,4 @@
+<!-- 第 018-159 批：國籍姓名分隔符辨識＋身材後年齡解析修正版 -->
 <!-- 第 018-158 批：文件2保留奶洗／帶套做＋買送方案最長語意去重版 -->
 <!-- 第 018-157 批：服務同義詞逐行最長優先避免短規則重複套用版 -->
 <!-- 第 018-156 批：同義詞來源內嵌金額保留＋分鐘加價不重複累加修正版 -->
@@ -6496,8 +6497,19 @@ function extractAgeFromHeaderLines(block, header, country = '') {
 
 function parseHeaderLine(line) {
   const cleaned = normalizeHeaderText(line)
-  if (!cleaned || isNotHeaderLine(cleaned)) return null
+  if (!cleaned) return null
 
+  // 第 018-159 批：標題可能是「國籍 名稱」或「名稱 國籍」，中間可能用空白、-、/。
+  // 例如「愛愛-馬來」中的「愛愛」也可能是小姐名，不能只因為它也是服務詞就整行排除。
+  const strongHeader = parseHeaderLineByCountryName(cleaned)
+  if (strongHeader) return strongHeader
+
+  if (isNotHeaderLine(cleaned)) return null
+
+  return parseHeaderLineByCountryName(cleaned)
+}
+
+function parseHeaderLineByCountryName(cleaned) {
   const countries = getCountryKeys().sort((a, b) => b.length - a.length)
   const compact = cleaned.replace(/\s+/g, '')
   const tokens = cleaned.split(/\s+/).filter(Boolean)
@@ -6523,7 +6535,7 @@ function parseHeaderLine(line) {
       if (isValidName(name)) return { country: fixedCountry, name: cleanName(name) }
     }
 
-    // 支援：小魚兒越南新妹、可樂港澳新妹、香水台灣新妹
+    // 支援：小魚兒越南新妹、可樂港澳新妹、香水台灣新妹。
     const insideIndex = compact.indexOf(country)
     if (insideIndex > 0) {
       const before = compact.slice(0, insideIndex)
@@ -6535,6 +6547,7 @@ function parseHeaderLine(line) {
 
   return null
 }
+
 
 function pickHeaderName(beforeCountry, afterCountry) {
   const before = removeHeaderNoise(beforeCountry)
@@ -6662,6 +6675,18 @@ function parseBody(text) {
   }
 
   for (const line of lines) {
+    // 第 018-159 批：支援「160 44 C 24」＝身高 160、體重 44、罩杯 C、年齡 24。
+    // 店家常把年齡放在罩杯後面，文件2要輸出成 160 44 C 24y。
+    const spacedBodyCupAgeMatch = line.match(/^\s*(\d{3})\s*[\/.．\s]+(\d{2})\s*[\/.．\s]+(?:(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)\s*)?([A-Za-z])\s*(?:奶|杯)?\s*[\/.．\s]+(\d{2})\s*(?:歲|y|Y)?(?:$|\s|[^A-Za-z0-9])/i)
+    if (spacedBodyCupAgeMatch) {
+      return {
+        height: spacedBodyCupAgeMatch[1],
+        weight: spacedBodyCupAgeMatch[2],
+        cup: spacedBodyCupAgeMatch[3].toUpperCase(),
+        age: `${spacedBodyCupAgeMatch[4]}y`
+      }
+    }
+
     // 第 018-149 批：支援「158 47 20 E」＝身高 158、體重 47、年齡 20、罩杯 E。
     // 第三個兩位數位於體重與罩杯之間時，視為明確年齡，不再被舊版略過。
     const spacedBodyWithAgeMatch = line.match(/^\s*(\d{3})\s+(\d{2})\s+(\d{2})\s+(?:(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)\s*)?([A-Za-z])\s*(?:奶|杯)?/)
