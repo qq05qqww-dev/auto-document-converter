@@ -15,7 +15,7 @@
 <template>
   <!-- 第 018-109 批：待上傳縮圖區禁止拖放版 -->
   <!-- batch018-152-alias-rules-exact-save-preserve -->
-  <!-- batch018-153-photography-amount-space-preserve-fix -->
+  <!-- batch018-154-photography-regex-escape-fix -->
   <!-- batch018-151-addon-amount-line-boundary-fix -->
   <!-- batch018-150-room-list-manage-explicit-addon-amount-fix -->
   <!-- batch018-149-lady-name-and-spaced-age-fix -->
@@ -7330,13 +7330,17 @@ function hasExplicitPaidAmountForService(sourceText, outputToken) {
   // 第 018-153 批：攝影文字常寫成「攝影+1000 不露臉」。
   // 金額與「不露臉」之間可能有空格或換行，不能因此把 +1000 判定成不存在。
   if (normalizedBase === normalizeServiceAliasMatchText('攝影不露臉')) {
-    return new RegExp(`攝影\s*(?:\+|加)?\s*${amount}\s*不露臉`).test(source)
-      || new RegExp(`不露臉\s*攝影\s*(?:\+|加)?\s*${amount}`).test(source)
-      || new RegExp(`攝影\s*不露臉\s*(?:\+|加)?\s*${amount}`).test(source)
+    const photographyNoFacePatterns = [
+      new RegExp(`攝影\\s*(?:\\+|加)?\\s*${amount}\\s*不露臉`),
+      new RegExp(`不露臉\\s*攝影\\s*(?:\\+|加)?\\s*${amount}`),
+      new RegExp(`攝影\\s*不露臉\\s*(?:\\+|加)?\\s*${amount}`)
+    ]
+    return photographyNoFacePatterns.some(pattern => pattern.test(source))
   }
 
   if (normalizedBase === normalizeServiceAliasMatchText('攝影露臉')) {
-    return new RegExp(`攝影\s*(?:露臉)?\s*(?:\+|加)?\s*${amount}`).test(source)
+    const photographyFacePattern = new RegExp(`攝影\\s*(?:露臉)?\\s*(?:\\+|加)?\\s*${amount}`)
+    return photographyFacePattern.test(source)
   }
 
   const escapedBase = escapeRegExp(normalizedBase)
