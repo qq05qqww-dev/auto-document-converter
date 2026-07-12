@@ -1,3 +1,4 @@
+<!-- 第 018-153 批：攝影加值金額空格保留修正版 -->
 <!-- 第 018-152 批：服務同義詞原文完整儲存不自動刪字修正版 -->
 <!-- 第 018-151 批：加值金額跨行黏連誤判修正版 -->
 <!-- 第 018-150 批：機房清單可選修改刪除＋加值服務明確金額不放大修正版 -->
@@ -14,6 +15,7 @@
 <template>
   <!-- 第 018-109 批：待上傳縮圖區禁止拖放版 -->
   <!-- batch018-152-alias-rules-exact-save-preserve -->
+  <!-- batch018-153-photography-amount-space-preserve-fix -->
   <!-- batch018-151-addon-amount-line-boundary-fix -->
   <!-- batch018-150-room-list-manage-explicit-addon-amount-fix -->
   <!-- batch018-149-lady-name-and-spaced-age-fix -->
@@ -7325,15 +7327,16 @@ function hasExplicitPaidAmountForService(sourceText, outputToken) {
   // 一般服務以文件1的有邊界明確金額為準，避免跨行黏成較大數字。
   if (findExplicitAmountForServiceName(sourceText, base) === amount) return true
 
-  // 攝影文字常寫成「攝影+1000 不露臉」，與標準輸出「攝影不露臉+1000」不同序。
+  // 第 018-153 批：攝影文字常寫成「攝影+1000 不露臉」。
+  // 金額與「不露臉」之間可能有空格或換行，不能因此把 +1000 判定成不存在。
   if (normalizedBase === normalizeServiceAliasMatchText('攝影不露臉')) {
-    return new RegExp(`攝影(?:\\+|加)?${amount}不露臉`).test(source)
-      || new RegExp(`不露臉攝影(?:\\+|加)?${amount}`).test(source)
-      || new RegExp(`攝影不露臉(?:\\+|加)?${amount}`).test(source)
+    return new RegExp(`攝影\s*(?:\+|加)?\s*${amount}\s*不露臉`).test(source)
+      || new RegExp(`不露臉\s*攝影\s*(?:\+|加)?\s*${amount}`).test(source)
+      || new RegExp(`攝影\s*不露臉\s*(?:\+|加)?\s*${amount}`).test(source)
   }
 
   if (normalizedBase === normalizeServiceAliasMatchText('攝影露臉')) {
-    return new RegExp(`攝影(?:露臉)?(?:\\+|加)?${amount}`).test(source)
+    return new RegExp(`攝影\s*(?:露臉)?\s*(?:\+|加)?\s*${amount}`).test(source)
   }
 
   const escapedBase = escapeRegExp(normalizedBase)
