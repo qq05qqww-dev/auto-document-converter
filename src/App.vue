@@ -1,3 +1,4 @@
+<!-- 第 018-157 批：服務同義詞逐行最長優先避免短規則重複套用版 -->
 <!-- 第 018-156 批：同義詞來源內嵌金額保留＋分鐘加價不重複累加修正版 -->
 <!-- 第 018-155 批：不完整資料文件2預覽＋缺少欄位提示＋禁止加入文件3版 -->
 <!-- 第 018-153 批：攝影加值金額空格保留修正版 -->
@@ -16,6 +17,7 @@
 <!-- 第 018-126 批：中央媒體來源統一與前後台數量同步修正版（依第 018-125 批延續） -->
 <template>
   <!-- 第 018-109 批：待上傳縮圖區禁止拖放版 -->
+  <!-- batch018-157-alias-line-longest-match-once -->
   <!-- batch018-156-alias-embedded-amount-minute-add-no-double-stack -->
   <!-- batch018-155-incomplete-record-preview-missing-fields-guard -->
   <!-- batch018-152-alias-rules-exact-save-preserve -->
@@ -6933,31 +6935,84 @@ function hasMinimumRecordFields(text) {
   return !!(findHeaderInBlock(text) || parseNameOnlyRecord(text)) && !!parseBody(text) && parsePrices(text, 0).length > 0
 }
 
+// 第 018-157 批：同義詞必須以文件1「當下那一行」判斷。
+// 同一行若同時符合長、短規則，只保留最長且不重疊的規則，避免：
+// 無套+1000 可內射 同時套到「無套內射+1000」與「無套+1000」。
+function getLineAliasMatches(sourceLine, aliases = []) {
+  const normalizedLine = normalizeServiceAliasMatchText(sourceLine)
+  if (!normalizedLine) return []
+
+  const candidates = []
+  ;(Array.isArray(aliases) ? aliases : []).forEach(([from, to], ruleIndex) => {
+    if (!from || !to) return
+    const normalizedFrom = normalizeServiceAliasMatchText(from)
+    if (!normalizedFrom) return
+
+    let offset = 0
+    while (offset <= normalizedLine.length - normalizedFrom.length) {
+      const start = normalizedLine.indexOf(normalizedFrom, offset)
+      if (start < 0) break
+      candidates.push({
+        from,
+        to,
+        normalizedFrom,
+        start,
+        end: start + normalizedFrom.length,
+        exactLine: normalizedLine === normalizedFrom,
+        ruleIndex
+      })
+      offset = start + Math.max(1, normalizedFrom.length)
+    }
+  })
+
+  candidates.sort((a, b) => {
+    if (a.exactLine !== b.exactLine) return a.exactLine ? -1 : 1
+    if (a.normalizedFrom.length !== b.normalizedFrom.length) {
+      return b.normalizedFrom.length - a.normalizedFrom.length
+    }
+    if (a.start !== b.start) return a.start - b.start
+    return a.ruleIndex - b.ruleIndex
+  })
+
+  const selected = []
+  candidates.forEach(candidate => {
+    const overlapsSelected = selected.some(item => (
+      candidate.start < item.end && candidate.end > item.start
+    ))
+    if (!overlapsSelected) selected.push(candidate)
+  })
+
+  return selected.sort((a, b) => a.start - b.start)
+}
+
 function extractServices(block) {
   const found = new Set()
   const order = parseList(serviceOrderText.value)
   const aliases = parseAliasRules(aliasRulesText.value)
-    .sort((a, b) => String(b[0]).length - String(a[0]).length)
+    .sort((a, b) => normalizeServiceAliasMatchText(b[0]).length - normalizeServiceAliasMatchText(a[0]).length)
   const extra = parseList(extraKeepText.value)
   const searchableBlock = normalizeServiceAliasMatchText(block)
   const explicitPaidAliasOutputs = new Set()
 
-  // 第 018-96 批：服務同義詞比對改成「全形半形 / 大小寫 / 中文數字」正規化後比對，
-  // 並套用在整筆小姐資料區塊，避免「買2節送1S」有些小姐有出現、有些沒出現。
-  aliases.forEach(([from, to]) => {
-    if (!from || !to) return
-    const normalizedFrom = normalizeServiceAliasMatchText(from)
-    const isMatched = block.includes(from) || (normalizedFrom && searchableBlock.includes(normalizedFrom))
-    if (isMatched) {
+  // 第 018-157 批：逐行套用同義詞；同一行的重疊規則採最長優先。
+  // 不同服務即使寫在同一行，只要文字區段不重疊，仍可各自套用。
+  const aliasSourceLines = String(block || '')
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+
+  aliasSourceLines.forEach(sourceLine => {
+    const matches = getLineAliasMatches(sourceLine, aliases)
+    matches.forEach(({ from, to }) => {
       to.split(/\s+/).filter(Boolean).forEach(item => {
-        const outputToken = buildAliasOutputTokenWithExplicitAmount(from, item, block)
+        const outputToken = buildAliasOutputTokenWithExplicitAmount(from, item, sourceLine)
         if (!outputToken) return
         found.add(outputToken)
-        if (hasMonetaryServiceSuffix(outputToken) && aliasSourceCarriesTargetAmount(from, outputToken, block)) {
+        if (hasMonetaryServiceSuffix(outputToken) && aliasSourceCarriesTargetAmount(from, outputToken, sourceLine)) {
           explicitPaidAliasOutputs.add(outputToken)
         }
       })
-    }
+    })
   })
 
   // 第 018-144 批：優惠組合採單向中文化。
