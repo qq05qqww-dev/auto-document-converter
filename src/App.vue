@@ -1,3 +1,4 @@
+<!-- 第 018-155 批：不完整資料文件2預覽＋缺少欄位提示＋禁止加入文件3版 -->
 <!-- 第 018-153 批：攝影加值金額空格保留修正版 -->
 <!-- 第 018-152 批：服務同義詞原文完整儲存不自動刪字修正版 -->
 <!-- 第 018-151 批：加值金額跨行黏連誤判修正版 -->
@@ -14,6 +15,7 @@
 <!-- 第 018-126 批：中央媒體來源統一與前後台數量同步修正版（依第 018-125 批延續） -->
 <template>
   <!-- 第 018-109 批：待上傳縮圖區禁止拖放版 -->
+  <!-- batch018-155-incomplete-record-preview-missing-fields-guard -->
   <!-- batch018-152-alias-rules-exact-save-preserve -->
   <!-- batch018-154-photography-regex-escape-fix -->
   <!-- batch018-151-addon-amount-line-boundary-fix -->
@@ -950,8 +952,14 @@
         ></textarea>
 
         <div class="button-row">
-          <button class="primary-btn" type="button" @click="appendResultToConfirmed">確認可以，加入文件3</button>
-          <button class="ghost-btn" type="button" @click="resultText = ''">清空文件2</button>
+          <button
+            class="primary-btn"
+            type="button"
+            :disabled="!canAppendResultToConfirmed"
+            :title="resultHasIncompleteRecords ? '文件2仍有缺少欄位的資料，補齊後才能加入文件3' : '確認文件2內容並加入文件3'"
+            @click="appendResultToConfirmed"
+          >{{ resultHasIncompleteRecords ? '資料不完整，暫不能加入文件3' : '確認可以，加入文件3' }}</button>
+          <button class="ghost-btn" type="button" @click="clearResultText">清空文件2</button>
         </div>
 
         <p class="hint">{{ statusMessage }}</p>
@@ -1594,6 +1602,10 @@ const LEGACY_CONFIRMED_STORAGE_KEYS = [
 
 const sourceText = ref('')
 const resultText = ref('')
+const resultCompleteCount = ref(0)
+const resultIncompleteCount = ref(0)
+const resultHasIncompleteRecords = computed(() => resultIncompleteCount.value > 0)
+const canAppendResultToConfirmed = computed(() => Boolean(String(resultText.value || '').trim()) && !resultHasIncompleteRecords.value)
 const jsonResultText = ref('')
 const REQUIRED_BACKEND_IMPORT_MODE = 'db_append_upsert_keep_existing_safety_checked'
 const REQUIRED_BACKEND_VERSION = '0.0.18-14-backend-version-guard'
@@ -6139,10 +6151,21 @@ async function convertTextWithScopeGuard() {
   }
 }
 
+function resetResultValidationState() {
+  resultCompleteCount.value = 0
+  resultIncompleteCount.value = 0
+}
+
+function clearResultText(options = {}) {
+  resultText.value = ''
+  resetResultValidationState()
+  if (!options.silent) statusMessage.value = '已清空文件2。'
+}
+
 function convertText() {
   const originalText = sourceText.value.trim()
   if (!originalText) {
-    resultText.value = ''
+    clearResultText({ silent: true })
     statusMessage.value = '請先貼上文件1原始資料。'
     return
   }
@@ -6151,31 +6174,33 @@ function convertText() {
   sourceText.value = ensureSourceTextBottomBlankLines(cleanedText)
 
   const blocks = splitBlocks(cleanedText)
-  const parsed = blocks.map(block => ({
-    block,
-    header: findHeaderInBlock(block),
-    output: parseRecord(block)
-  }))
+  const parsed = blocks.map(block => analyzeRecordForPreview(block))
+  const visibleRecords = parsed.filter(item => item.preview)
+  const completeRecords = visibleRecords.filter(item => item.complete)
+  const incompleteRecords = visibleRecords.filter(item => !item.complete)
 
-  const rows = parsed.map(item => item.output).filter(Boolean)
-  const skipped = parsed.filter(item => !item.output)
+  resultCompleteCount.value = completeRecords.length
+  resultIncompleteCount.value = incompleteRecords.length
+  resultText.value = visibleRecords.map(item => item.preview).join('\n\n')
 
-  resultText.value = rows.join('\n\n')
-
-  if (!rows.length) {
-    statusMessage.value = `沒有抓到可轉換資料。請確認文件1有小姐名、國籍、身材與價格格式；目前已切出 ${blocks.length} 筆，但尚未找到可產生文件2的完整資料。`
+  if (!visibleRecords.length) {
+    statusMessage.value = `沒有抓到可預覽資料。請確認文件1至少有可辨識的小姐名或國籍；目前已切出 ${blocks.length} 筆。`
     return
   }
 
-  if (skipped.length) {
-    const names = skipped.map(item => item.header?.name).filter(Boolean).join('、')
-    statusMessage.value = names
-      ? `已產生 ${rows.length} 筆，略過 ${skipped.length} 筆：${names}`
-      : `已產生 ${rows.length} 筆，另有 ${skipped.length} 筆格式不足。`
+  if (incompleteRecords.length) {
+    const detailText = incompleteRecords
+      .map(item => {
+        const label = item.header?.name || '未辨識小姐'
+        return `${label}（缺少：${item.missing.join('、')}）`
+      })
+      .join('；')
+
+    statusMessage.value = `已辨識 ${visibleRecords.length} 筆：完整 ${completeRecords.length} 筆、不完整 ${incompleteRecords.length} 筆。${detailText} 文件2目前僅供預覽，補齊全部缺少欄位後才能加入文件3。`
     return
   }
 
-  statusMessage.value = `已產生 ${rows.length} 筆固定格式；文件1符號已清理。`
+  statusMessage.value = `已產生 ${completeRecords.length} 筆固定格式；文件1符號已清理。`
 }
 
 function cleanupSourceText(text) {
@@ -6292,6 +6317,8 @@ function normalizeThaiCountryHeaderLine(line) {
   value = value.replace(/^泰國妹妹\s+/, '泰妹 ')
   value = value.replace(/^泰國妹\s+/, '泰妹 ')
   value = value.replace(/^泰國\s+/, '泰妹 ')
+  // 第 018-155 批：店家常用「馬來妹 小姐名」表示國籍＋姓名，不能把「妹」併進小姐名。
+  value = value.replace(/^馬來(?:妹妹|妹)\s+/, '馬來 ')
   return value
 }
 
@@ -6317,12 +6344,23 @@ function isNameOnlyHeaderLine(line) {
   return /^[\u4e00-\u9fa5A-Za-z0-9]+$/.test(cleaned)
 }
 
-function parseRecord(block) {
-  // 第 018-111 批：自動解析模式維持隱藏運作，不新增任何畫面選項。
-  // 解析流程會自動合併：一行一位、姓名國籍跨行、年齡跨行補抓、價格分離。
+function buildPreviewHeaderTitle(name = '', country = '') {
+  const safeName = String(name || '').trim() || '未辨識小姐'
+  const safeCountry = String(country || '').trim()
+
+  if (titleMode.value === 'name-country') {
+    return `【${[safeName, safeCountry].filter(Boolean).join(' ')}】`
+  }
+  if (titleMode.value === 'name-only') return `【${safeName}】`
+  return `【${[safeCountry, safeName].filter(Boolean).join(' ')}】`
+}
+
+function analyzeRecordForPreview(block) {
+  // 第 018-155 批：即使缺少身材或正式價格，也要在文件2顯示已辨識內容與缺少欄位。
+  // 不完整資料只能預覽，不能加入文件3，避免錯誤資料同步到文件4與中央網站。
   const header = findHeaderInBlock(block) || parseNameOnlyRecord(block)
   const explicitCountry = extractCountryFromBlock(block)
-  const finalCountry = explicitCountry || header?.country || '馬來'
+  const finalCountry = explicitCountry || header?.country || (header ? '馬來' : '')
   const parsedBody = parseBody(block)
   const headerAge = extractAgeFromHeaderLines(block, header, finalCountry)
   const body = parsedBody ? {
@@ -6331,19 +6369,50 @@ function parseRecord(block) {
   } : null
   const prices = parsePrices(block, getAppliedIncrease(finalCountry))
   const services = extractServices(block)
+  const missing = []
 
-  if (!header || !body || !prices.length) return null
+  if (!header) missing.push('小姐姓名／國籍')
+  if (!body) missing.push('身高／體重／罩杯')
+  if (!prices.length) missing.push('正式價格方案')
+
+  const complete = Boolean(header && body && prices.length)
+  const title = buildPreviewHeaderTitle(header?.name, finalCountry)
+  const bodyText = body
+    ? [body.height, body.weight, body.cup, body.age].filter(Boolean).join(' ')
+    : ''
+  const firstLine = [title, bodyText, prices.join('  ')].filter(Boolean).join('  ')
+  const previewLines = [firstLine]
+
+  if (!complete) previewLines.push(`⚠ 缺少：${missing.join('、')}`)
+  if (services.length) previewLines.push(services.join(' '))
+
+  return {
+    block,
+    header,
+    country: finalCountry,
+    body,
+    prices,
+    services,
+    missing,
+    complete,
+    preview: previewLines.filter(Boolean).join('\n')
+  }
+}
+
+function parseRecord(block) {
+  const analyzed = analyzeRecordForPreview(block)
+  if (!analyzed.complete) return null
 
   const title = buildTitle({
-    name: header.name,
-    country: finalCountry,
-    height: body.height,
-    weight: body.weight,
-    cup: body.cup,
-    age: body.age
+    name: analyzed.header.name,
+    country: analyzed.country,
+    height: analyzed.body.height,
+    weight: analyzed.body.weight,
+    cup: analyzed.body.cup,
+    age: analyzed.body.age
   })
 
-  return `${title}  ${prices.join('  ')}\n${services.join(' ')}`
+  return `${title}  ${analyzed.prices.join('  ')}\n${analyzed.services.join(' ')}`
 }
 
 function extractCountryFromBlock(block) {
@@ -9706,10 +9775,15 @@ function appendResultToConfirmed() {
     return
   }
 
+  if (resultHasIncompleteRecords.value) {
+    statusMessage.value = `文件2仍有 ${resultIncompleteCount.value} 筆不完整資料，請先補齊身材與正式價格方案，再重新產生文件2。`
+    return
+  }
+
   const current = String(confirmedText.value || '').replace(/^\n+/, '').trim()
   confirmedText.value = ensureDocument3TopBlankLines(current ? `${current}\n\n${text}` : text)
   saveConfirmedText({ silent: true })
-  resultText.value = ''
+  clearResultText({ silent: true })
   updateJsonPreview()
   statusMessage.value = '已把文件2加入文件3，文件4 JSON 已同步更新。'
 }
@@ -9804,7 +9878,7 @@ function loadConfirmedText(options = {}) {
 
 function clearSourceAndResult() {
   sourceText.value = ''
-  resultText.value = ''
+  clearResultText({ silent: true })
   statusMessage.value = '已清空文件1與文件2，文件3保留。'
 }
 
@@ -9818,7 +9892,7 @@ function clearConfirmedText() {
 
 function clearDocumentsAfterDatabaseSubmit() {
   sourceText.value = ''
-  resultText.value = ''
+  clearResultText({ silent: true })
   confirmedText.value = '\n\n'
   jsonResultText.value = JSON.stringify({
     generatedAt: new Date().toISOString(),
