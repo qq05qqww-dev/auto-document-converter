@@ -1,3 +1,4 @@
+<!-- 第 018-158 批：文件2保留奶洗／帶套做＋買送方案最長語意去重版 -->
 <!-- 第 018-157 批：服務同義詞逐行最長優先避免短規則重複套用版 -->
 <!-- 第 018-156 批：同義詞來源內嵌金額保留＋分鐘加價不重複累加修正版 -->
 <!-- 第 018-155 批：不完整資料文件2預覽＋缺少欄位提示＋禁止加入文件3版 -->
@@ -2397,7 +2398,7 @@ const defaultAmountTransformRules = [
 
 // 第 018-115 批：服務加價需明確金額版。
 const defaultServiceOrder = [
-  '共浴', '無套吹', '輕功', '挑逗', '69', '品鮑', '小親親', '奶炮',
+  '共浴', '奶洗', '無套吹', '輕功', '挑逗', '69', '品鮑', '小親親', '奶炮', '帶套做',
   '舔蛋', '按摩', '舌吻', '冰火', '毒龍', '波推', '胸推', '臀推',
   '桑拿', '調情', '漫遊', '0.01套+100', '0.02套', '絲襪',
   '情趣用品', '自慰秀', '2S+500', '2S+1000', '口爆+500',
@@ -2418,6 +2419,7 @@ const defaultServiceOrder = [
 const defaultAliasRules = [
   '甜蜜共浴=共浴',
   '共浴=共浴',
+  '奶洗=奶洗',
   '無套吹69品鮑=無套吹 69 品鮑',
   '無套吹共浴親嘴品鮑=無套吹 共浴 小親親 品鮑',
   '親嘴=小親親',
@@ -2432,6 +2434,8 @@ const defaultAliasRules = [
   '小親親=小親親',
   '奶砲=奶炮',
   '奶炮=奶炮',
+  '帶套做=帶套做',
+  '戴套做=帶套做',
   '舔蛋=舔蛋',
   '按摩=按摩',
   'LG舌吻=舌吻',
@@ -6985,6 +6989,23 @@ function getLineAliasMatches(sourceLine, aliases = []) {
   return selected.sort((a, b) => a.start - b.start)
 }
 
+function preserveRequiredDirectServices(found, block) {
+  // 第 018-158 批：這兩個店家常用服務不能因機房仍沿用舊規則而消失。
+  // 只在文件1明確出現時保留，不會自行補服務。
+  const source = normalizeServiceAliasMatchText(block)
+  if (!source) return
+
+  if (source.includes('奶洗')) found.add('奶洗')
+  if (source.includes('帶套做') || source.includes('戴套做')) found.add('帶套做')
+}
+
+function isPromotionComboServiceToken(item) {
+  const signature = normalizeServiceAliasMatchText(normalizeServiceOutputToken(item))
+  if (!signature) return false
+
+  return /^(?:2\+1s?|2\+3s|3\+1|5\+3|買2節3s|買2(?:節)?送1(?:節|s)?|買2(?:節)?送3s|買3(?:節)?送1(?:節)?|買5(?:節)?送3(?:節)?)$/i.test(signature)
+}
+
 function extractServices(block) {
   const found = new Set()
   const order = parseList(serviceOrderText.value)
@@ -7096,6 +7117,7 @@ function extractServices(block) {
   reconcileExplicitServiceAmounts(found, block, aliases)
   normalizeOverlappingServices(found)
   syncPromotionComboServicesWithSource(found, block)
+  preserveRequiredDirectServices(found, block)
 
   const orderIndex = new Map(order.map((item, index) => [normalizeServiceOutputToken(item), index]))
   return Array.from(found).sort((a, b) => {
@@ -7109,6 +7131,10 @@ function extractServices(block) {
 
 function getServiceOrderIndex(item, orderIndex) {
   if (orderIndex.has(item)) return orderIndex.get(item)
+
+  // 第 018-158 批：舊機房排序尚未包含新保留詞時，仍放在合理的服務位置。
+  if (item === '奶洗' && orderIndex.has('共浴')) return orderIndex.get('共浴') + 0.1
+  if (item === '帶套做' && orderIndex.has('奶炮')) return orderIndex.get('奶炮') + 0.1
 
   // 如果使用者把 2節3S 改顯示成 2+1s，
   // 但服務固定排序仍寫 2節3S，就讓 2+1s 使用 2節3S 的排序位置。
@@ -7143,18 +7169,13 @@ function getServiceOrderIndex(item, orderIndex) {
 }
 
 function syncPromotionComboServicesWithSource(found, block) {
-  // 第 018-144 批：先移除舊同義詞可能產生的縮寫或錯誤中文，再只依文件1實際文字重建。
-  // 規則：縮寫轉中文；文件1原本是中文就保留對應中文；文件1沒寫就不自動補。
-  const promotionSignatures = new Set([
-    '2+1', '2+1s', '2+3s', '3+1', '5+3',
-    '買2送1', '買2節送1s', '買2節送1節', '買2節送3s',
-    '買3送1', '買3節送1節',
-    '買5送3', '買5節送3節'
-  ].map(item => normalizeServiceAliasMatchText(item)))
-
+  // 第 018-158 批：優惠組合一律先清除舊規則的短詞命中，再依文件1最長語意重建。
+  // 例如：
+  // - 買2送1s 只保留「買2送1s」，不再同時出現「買2送1」
+  // - 買3送1節只保留「買3送1節」，不再同時出現「買3送1」
+  // - 買5送3節只保留「買5送3節」，不再同時出現「買5送3」
   Array.from(found).forEach(item => {
-    const signature = normalizeServiceAliasMatchText(normalizeServiceOutputToken(item))
-    if (promotionSignatures.has(signature)) found.delete(item)
+    if (isPromotionComboServiceToken(item)) found.delete(item)
   })
 
   const sourceCompact = normalizeServiceAliasMatchText(block)
@@ -7166,34 +7187,40 @@ function syncPromotionComboServicesWithSource(found, block) {
     .replace(/兩/g, '2')
     .replace(/二/g, '2')
     .replace(/三/g, '3')
+    .replace(/五/g, '5')
     .replace(/一/g, '1')
     .replace(/壹/g, '1')
     .replace(/貳/g, '2')
     .replace(/參/g, '3')
+    .replace(/伍/g, '5')
     .replace(/[，、,；;｜|\r\n\t]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
 
   if (!sourceCompact && !sourceSeparated) return
 
-  // 中文來源：依文件1原本語意保留，不反向縮寫。
+  // 長寫法優先；短寫法使用負向判斷，不能吃到後面的 s／節。
   const chineseRules = [
-    ['買2節送1s', /買2節送1s/],
     ['買2節送1節', /買2節送1節/],
+    ['買2節送1s', /買2節送1s/],
+    ['買2送1節', /買2送1節/],
+    ['買2送1s', /買2送1s/],
     ['買2節送3s', /買2節送3s/],
-    ['買2送1', /買2送1/],
-    ['買3節送1節', /買3節送1節(?!\d+分)/],
-    ['買3送1', /買3送1(?!\d+分)/],
-    ['買5節送3節', /買5節送3節(?!\d+分)/],
-    ['買5送3', /買5送3(?!\d+分)/]
+    ['買2節3s', /買2節(?:\/)?3s/],
+    ['買3節送1節', /買3節送1節(?!\d+分(?!鐘))/],
+    ['買3送1節', /買3送1節(?!\d+分(?!鐘))/],
+    ['買5節送3節', /買5節送3節(?!\d+分(?!鐘))/],
+    ['買5送3節', /買5送3節(?!\d+分(?!鐘))/],
+    ['買2送1', /買2送1(?![s節])/],
+    ['買3送1', /買3送1(?![s節])/],
+    ['買5送3', /買5送3(?![s節])/]
   ]
 
   chineseRules.forEach(([output, pattern]) => {
     if (pattern.test(sourceCompact)) found.add(output)
   })
 
-  // 縮寫來源：只在文件1真的出現時轉成中文。
-  // 2+1S / 2+3S 必須先判斷，避免被 2+1 / 2+3 的短規則吃掉。
+  // 縮寫來源仍維持原本中文化規則，並避免 2+1S 被 2+1 再抓一次。
   const shorthandRules = [
     ['買2節送1s', /(^|[^0-9])2\+1s(?![a-z0-9])/i],
     ['買2節送3s', /(^|[^0-9])2\+3s(?![a-z0-9])/i],
