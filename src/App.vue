@@ -1,6 +1,4 @@
-<!-- 第 018-160 批：媒體上傳小姐下拉顯示上傳狀態與圖片影片數量版 -->
-<!-- 第 018-159 批：國籍姓名分隔符辨識＋身材後年齡解析修正版 -->
-<!-- 第 018-158 批：文件2保留奶洗／帶套做＋買送方案最長語意去重版 -->
+<!-- 第 018-161 批：媒體上傳下拉本次已上傳排序＋名稱固定寬度對齊圖片影片數量版 -->
 <!-- 第 018-157 批：服務同義詞逐行最長優先避免短規則重複套用版 -->
 <!-- 第 018-156 批：同義詞來源內嵌金額保留＋分鐘加價不重複累加修正版 -->
 <!-- 第 018-155 批：不完整資料文件2預覽＋缺少欄位提示＋禁止加入文件3版 -->
@@ -20,6 +18,7 @@
 <!-- 第 018-126 批：中央媒體來源統一與前後台數量同步修正版（依第 018-125 批延續） -->
 <template>
   <!-- 第 018-109 批：待上傳縮圖區禁止拖放版 -->
+  <!-- batch018-161-media-upload-session-status-align-counts -->
   <!-- batch018-157-alias-line-longest-match-once -->
   <!-- batch018-156-alias-embedded-amount-minute-add-no-double-stack -->
   <!-- batch018-155-incomplete-record-preview-missing-fields-guard -->
@@ -1347,13 +1346,19 @@
               選擇小姐
               <select v-model="mediaUploadLadyId">
                 <option value="">請選擇小姐</option>
-                <option v-for="lady in mediaUploadLadyOptions" :key="lady.id" :value="lady.id">
-                  {{ getMediaUploadLadyOptionLabel(lady) }}
+                <option
+                  v-for="lady in mediaUploadLadyOptions"
+                  :key="lady.id"
+                  :value="lady.id"
+                >
+                  {{ formatMediaUploadLadyOptionLabel(lady) }}
                 </option>
               </select>
-              <span v-if="mediaUploadSelectedLadyStatusText" class="media-lady-select-hint">
-                {{ mediaUploadSelectedLadyStatusText }}
-              </span>
+              <div class="media-lady-select-legend">
+                <span class="is-current">● 本次已上傳</span>
+                <span class="is-existing">● 已有媒體</span>
+                <span class="is-empty">● 未上傳</span>
+              </div>
             </label>
 
             <div
@@ -1706,12 +1711,6 @@ const selectedUploadLadyMedia = computed(() => {
   return Array.isArray(lady?.media)
     ? lady.media.filter(media => media?.url)
     : []
-})
-
-const mediaUploadSelectedLadyStatusText = computed(() => {
-  const lady = mediaUploadSelectedLady.value
-  if (!lady) return ''
-  return getMediaUploadLadyStatusText(lady)
 })
 const confirmedText = ref('')
 const statusMessage = ref('等待貼上資料。')
@@ -2409,7 +2408,7 @@ const defaultAmountTransformRules = [
 
 // 第 018-115 批：服務加價需明確金額版。
 const defaultServiceOrder = [
-  '共浴', '奶洗', '無套吹', '輕功', '挑逗', '69', '品鮑', '小親親', '奶炮', '帶套做',
+  '共浴', '無套吹', '輕功', '挑逗', '69', '品鮑', '小親親', '奶炮',
   '舔蛋', '按摩', '舌吻', '冰火', '毒龍', '波推', '胸推', '臀推',
   '桑拿', '調情', '漫遊', '0.01套+100', '0.02套', '絲襪',
   '情趣用品', '自慰秀', '2S+500', '2S+1000', '口爆+500',
@@ -2430,7 +2429,6 @@ const defaultServiceOrder = [
 const defaultAliasRules = [
   '甜蜜共浴=共浴',
   '共浴=共浴',
-  '奶洗=奶洗',
   '無套吹69品鮑=無套吹 69 品鮑',
   '無套吹共浴親嘴品鮑=無套吹 共浴 小親親 品鮑',
   '親嘴=小親親',
@@ -2445,8 +2443,6 @@ const defaultAliasRules = [
   '小親親=小親親',
   '奶砲=奶炮',
   '奶炮=奶炮',
-  '帶套做=帶套做',
-  '戴套做=帶套做',
   '舔蛋=舔蛋',
   '按摩=按摩',
   'LG舌吻=舌吻',
@@ -4169,8 +4165,81 @@ const currentDocumentPreviewLadies = computed(() => {
 
 const previewLadies = computed(() => currentDocumentPreviewLadies.value)
 
+function getMediaUploadLadySessionMedia(lady) {
+  if (!lady) return []
+  return getLocalUploadedMediaForLady(lady, lady?.id || '')
+}
+
+function getMediaUploadLadyAllMedia(lady) {
+  if (!lady) return []
+  return mergeMediaRecords([], Array.isArray(lady?.media) ? lady.media : [])
+}
+
+function countMediaByType(mediaItems = [], mediaType = '') {
+  return (Array.isArray(mediaItems) ? mediaItems : []).filter(item => String(item?.mediaType || '') === mediaType).length
+}
+
+function getMediaUploadLadyStatusMeta(lady) {
+  const sessionMedia = getMediaUploadLadySessionMedia(lady)
+  const allMedia = getMediaUploadLadyAllMedia(lady)
+  const imageCount = countMediaByType(allMedia, 'image')
+  const videoCount = countMediaByType(allMedia, 'video')
+  const hasSessionUpload = sessionMedia.length > 0
+  const hasAnyMedia = allMedia.length > 0
+  let statusRank = 2
+  let statusText = '未上傳'
+
+  if (hasSessionUpload) {
+    statusRank = 0
+    statusText = '本次已上傳'
+  } else if (hasAnyMedia) {
+    statusRank = 1
+    statusText = '已有媒體'
+  }
+
+  return {
+    statusRank,
+    statusText,
+    imageCount,
+    videoCount,
+  }
+}
+
+function getDisplayWidth(text = '') {
+  return Array.from(String(text || '')).reduce((total, char) => {
+    return total + (/[^\u0000-\u00ff]/.test(char) ? 2 : 1)
+  }, 0)
+}
+
+function padDisplayText(text = '', targetWidth = 20) {
+  const source = String(text || '').trim()
+  let output = source
+  const currentWidth = getDisplayWidth(source)
+  const widthToFill = Math.max(0, targetWidth - currentWidth)
+  const fullWidthSpaces = Math.floor(widthToFill / 2)
+  const halfWidthSpace = widthToFill % 2
+
+  if (fullWidthSpaces > 0) output += '　'.repeat(fullWidthSpaces)
+  if (halfWidthSpace > 0) output += ' '
+  return output
+}
+
+function formatMediaUploadLadyOptionLabel(lady) {
+  if (!lady) return '請選擇小姐'
+  const meta = getMediaUploadLadyStatusMeta(lady)
+  const ladyLabel = `【${String(lady?.country || '').trim()} ${String(lady?.name || '').trim()}】`
+  const paddedLabel = padDisplayText(ladyLabel, 20)
+  return `[${meta.statusText}] ${paddedLabel} 圖${meta.imageCount}｜影${meta.videoCount}`
+}
+
 const mediaUploadLadyOptions = computed(() => {
   return currentDocumentPreviewLadies.value
+    .map((lady, index) => ({ lady, index, meta: getMediaUploadLadyStatusMeta(lady) }))
+    .sort((a, b) => {
+      if (a.meta.statusRank !== b.meta.statusRank) return a.meta.statusRank - b.meta.statusRank
+      return a.index - b.index
+    })
+    .map(item => item.lady)
 })
 
 const currentDocumentSyncSummary = computed(() => {
@@ -4359,28 +4428,6 @@ function getLadyCoverMedia(lady) {
 
 function getLadyMediaCount(lady) {
   return Array.isArray(lady?.media) ? lady.media.length : 0
-}
-
-function getLadyMediaImageCount(lady) {
-  return getLadyImageMedia(lady).length
-}
-
-function getLadyMediaVideoCount(lady) {
-  return getLadyVideoMedia(lady).length
-}
-
-function getMediaUploadLadyStatusText(lady) {
-  const imageCount = getLadyMediaImageCount(lady)
-  const videoCount = getLadyMediaVideoCount(lady)
-  const total = imageCount + videoCount
-  return `${total > 0 ? '已上傳' : '未上傳'}｜圖片 ${imageCount}｜影片 ${videoCount}`
-}
-
-function getMediaUploadLadyOptionLabel(lady) {
-  const country = String(lady?.country || '').trim()
-  const name = String(lady?.name || '').trim()
-  const title = [country, name].filter(Boolean).join(' ') || '未命名小姐'
-  return `【${title}】 ${getMediaUploadLadyStatusText(lady)}`
 }
 
 function getMediaDisplayName(media, lady) {
@@ -6529,19 +6576,8 @@ function extractAgeFromHeaderLines(block, header, country = '') {
 
 function parseHeaderLine(line) {
   const cleaned = normalizeHeaderText(line)
-  if (!cleaned) return null
+  if (!cleaned || isNotHeaderLine(cleaned)) return null
 
-  // 第 018-159 批：標題可能是「國籍 名稱」或「名稱 國籍」，中間可能用空白、-、/。
-  // 例如「愛愛-馬來」中的「愛愛」也可能是小姐名，不能只因為它也是服務詞就整行排除。
-  const strongHeader = parseHeaderLineByCountryName(cleaned)
-  if (strongHeader) return strongHeader
-
-  if (isNotHeaderLine(cleaned)) return null
-
-  return parseHeaderLineByCountryName(cleaned)
-}
-
-function parseHeaderLineByCountryName(cleaned) {
   const countries = getCountryKeys().sort((a, b) => b.length - a.length)
   const compact = cleaned.replace(/\s+/g, '')
   const tokens = cleaned.split(/\s+/).filter(Boolean)
@@ -6567,7 +6603,7 @@ function parseHeaderLineByCountryName(cleaned) {
       if (isValidName(name)) return { country: fixedCountry, name: cleanName(name) }
     }
 
-    // 支援：小魚兒越南新妹、可樂港澳新妹、香水台灣新妹。
+    // 支援：小魚兒越南新妹、可樂港澳新妹、香水台灣新妹
     const insideIndex = compact.indexOf(country)
     if (insideIndex > 0) {
       const before = compact.slice(0, insideIndex)
@@ -6579,7 +6615,6 @@ function parseHeaderLineByCountryName(cleaned) {
 
   return null
 }
-
 
 function pickHeaderName(beforeCountry, afterCountry) {
   const before = removeHeaderNoise(beforeCountry)
@@ -6707,18 +6742,6 @@ function parseBody(text) {
   }
 
   for (const line of lines) {
-    // 第 018-159 批：支援「160 44 C 24」＝身高 160、體重 44、罩杯 C、年齡 24。
-    // 店家常把年齡放在罩杯後面，文件2要輸出成 160 44 C 24y。
-    const spacedBodyCupAgeMatch = line.match(/^\s*(\d{3})\s*[\/.．\s]+(\d{2})\s*[\/.．\s]+(?:(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)\s*)?([A-Za-z])\s*(?:奶|杯)?\s*[\/.．\s]+(\d{2})\s*(?:歲|y|Y)?(?:$|\s|[^A-Za-z0-9])/i)
-    if (spacedBodyCupAgeMatch) {
-      return {
-        height: spacedBodyCupAgeMatch[1],
-        weight: spacedBodyCupAgeMatch[2],
-        cup: spacedBodyCupAgeMatch[3].toUpperCase(),
-        age: `${spacedBodyCupAgeMatch[4]}y`
-      }
-    }
-
     // 第 018-149 批：支援「158 47 20 E」＝身高 158、體重 47、年齡 20、罩杯 E。
     // 第三個兩位數位於體重與罩杯之間時，視為明確年齡，不再被舊版略過。
     const spacedBodyWithAgeMatch = line.match(/^\s*(\d{3})\s+(\d{2})\s+(\d{2})\s+(?:(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)\s*)?([A-Za-z])\s*(?:奶|杯)?/)
@@ -7046,23 +7069,6 @@ function getLineAliasMatches(sourceLine, aliases = []) {
   return selected.sort((a, b) => a.start - b.start)
 }
 
-function preserveRequiredDirectServices(found, block) {
-  // 第 018-158 批：這兩個店家常用服務不能因機房仍沿用舊規則而消失。
-  // 只在文件1明確出現時保留，不會自行補服務。
-  const source = normalizeServiceAliasMatchText(block)
-  if (!source) return
-
-  if (source.includes('奶洗')) found.add('奶洗')
-  if (source.includes('帶套做') || source.includes('戴套做')) found.add('帶套做')
-}
-
-function isPromotionComboServiceToken(item) {
-  const signature = normalizeServiceAliasMatchText(normalizeServiceOutputToken(item))
-  if (!signature) return false
-
-  return /^(?:2\+1s?|2\+3s|3\+1|5\+3|買2節3s|買2(?:節)?送1(?:節|s)?|買2(?:節)?送3s|買3(?:節)?送1(?:節)?|買5(?:節)?送3(?:節)?)$/i.test(signature)
-}
-
 function extractServices(block) {
   const found = new Set()
   const order = parseList(serviceOrderText.value)
@@ -7174,7 +7180,6 @@ function extractServices(block) {
   reconcileExplicitServiceAmounts(found, block, aliases)
   normalizeOverlappingServices(found)
   syncPromotionComboServicesWithSource(found, block)
-  preserveRequiredDirectServices(found, block)
 
   const orderIndex = new Map(order.map((item, index) => [normalizeServiceOutputToken(item), index]))
   return Array.from(found).sort((a, b) => {
@@ -7188,10 +7193,6 @@ function extractServices(block) {
 
 function getServiceOrderIndex(item, orderIndex) {
   if (orderIndex.has(item)) return orderIndex.get(item)
-
-  // 第 018-158 批：舊機房排序尚未包含新保留詞時，仍放在合理的服務位置。
-  if (item === '奶洗' && orderIndex.has('共浴')) return orderIndex.get('共浴') + 0.1
-  if (item === '帶套做' && orderIndex.has('奶炮')) return orderIndex.get('奶炮') + 0.1
 
   // 如果使用者把 2節3S 改顯示成 2+1s，
   // 但服務固定排序仍寫 2節3S，就讓 2+1s 使用 2節3S 的排序位置。
@@ -7226,13 +7227,18 @@ function getServiceOrderIndex(item, orderIndex) {
 }
 
 function syncPromotionComboServicesWithSource(found, block) {
-  // 第 018-158 批：優惠組合一律先清除舊規則的短詞命中，再依文件1最長語意重建。
-  // 例如：
-  // - 買2送1s 只保留「買2送1s」，不再同時出現「買2送1」
-  // - 買3送1節只保留「買3送1節」，不再同時出現「買3送1」
-  // - 買5送3節只保留「買5送3節」，不再同時出現「買5送3」
+  // 第 018-144 批：先移除舊同義詞可能產生的縮寫或錯誤中文，再只依文件1實際文字重建。
+  // 規則：縮寫轉中文；文件1原本是中文就保留對應中文；文件1沒寫就不自動補。
+  const promotionSignatures = new Set([
+    '2+1', '2+1s', '2+3s', '3+1', '5+3',
+    '買2送1', '買2節送1s', '買2節送1節', '買2節送3s',
+    '買3送1', '買3節送1節',
+    '買5送3', '買5節送3節'
+  ].map(item => normalizeServiceAliasMatchText(item)))
+
   Array.from(found).forEach(item => {
-    if (isPromotionComboServiceToken(item)) found.delete(item)
+    const signature = normalizeServiceAliasMatchText(normalizeServiceOutputToken(item))
+    if (promotionSignatures.has(signature)) found.delete(item)
   })
 
   const sourceCompact = normalizeServiceAliasMatchText(block)
@@ -7244,40 +7250,34 @@ function syncPromotionComboServicesWithSource(found, block) {
     .replace(/兩/g, '2')
     .replace(/二/g, '2')
     .replace(/三/g, '3')
-    .replace(/五/g, '5')
     .replace(/一/g, '1')
     .replace(/壹/g, '1')
     .replace(/貳/g, '2')
     .replace(/參/g, '3')
-    .replace(/伍/g, '5')
     .replace(/[，、,；;｜|\r\n\t]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
 
   if (!sourceCompact && !sourceSeparated) return
 
-  // 長寫法優先；短寫法使用負向判斷，不能吃到後面的 s／節。
+  // 中文來源：依文件1原本語意保留，不反向縮寫。
   const chineseRules = [
-    ['買2節送1節', /買2節送1節/],
     ['買2節送1s', /買2節送1s/],
-    ['買2送1節', /買2送1節/],
-    ['買2送1s', /買2送1s/],
+    ['買2節送1節', /買2節送1節/],
     ['買2節送3s', /買2節送3s/],
-    ['買2節3s', /買2節(?:\/)?3s/],
-    ['買3節送1節', /買3節送1節(?!\d+分(?!鐘))/],
-    ['買3送1節', /買3送1節(?!\d+分(?!鐘))/],
-    ['買5節送3節', /買5節送3節(?!\d+分(?!鐘))/],
-    ['買5送3節', /買5送3節(?!\d+分(?!鐘))/],
-    ['買2送1', /買2送1(?![s節])/],
-    ['買3送1', /買3送1(?![s節])/],
-    ['買5送3', /買5送3(?![s節])/]
+    ['買2送1', /買2送1/],
+    ['買3節送1節', /買3節送1節(?!\d+分)/],
+    ['買3送1', /買3送1(?!\d+分)/],
+    ['買5節送3節', /買5節送3節(?!\d+分)/],
+    ['買5送3', /買5送3(?!\d+分)/]
   ]
 
   chineseRules.forEach(([output, pattern]) => {
     if (pattern.test(sourceCompact)) found.add(output)
   })
 
-  // 縮寫來源仍維持原本中文化規則，並避免 2+1S 被 2+1 再抓一次。
+  // 縮寫來源：只在文件1真的出現時轉成中文。
+  // 2+1S / 2+3S 必須先判斷，避免被 2+1 / 2+3 的短規則吃掉。
   const shorthandRules = [
     ['買2節送1s', /(^|[^0-9])2\+1s(?![a-z0-9])/i],
     ['買2節送3s', /(^|[^0-9])2\+3s(?![a-z0-9])/i],
@@ -11764,18 +11764,37 @@ select:focus, input:focus, textarea:focus {
   width: 100%;
 }
 
-.media-lady-select-hint {
+.media-lady-select select,
+.media-lady-select option {
+  font-family: "Consolas", "Courier New", "Noto Sans Mono CJK TC", monospace;
+}
+
+.media-lady-select-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #5f6b7a;
+}
+
+.media-lady-select-legend span {
   display: inline-flex;
   align-items: center;
-  width: fit-content;
-  max-width: 100%;
-  padding: 5px 10px;
-  border-radius: 999px;
-  background: #eef6ff;
-  color: #2563eb;
-  font-size: 12px;
-  font-weight: 900;
-  line-height: 1.3;
+  gap: 4px;
+  font-weight: 700;
+}
+
+.media-lady-select-legend .is-current {
+  color: #12805c;
+}
+
+.media-lady-select-legend .is-existing {
+  color: #315ca8;
+}
+
+.media-lady-select-legend .is-empty {
+  color: #7b8794;
 }
 
 .media-inline-row {
