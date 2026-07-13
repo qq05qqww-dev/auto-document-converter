@@ -1,3 +1,4 @@
+<!-- 第 018-160 批：媒體上傳小姐下拉顯示上傳狀態與圖片影片數量版 -->
 <!-- 第 018-159 批：國籍姓名分隔符辨識＋身材後年齡解析修正版 -->
 <!-- 第 018-158 批：文件2保留奶洗／帶套做＋買送方案最長語意去重版 -->
 <!-- 第 018-157 批：服務同義詞逐行最長優先避免短規則重複套用版 -->
@@ -1347,9 +1348,12 @@
               <select v-model="mediaUploadLadyId">
                 <option value="">請選擇小姐</option>
                 <option v-for="lady in mediaUploadLadyOptions" :key="lady.id" :value="lady.id">
-                  【{{ lady.country }} {{ lady.name }}】
+                  {{ getMediaUploadLadyOptionLabel(lady) }}
                 </option>
               </select>
+              <span v-if="mediaUploadSelectedLadyStatusText" class="media-lady-select-hint">
+                {{ mediaUploadSelectedLadyStatusText }}
+              </span>
             </label>
 
             <div
@@ -1702,6 +1706,12 @@ const selectedUploadLadyMedia = computed(() => {
   return Array.isArray(lady?.media)
     ? lady.media.filter(media => media?.url)
     : []
+})
+
+const mediaUploadSelectedLadyStatusText = computed(() => {
+  const lady = mediaUploadSelectedLady.value
+  if (!lady) return ''
+  return getMediaUploadLadyStatusText(lady)
 })
 const confirmedText = ref('')
 const statusMessage = ref('等待貼上資料。')
@@ -4349,6 +4359,28 @@ function getLadyCoverMedia(lady) {
 
 function getLadyMediaCount(lady) {
   return Array.isArray(lady?.media) ? lady.media.length : 0
+}
+
+function getLadyMediaImageCount(lady) {
+  return getLadyImageMedia(lady).length
+}
+
+function getLadyMediaVideoCount(lady) {
+  return getLadyVideoMedia(lady).length
+}
+
+function getMediaUploadLadyStatusText(lady) {
+  const imageCount = getLadyMediaImageCount(lady)
+  const videoCount = getLadyMediaVideoCount(lady)
+  const total = imageCount + videoCount
+  return `${total > 0 ? '已上傳' : '未上傳'}｜圖片 ${imageCount}｜影片 ${videoCount}`
+}
+
+function getMediaUploadLadyOptionLabel(lady) {
+  const country = String(lady?.country || '').trim()
+  const name = String(lady?.name || '').trim()
+  const title = [country, name].filter(Boolean).join(' ') || '未命名小姐'
+  return `【${title}】 ${getMediaUploadLadyStatusText(lady)}`
 }
 
 function getMediaDisplayName(media, lady) {
@@ -11730,6 +11762,20 @@ select:focus, input:focus, textarea:focus {
 
 .media-lady-select {
   width: 100%;
+}
+
+.media-lady-select-hint {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  max-width: 100%;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: #eef6ff;
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.3;
 }
 
 .media-inline-row {
