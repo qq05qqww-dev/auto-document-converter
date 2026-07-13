@@ -1,3 +1,4 @@
+<!-- 第 018-162 批：文件1貼上自動留兩行＋情趣用品明確加價保留版 -->
 <!-- 第 018-161 批：媒體上傳下拉本次已上傳排序＋名稱固定寬度對齊圖片影片數量版 -->
 <!-- 第 018-157 批：服務同義詞逐行最長優先避免短規則重複套用版 -->
 <!-- 第 018-156 批：同義詞來源內嵌金額保留＋分鐘加價不重複累加修正版 -->
@@ -18,6 +19,7 @@
 <!-- 第 018-126 批：中央媒體來源統一與前後台數量同步修正版（依第 018-125 批延續） -->
 <template>
   <!-- 第 018-109 批：待上傳縮圖區禁止拖放版 -->
+  <!-- batch018-162-source-paste-two-blank-lines-and-keep-paid-toy -->
   <!-- batch018-161-media-upload-session-status-align-counts -->
   <!-- batch018-157-alias-line-longest-match-once -->
   <!-- batch018-156-alias-embedded-amount-minute-add-no-double-stack -->
@@ -929,7 +931,7 @@
           class="work-textarea"
           placeholder="請貼上店家最新資訊。系統會先清掉符號，再抓國籍+小姐名或小姐名+國籍。"
           @input="normalizeSourceSlashSpaces"
-          @paste="normalizeSourceSlashSpaces"
+          @paste="handleSourceTextPaste"
         ></textarea>
 
         <div class="button-row">
@@ -1575,6 +1577,7 @@ const CLEAN_START_PANEL_STORAGE_KEY = 'auto-document-converter-clean-start-panel
 const ONLINE_READY_VERSION_LABEL = '第 018-126 批：中央媒體來源統一與前後台數量同步修正版'
 const PROTECTED_GLOBAL_RULE_NOTICE = '公版規則已固定保護，不會被清除；若遺失會自動補回預設公版。'
 const SOURCE_SLASH_SPACE_NOTICE = '文件1已啟用斜線自動轉空格，貼上後 / 與 ／ 會自動變成空格。'
+const SOURCE_PASTE_TWO_BLANK_LINES_NOTICE = '文件1貼上後已自動在底部保留兩行空白，方便直接接著貼下一筆資料。'
 const STAFF_PROFILE_STORAGE_KEY = 'auto-document-converter-current-staff-profile'
 const STAFF_DEFAULT_NAME = '未登入使用者'
 const ONLINE_OPTIONS_SCOPE = { city: '__OPTIONS__', district: '__OPTIONS__', mode: '定點', room: '__OPTIONS__' }
@@ -1591,6 +1594,23 @@ function normalizeSourceSlashSpaces() {
     sourceText.value = normalized
     statusMessage.value = SOURCE_SLASH_SPACE_NOTICE
   }
+}
+
+function normalizeSourceTextAfterPaste(text = '') {
+  const normalized = normalizeSourceTextSlashes(text)
+    .replace(/\r\n?/g, '\n')
+    .replace(/[ \t]+$/gm, '')
+  return ensureSourceTextBottomBlankLines(normalized)
+}
+
+function handleSourceTextPaste() {
+  window.setTimeout(() => {
+    const normalized = normalizeSourceTextAfterPaste(sourceText.value)
+    if (normalized !== sourceText.value) {
+      sourceText.value = normalized
+      statusMessage.value = SOURCE_PASTE_TWO_BLANK_LINES_NOTICE
+    }
+  }, 0)
 }
 
 const LEGACY_RULE_STORAGE_KEYS = [
@@ -6291,6 +6311,35 @@ function convertText() {
   statusMessage.value = `已產生 ${completeRecords.length} 筆固定格式；文件1符號已清理。`
 }
 
+function shouldKeepExplicitPaidServiceWhenCleaning(word = '') {
+  const normalized = normalizeServiceAliasMatchText(word)
+  if (!normalized) return false
+
+  // 第 018-162 批：不想出現文字裡若因「情趣用品/客自帶-新」被拆出「情趣用品」，
+  // 遇到文件1明確寫「情趣用品+500」時，不能把服務名稱清掉只剩「+500」。
+  const protectedPaidServiceWords = [
+    '情趣用品',
+    '自慰秀',
+    '艷舞',
+    '豔舞',
+    '口爆',
+    '吞精',
+    '顏射',
+    '清槍',
+    '絲襪',
+    '後門',
+    '攝影不露臉',
+    '攝影露臉',
+    '無套內射',
+    '無套外射',
+    '高跟鞋',
+    '2S',
+    '2s'
+  ].map(item => normalizeServiceAliasMatchText(item))
+
+  return protectedPaidServiceWords.includes(normalized)
+}
+
 function cleanupSourceText(text) {
   let cleaned = normalizeDigits(String(text || ''))
 
@@ -6307,7 +6356,17 @@ function cleanupSourceText(text) {
     .sort((a, b) => b.length - a.length)
     .forEach(word => {
       if (!word || isUnsafeNumericCleanupToken(word)) return
-      cleaned = cleaned.replace(new RegExp(escapeRegExp(word), 'g'), '')
+
+      const pattern = new RegExp(escapeRegExp(word), 'g')
+      if (shouldKeepExplicitPaidServiceWhenCleaning(word)) {
+        cleaned = cleaned.replace(pattern, (matchedWord, offset, fullText) => {
+          const tail = String(fullText || '').slice(offset + String(matchedWord || '').length, offset + String(matchedWord || '').length + 16)
+          return /^\s*(?:\+|加)\s*\d{2,5}/.test(tail) ? matchedWord : ''
+        })
+        return
+      }
+
+      cleaned = cleaned.replace(pattern, '')
     })
 
   const normalizedLines = cleaned
