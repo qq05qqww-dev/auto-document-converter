@@ -1,4 +1,4 @@
-<!-- 第 018-172 批：泰國洗誤切小姐＋底價在前後格式＋不完整小姐保留預覽修正版 -->
+<!-- 第 018-173 批：全半形統一＋分隔金額＋胸圍罩杯身材辨識修正版 -->
 <!-- batch018-172-thai-wash-header-bottom-price-incomplete-record-fix -->
 <!-- 第 018-170 批：金額在前空格方案辨識修正版 -->
 <!-- batch018-170-amount-first-space-price-plan -->
@@ -1577,6 +1577,7 @@
 <!-- batch018-120-sync-id-backfill-media-upload-fix -->
 <!-- batch018-138-central-direct-media-upload-bind-fix -->
 <script setup>
+// batch018-173-full-half-width-spaced-amount-bra-size-body-fix
 // batch018-171-room-daily-document-media-status
 // batch018-148-explicit-addon-amount-cleanup-alias-fix
 // batch018-140-individual-setting-save-buttons
@@ -7303,6 +7304,21 @@ function parseBody(text) {
   }
 
   for (const line of lines) {
+    // 第 018-173 批：支援內衣胸圍數字黏在罩杯前面的寫法。
+    // 例：166 46 真奶34D 22y、166 46 34D 22歲。
+    // 34 是胸圍尺寸，文件2只取罩杯 D；不可因此整行判定為缺少身材。
+    const spacedBraSizeBodyMatch = line.match(
+      /^\s*(\d{3})\s+(\d{2})\s+(?:(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)\s*)?(?:奶|罩杯|胸)?\s*(?:\d{2,3}\s*)?([A-Za-z])\s*(?:奶|杯)?\s*(?:(\d{2})\s*(?:歲|y|Y))?/
+    )
+    if (spacedBraSizeBodyMatch) {
+      return {
+        height: spacedBraSizeBodyMatch[1],
+        weight: spacedBraSizeBodyMatch[2],
+        cup: spacedBraSizeBodyMatch[3].toUpperCase(),
+        age: spacedBraSizeBodyMatch[4] ? `${spacedBraSizeBodyMatch[4]}y` : ''
+      }
+    }
+
     // 第 018-149 批：支援「158 47 20 E」＝身高 158、體重 47、年齡 20、罩杯 E。
     // 第三個兩位數位於體重與罩杯之間時，視為明確年齡，不再被舊版略過。
     const spacedBodyWithAgeMatch = line.match(/^\s*(\d{3})\s+(\d{2})\s+(\d{2})\s+(?:(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)\s*)?([A-Za-z])\s*(?:奶|杯)?/)
@@ -8016,8 +8032,9 @@ function syncPromotionComboServicesWithSource(found, block, explicitAliasMatches
 // 舊版把整個區塊所有空白移除，會讓「絲襪+100」下一行的「0.01套子+100」
 // 黏成「絲襪+1000.01套子+100」，因此誤抓成 1000。
 function normalizeServiceAmountMatchText(text) {
-  return normalizeDigits(String(text || ''))
-    .normalize('NFKC')
+  // 第 018-173 批：先把「5 0 0／1 0 0 0」合併回 500／1000，
+  // 再保留原本的換行邊界，避免只抓到第一位數而輸出成 +5。
+  return collapseSpacedSingleDigitAmounts(normalizeDigits(String(text || '')))
     .toLowerCase()
     .replace(/[＋]/g, '+')
     .replace(/[／]/g, '/')
@@ -8367,7 +8384,21 @@ function cleanName(value) {
 
 
 function normalizeDigits(text) {
-  return String(text).replace(/０/g, '0').replace(/１/g, '1').replace(/２/g, '2').replace(/３/g, '3').replace(/４/g, '4').replace(/５/g, '5').replace(/６/g, '6').replace(/７/g, '7').replace(/８/g, '8').replace(/９/g, '9')
+  // 第 018-173 批：解析前統一全形／半形。
+  // NFKC 會把全形英數、＋、／、括號等常見輸入轉成半形，
+  // 讓身材、價格、節數與加值服務共用同一套判斷。
+  return String(text ?? '')
+    .normalize('NFKC')
+    .replace(/[０-９]/g, char => String(char.charCodeAt(0) - 0xFF10))
+}
+
+function collapseSpacedSingleDigitAmounts(text) {
+  // 店家常把金額貼成「5 0 0」「1 0 0 0」。
+  // 只合併 3～5 個『單一數字』組成的群組，不合併 166 46、500 60 等正常欄位。
+  return String(text ?? '').replace(
+    /(^|[^0-9])([0-9](?:[ \t]+[0-9]){2,4})(?=$|[^0-9])/g,
+    (match, prefix, spacedDigits) => `${prefix}${spacedDigits.replace(/[ \t]+/g, '')}`
+  )
 }
 
 function shouldPreferNoFacePhotography(text) {
