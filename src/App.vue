@@ -1,3 +1,4 @@
+<!-- 第 018-174 批：點號連寫身材＋34D胸圍罩杯辨識修正版 -->
 <!-- 第 018-173 批：全半形統一＋分隔金額＋胸圍罩杯身材辨識修正版 -->
 <!-- batch018-172-thai-wash-header-bottom-price-incomplete-record-fix -->
 <!-- 第 018-170 批：金額在前空格方案辨識修正版 -->
@@ -1577,6 +1578,7 @@
 <!-- batch018-120-sync-id-backfill-media-upload-fix -->
 <!-- batch018-138-central-direct-media-upload-bind-fix -->
 <script setup>
+// batch018-174-dot-delimited-bra-size-body-age-fix
 // batch018-173-full-half-width-spaced-amount-bra-size-body-fix
 // batch018-171-room-daily-document-media-status
 // batch018-148-explicit-addon-amount-cleanup-alias-fix
@@ -7282,6 +7284,21 @@ function parseBody(text) {
   // 年齡只能從明確有「歲 / y」的文字取得。
   // 不能從下一行價格 2000/40/1S 誤抓成 20y，也不能從 1100/40/0.5 誤抓成 11y。
   for (const line of lines) {
+    // 第 018-174 批：支援身材欄位用點號／斜線連寫，且罩杯前帶內衣胸圍尺寸。
+    // 例：166.46.真奶34D.22y、166／46／真奶34Ｄ／22歲。
+    // 34 是內衣胸圍尺寸，文件2只取 D；點號只是欄位分隔，不可因此判定缺少身材。
+    const delimitedBraSizeBodyMatch = line.match(
+      /^\s*(\d{3})\s*[\/.．。·・,，:：_-]\s*(\d{2})\s*[\/.．。·・,，:：_-]\s*(?:(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)\s*)?(?:奶|罩杯|胸)?\s*(?:\d{2,3}\s*)?([A-Za-z])\s*(?:奶|杯)?(?:\s*[\/.．。·・,，:：_-]\s*|\s+)?(?:(\d{2})\s*(?:歲|y|Y))?(?=\s|$)/
+    )
+    if (delimitedBraSizeBodyMatch) {
+      return {
+        height: delimitedBraSizeBodyMatch[1],
+        weight: delimitedBraSizeBodyMatch[2],
+        cup: delimitedBraSizeBodyMatch[3].toUpperCase(),
+        age: delimitedBraSizeBodyMatch[4] ? `${delimitedBraSizeBodyMatch[4]}y` : ''
+      }
+    }
+
     const ageFirstMatch = line.match(/(\d{2})\s*(?:歲|y|Y)\s*[.．\s]*\s*(\d{3})\s*[\/.．]\s*(\d{2})\s*[\/.．]?\s*(?:\d{2})?\s*(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)?([A-Za-z])\s*(?:奶|杯)?/)
     if (ageFirstMatch) {
       return {
