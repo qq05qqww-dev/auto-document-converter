@@ -1,3 +1,10 @@
+<!-- 第 018-169 批：姓名＋馬來西亞標題強制辨識與文件1切筆回歸修正版 -->
+<!-- batch018-169-strict-name-country-header-fallback -->
+<!-- 第 018-168 批：員工服務同義詞最後輸入優先＋優惠組合避免重複漏抓版 -->
+<!-- 第 018-167 批：攝影原意保留＋入珠客加價完整保留版 -->
+<!-- 第 018-166 批：雙飛搭配小姐名稱保留與格式統一版 -->
+<!-- 第 018-165 批：獨立國籍行切筆＋空格分鐘價格加價修正版 -->
+<!-- 第 018-163 批：入珠明確加價保留並輸出文件2修正版 -->
 <!-- 第 018-162 批：文件1貼上自動留兩行＋情趣用品明確加價保留版 -->
 <!-- 第 018-161 批：媒體上傳下拉本次已上傳排序＋名稱固定寬度對齊圖片影片數量版 -->
 <!-- 第 018-157 批：服務同義詞逐行最長優先避免短規則重複套用版 -->
@@ -19,6 +26,8 @@
 <!-- 第 018-126 批：中央媒體來源統一與前後台數量同步修正版（依第 018-125 批延續） -->
 <template>
   <!-- 第 018-109 批：待上傳縮圖區禁止拖放版 -->
+  <!-- batch018-167-keep-generic-photography-and-paid-bead-customer -->
+  <!-- batch018-163-keep-explicit-paid-bead-service -->
   <!-- batch018-162-source-paste-two-blank-lines-and-keep-paid-toy -->
   <!-- batch018-161-media-upload-session-status-align-counts -->
   <!-- batch018-157-alias-line-longest-match-once -->
@@ -2432,9 +2441,9 @@ const defaultServiceOrder = [
   '舔蛋', '按摩', '舌吻', '冰火', '毒龍', '波推', '胸推', '臀推',
   '桑拿', '調情', '漫遊', '0.01套+100', '0.02套', '絲襪',
   '情趣用品', '自慰秀', '2S+500', '2S+1000', '口爆+500',
-  '吞精+500', '吞精+1000', '顏射+500', '自慰秀+500',
+  '吞精+500', '吞精+1000', '顏射+500', '入珠+500', '入珠客+500', '自慰秀+500',
   '情趣用品+500', '艷舞', '豔舞', '艷舞+500', '無套內射+1000', '無套內射+1500',
-  '無套外射+1000', '後門+1000', '攝影不露臉+1000',
+  '無套外射+1000', '後門+1000', '攝影+1000', '攝影不露臉+1000',
   '絲襪+100', '高跟鞋', '2節3S', '3節送1節200分',
   '3節送1節200分3S', '5節送3節200分', '5節送3節400分',
   '3+1', '2+1',
@@ -2488,6 +2497,8 @@ const defaultAliasRules = [
   '吞精+1000=吞精+1000',
   '顏射+500=顏射+500',
   '射顏+500=顏射+500',
+  '入珠+500=入珠+500',
+  '入珠客+500=入珠客+500',
   '情趣用品=情趣用品',
   '免費情趣用品=情趣用品',
   '情趣用品+500=情趣用品+500',
@@ -2570,7 +2581,7 @@ const defaultAliasRules = [
   '攝影不露臉+1000=攝影不露臉+1000',
   '不露臉攝影+1000=攝影不露臉+1000',
   '攝影露臉+1000=攝影露臉+1000',
-  '攝影+1000=攝影露臉+1000',
+  '攝影+1000=攝影+1000',
   '深喉嚨=深喉嚨',
   '深喉咙=深喉嚨',
   '深喉=深喉嚨',
@@ -2716,7 +2727,7 @@ const defaultRemoveWords = [
   '健康膚色.無生過.藝術刺青.無牙套.有修毛',
 ]
 
-const defaultExtraKeep = ['吞精+1000', '無套內射+1000', '後門+1000', '高跟鞋', '雙飛', '2+1', '攝影不露臉+1000', '攝影露臉+1000', '深喉嚨', '豪邁吃屌', '不嫌視野愛愛']
+const defaultExtraKeep = ['吞精+1000', '入珠客+500', '無套內射+1000', '後門+1000', '高跟鞋', '雙飛', '2+1', '攝影+1000', '攝影不露臉+1000', '攝影露臉+1000', '深喉嚨', '豪邁吃屌', '不嫌視野愛愛']
 
 const defaultCountryFieldRules = [
   '國家:馬來=馬來',
@@ -6325,9 +6336,12 @@ function shouldKeepExplicitPaidServiceWhenCleaning(word = '') {
     '口爆',
     '吞精',
     '顏射',
+    '入珠',
+    '入珠客',
     '清槍',
     '絲襪',
     '後門',
+    '攝影',
     '攝影不露臉',
     '攝影露臉',
     '無套內射',
@@ -6340,6 +6354,61 @@ function shouldKeepExplicitPaidServiceWhenCleaning(word = '') {
   return protectedPaidServiceWords.includes(normalized)
 }
 
+// 第 018-166 批：店家常把可搭配的雙飛對象寫成「雙飛琳琳 / 雙飛 琳琳 / 雙飛/琳琳」。
+// 清理文件1時不能只刪掉「雙飛」而留下孤立姓名；統一保留成「雙飛：琳琳」。
+function normalizeDoubleFlyPartnerName(value = '') {
+  const name = String(value || '')
+    .replace(/^[\s\/:：\-－]+|[\s\/:：\-－]+$/g, '')
+    .trim()
+
+  if (!name) return ''
+  if (name.length > 12) return ''
+  if (!/^[\u4e00-\u9fa5A-Za-z0-9]+$/.test(name)) return ''
+  if (/^\d+(?:s|S)?$/.test(name)) return ''
+  if (extractStandaloneCountryFromLine(name)) return ''
+  if (isNotHeaderLine(name)) return ''
+
+  return name
+}
+
+function replaceDoubleFlyPartnerPhrases(text = '', replacer = null) {
+  const pattern = /(?:可以搭配|可搭配)?雙飛[ \t]*(?:[\/:：\-－][ \t]*)?([\u4e00-\u9fa5A-Za-z0-9]{1,12})/g
+
+  return String(text || '').replace(pattern, (matched, rawName) => {
+    const name = normalizeDoubleFlyPartnerName(rawName)
+    if (!name) return matched
+    return typeof replacer === 'function' ? replacer(name, matched) : `雙飛：${name}`
+  })
+}
+
+function protectDoubleFlyPartnerPhrases(text = '') {
+  const protectedItems = []
+  const protectedText = replaceDoubleFlyPartnerPhrases(text, name => {
+    const placeholder = `DOUBLEFLYPAIR${protectedItems.length}TOKEN`
+    protectedItems.push({ placeholder, value: `雙飛：${name}` })
+    return placeholder
+  })
+
+  return { protectedText, protectedItems }
+}
+
+function restoreDoubleFlyPartnerPhrases(text = '', protectedItems = []) {
+  let restored = String(text || '')
+  protectedItems.forEach(item => {
+    restored = restored.replace(new RegExp(escapeRegExp(item.placeholder), 'g'), item.value)
+  })
+  return restored
+}
+
+function extractDoubleFlyPartnerServices(text = '') {
+  const partners = []
+  replaceDoubleFlyPartnerPhrases(text, name => {
+    if (!partners.includes(name)) partners.push(name)
+    return `雙飛：${name}`
+  })
+  return partners.map(name => `雙飛：${name}`)
+}
+
 function cleanupSourceText(text) {
   let cleaned = normalizeDigits(String(text || ''))
 
@@ -6348,6 +6417,11 @@ function cleanupSourceText(text) {
     .replace(/[／]/g, '/')
     .replace(/[：]/g, ':')
     .replace(/[ \t]+/g, ' ')
+
+  // 第 018-166 批：先把「雙飛＋搭配小姐名」換成暫存標記，避免不想出現文字中的
+  // 「雙飛 / 可以搭配雙飛 / 可搭配」把關係詞刪掉後，只剩一個孤立小姐名。
+  const doubleFlyProtection = protectDoubleFlyPartnerPhrases(cleaned)
+  cleaned = doubleFlyProtection.protectedText
 
   // 第 018-148 批：不想出現文字改成逐行／逗號／斜線解析，禁止把句子中的空格拆成獨立數字。
   // 舊版使用 parseList() 會把「仟色好評截圖 退 100」拆成「100」，
@@ -6360,7 +6434,16 @@ function cleanupSourceText(text) {
       const pattern = new RegExp(escapeRegExp(word), 'g')
       if (shouldKeepExplicitPaidServiceWhenCleaning(word)) {
         cleaned = cleaned.replace(pattern, (matchedWord, offset, fullText) => {
-          const tail = String(fullText || '').slice(offset + String(matchedWord || '').length, offset + String(matchedWord || '').length + 16)
+          const tail = String(fullText || '').slice(offset + String(matchedWord || '').length, offset + String(matchedWord || '').length + 20)
+          const normalizedCleanupWord = normalizeServiceAliasMatchText(word)
+
+          // 第 018-167 批：「入珠客+500」是完整的加價條件，不能因清理字詞「入珠」
+          // 被截成「客+500」。只有後方明確帶 +金額 時才保留，拒絕／禁止入珠客仍照常清除。
+          if (normalizedCleanupWord === normalizeServiceAliasMatchText('入珠')
+            && /^\s*客\s*(?:\+|加)\s*\d{2,5}/.test(tail)) {
+            return matchedWord
+          }
+
           return /^\s*(?:\+|加)\s*\d{2,5}/.test(tail) ? matchedWord : ''
         })
         return
@@ -6368,6 +6451,8 @@ function cleanupSourceText(text) {
 
       cleaned = cleaned.replace(pattern, '')
     })
+
+  cleaned = restoreDoubleFlyPartnerPhrases(cleaned, doubleFlyProtection.protectedItems)
 
   const normalizedLines = cleaned
     .split('\n')
@@ -6427,30 +6512,29 @@ function splitBlocks(text) {
   const lines = String(text || '').split('\n')
   const startIndexes = []
 
+  // 第 018-164 批：同一份文件可能同時包含：
+  // 1.「嫩p 越南」這種姓名＋國籍同一行。
+  // 2.「萌喵喵」下一行才寫「越南」的姓名／國籍分行格式。
+  // 舊版只要先找到第 1 種，就完全不再掃描純姓名起點，導致第 2 位小姐被併入上一筆。
   lines.forEach((line, index) => {
     const normalizedLine = normalizeThaiCountryHeaderLine(line)
-    if (parseHeaderLine(normalizedLine)) startIndexes.push(index)
+    // 第 018-169 批：標準規則若因員工／機房自訂規則誤把「妮妮 馬來西亞」
+    // 判成非標題，仍以固定國籍清單做第二層結構辨識，避免整份文件切出 0 筆。
+    const hasCountryHeader = Boolean(
+      parseHeaderLine(normalizedLine) || parseStrictNameCountryHeaderLine(normalizedLine)
+    )
+    const hasNameOnlyHeader = !hasCountryHeader
+      && isNameOnlyHeaderLine(line)
+      && looksLikeNameOnlyRecordStart(lines, index)
+
+    if (hasCountryHeader || hasNameOnlyHeader) startIndexes.push(index)
   })
 
-  if (startIndexes.length) {
-    return startIndexes
+  const uniqueStartIndexes = Array.from(new Set(startIndexes)).sort((a, b) => a - b)
+  if (uniqueStartIndexes.length) {
+    return uniqueStartIndexes
       .map((startIndex, index) => {
-        const endIndex = index + 1 < startIndexes.length ? startIndexes[index + 1] : lines.length
-        return lines.slice(startIndex, endIndex).join('\n').trim()
-      })
-      .filter(Boolean)
-  }
-
-  // 如果整份沒有國籍，改用「純小姐名」切筆，並在解析時自動補馬來。
-  const nameOnlyIndexes = []
-  lines.forEach((line, index) => {
-    if (isNameOnlyHeaderLine(line) && looksLikeNameOnlyRecordStart(lines, index)) nameOnlyIndexes.push(index)
-  })
-
-  if (nameOnlyIndexes.length) {
-    return nameOnlyIndexes
-      .map((startIndex, index) => {
-        const endIndex = index + 1 < nameOnlyIndexes.length ? nameOnlyIndexes[index + 1] : lines.length
+        const endIndex = index + 1 < uniqueStartIndexes.length ? uniqueStartIndexes[index + 1] : lines.length
         return lines.slice(startIndex, endIndex).join('\n').trim()
       })
       .filter(block => hasMinimumRecordFields(block) || !!parseNameOnlyRecord(block))
@@ -6473,8 +6557,30 @@ function normalizeThaiCountryHeaderLine(line) {
 
 
 function looksLikeNameOnlyRecordStart(lines, index) {
-  const preview = lines.slice(index, index + 10).join('\n')
-  return !!parseBody(preview) && parsePrices(preview, 0).length > 0
+  // 第 018-164 批：純姓名起點必須在很近的位置接到「國籍（可省略）→ 身材 → 價格」。
+  // 避免服務文字剛好位於下一位小姐前方時，被錯當成新的小姐姓名。
+  const followingLines = lines
+    .slice(index + 1, index + 9)
+    .map(line => String(line || '').trim())
+    .filter(Boolean)
+
+  let bodyIndex = -1
+  for (let offset = 0; offset < Math.min(followingLines.length, 4); offset += 1) {
+    const candidate = followingLines[offset]
+    if (parseBody(candidate)) {
+      bodyIndex = offset
+      break
+    }
+
+    const allowedBeforeBody = Boolean(extractStandaloneCountryFromLine(candidate))
+      || /^(?:\d{2}\s*(?:歲|y|Y))$/.test(normalizeDigits(candidate))
+    if (!allowedBeforeBody) return false
+  }
+
+  if (bodyIndex < 0) return false
+
+  const pricePreview = followingLines.slice(bodyIndex + 1, bodyIndex + 5).join('\n')
+  return parsePrices(pricePreview, 0).length > 0
 }
 
 function isNameOnlyHeaderLine(line) {
@@ -6483,6 +6589,10 @@ function isNameOnlyHeaderLine(line) {
 
   // 有國籍的仍交給 parseHeaderLine，不走無國籍邏輯。
   if (parseHeaderLine(cleaned)) return false
+
+  // 第 018-165 批：獨立一行的國籍只是上一行小姐姓名的補充欄位，不能再被當成下一位小姐姓名。
+  // 例：萌喵喵 / 越南 / 160 44 真D 19y，必須維持同一筆「越南 萌喵喵」。
+  if (extractStandaloneCountryFromLine(cleaned)) return false
 
   if (cleaned.length > 18) return false
   if (/^\d+$/.test(cleaned)) return false
@@ -6562,6 +6672,18 @@ function parseRecord(block) {
   return `${title}  ${analyzed.prices.join('  ')}\n${analyzed.services.join(' ')}`
 }
 
+function extractStandaloneCountryFromLine(line) {
+  const compact = normalizeHeaderText(line).replace(/\s+/g, '')
+  if (!compact) return ''
+
+  const countries = getCountryKeys().sort((a, b) => b.length - a.length)
+  const matchedCountry = countries.find(country => (
+    compact === normalizeHeaderText(country).replace(/\s+/g, '')
+  ))
+
+  return matchedCountry ? normalizeCountry(matchedCountry) : ''
+}
+
 function extractCountryFromBlock(block) {
   const text = String(block || '')
 
@@ -6574,7 +6696,20 @@ function extractCountryFromBlock(block) {
   }
 
   const match = text.match(/(?:國家|國籍)\s*[:：]?\s*(馬來西亞|馬來|越南|港澳|台灣|台妹|泰國|泰妹|日本|韓國|外籍)/)
-  return match ? normalizeCountry(match[1]) : ''
+  if (match) return normalizeCountry(match[1])
+
+  // 第 018-164 批：支援姓名與國籍分成兩行，例如：
+  // 萌喵喵
+  // 越南
+  // 160 44 真D 19y
+  // 只接受整行完全等於國籍，避免從服務內容誤抓國籍。
+  const standaloneCountry = text
+    .split(/\r?\n/)
+    .slice(0, 10)
+    .map(extractStandaloneCountryFromLine)
+    .find(Boolean)
+
+  return standaloneCountry || ''
 }
 
 
@@ -6585,7 +6720,7 @@ function parseNameOnlyRecord(block) {
     if (!isNameOnlyHeaderLine(line)) continue
 
     return {
-      country: '馬來',
+      country: extractCountryFromBlock(block) || '馬來',
       name: cleanName(line)
     }
   }
@@ -6597,7 +6732,8 @@ function findHeaderInBlock(block) {
   const lines = String(block || '').split('\n')
 
   for (const line of lines.slice(0, 12)) {
-    const header = parseHeaderLine(normalizeThaiCountryHeaderLine(line))
+    const normalizedLine = normalizeThaiCountryHeaderLine(line)
+    const header = parseHeaderLine(normalizedLine) || parseStrictNameCountryHeaderLine(normalizedLine)
     if (header) return header
   }
 
@@ -6632,6 +6768,90 @@ function extractAgeFromHeaderLines(block, header, country = '') {
 }
 
 
+
+function getStrictBuiltInCountryAliases() {
+  const aliases = new Map()
+
+  defaultCountryAliases.forEach(line => {
+    const [from, to] = String(line || '').split('=').map(item => item.trim())
+    if (from && to) aliases.set(from, to)
+  })
+
+  // 固定保底，不受目前員工補充規則、機房規則或誤填的「不要誤判成小姐名」影響。
+  ;[
+    ['馬來西亞', '馬來'],
+    ['馬來', '馬來'],
+    ['越南', '越南'],
+    ['泰國', '泰妹'],
+    ['泰妹', '泰妹'],
+    ['台灣', '台妹'],
+    ['台妹', '台妹'],
+    ['港澳', '港澳'],
+    ['日本', '日本'],
+    ['韓國', '韓國'],
+    ['外籍', '外籍']
+  ].forEach(([from, to]) => {
+    if (!aliases.has(from)) aliases.set(from, to)
+  })
+
+  return aliases
+}
+
+function isStrictHeaderNameCandidate(value) {
+  const name = cleanName(value)
+  if (!name || name.length > 18 || /^\d+$/.test(name)) return false
+
+  // 這層保底只排除明確不可能是姓名的結構，不讀取使用者自訂 notNameWordsText，
+  // 避免自訂規則誤傷正常小姐名。
+  if (/\d{3}\s*[/ .．]?\s*\d{2}/.test(name)) return false
+  if (/\d{3,5}(?:元)?$/.test(name)) return false
+  if (/^(?:分|分鐘|回|歲|奶|杯|國家|國籍|服務|套餐|超值|升級|底單|最低|請自備|禁止|備註)$/.test(name)) return false
+  if (/(?:共浴|無套吹|品鮑|按摩|舌吻|口爆|吞精|顏射|自慰|雙飛|攝影|買\d|送\d|\d+s)/i.test(name)) return false
+
+  return /^[\u4e00-\u9fa5A-Za-z0-9]+$/.test(name)
+}
+
+function parseStrictNameCountryHeaderLine(line) {
+  const cleaned = normalizeHeaderText(line)
+  if (!cleaned) return null
+
+  const aliases = getStrictBuiltInCountryAliases()
+  const countries = Array.from(aliases.keys()).sort((a, b) => b.length - a.length)
+  const tokens = cleaned.split(/\s+/).filter(Boolean)
+  const compact = cleaned.replace(/\s+/g, '')
+
+  for (const country of countries) {
+    const fixedCountry = aliases.get(country) || country
+    const exactIndex = tokens.findIndex(token => token === country)
+
+    if (exactIndex !== -1) {
+      const before = tokens.slice(0, exactIndex).join('')
+      const after = tokens.slice(exactIndex + 1).join('')
+      const candidates = [before, after]
+      for (const candidate of candidates) {
+        if (isStrictHeaderNameCandidate(candidate)) {
+          return { country: normalizeCountry(fixedCountry), name: cleanName(candidate) }
+        }
+      }
+    }
+
+    if (compact.startsWith(country)) {
+      const candidate = compact.slice(country.length)
+      if (isStrictHeaderNameCandidate(candidate)) {
+        return { country: normalizeCountry(fixedCountry), name: cleanName(candidate) }
+      }
+    }
+
+    if (compact.endsWith(country)) {
+      const candidate = compact.slice(0, compact.length - country.length)
+      if (isStrictHeaderNameCandidate(candidate)) {
+        return { country: normalizeCountry(fixedCountry), name: cleanName(candidate) }
+      }
+    }
+  }
+
+  return null
+}
 
 function parseHeaderLine(line) {
   const cleaned = normalizeHeaderText(line)
@@ -6938,7 +7158,7 @@ function parsePrices(text, increase) {
   const seen = new Set()
   const lines = normalizeDigits(String(text || '')).split('\n')
 
-  const pushPrice = (minutes, sessionCount, amount) => {
+  const pushPrice = (minutes, sessionCount, amount, options = {}) => {
     const min = Number(minutes)
     const sessionLabel = normalizePriceSessionLabel(sessionCount || '1S')
     const rawAmount = Number(amount || 0)
@@ -6952,11 +7172,15 @@ function parsePrices(text, increase) {
     if (seen.has(key)) return
     seen.add(key)
 
+    const finalAmount = options.keepRawAmount
+      ? rawAmount
+      : resolveFinalAmountWithMinuteRule(rawAmount, increase, min)
+
     results.push({
       minutes: min,
       sessionSort: getPriceSessionSortValue(sessionLabel),
       sessionLabel,
-      text: `${formatAmount(resolveFinalAmountWithMinuteRule(rawAmount, increase, min))}/${min}/${sessionLabel}`
+      text: `${formatAmount(finalAmount)}/${min}/${sessionLabel}`
     })
   }
 
@@ -6966,6 +7190,26 @@ function parsePrices(text, increase) {
       .replace(/[／]/g, '/')
       .replace(/　/g, ' ')
       .trim()
+
+    // 第 018-164 批：支援只有空格、未寫「分／分鐘」的正式價格。
+    // 例：30 2500 → 2.5K/30/1S；50 2800 → 2.8K/50/1S。
+    // 也支援 30 1S 2500、30 2500 1S；整行必須只有分鐘、金額與可選節數，
+    // 避免把身高體重或其他服務數字誤判為價格。
+    const plainMinuteAmountMatch = normalized.match(
+      /^(\d{2,3})\s+(?:(NS|N\s*\/?\s*S|\d+\s*S)\s+)?([0-9]{3,5})(?:\s+(NS|N\s*\/?\s*S|\d+\s*S))?$/i
+    )
+    if (plainMinuteAmountMatch) {
+      const minutes = Number(plainMinuteAmountMatch[1])
+      const sessionCount = plainMinuteAmountMatch[2] || plainMinuteAmountMatch[4] || '1S'
+      const amount = Number(plainMinuteAmountMatch[3])
+
+      if (minutes >= 10 && minutes <= 180 && amount >= 1000) {
+        // 第 018-165 批：這種「分鐘 金額」只是另一種底價寫法，仍必須套用目前的國籍／固定加價與金額轉換規則。
+        // 例：越南 +500，30 2500 → 3K/30/1S；50 2800 → 3.3K/50/1S。
+        pushPrice(minutes, sessionCount, amount)
+        return
+      }
+    }
 
     // 第 018-77 批：
     // 支援店家常見寫法：
@@ -7136,25 +7380,40 @@ function extractServices(block) {
   const extra = parseList(extraKeepText.value)
   const searchableBlock = normalizeServiceAliasMatchText(block)
   const explicitPaidAliasOutputs = new Set()
+  const explicitPromotionAliasMatches = []
 
   // 第 018-157 批：逐行套用同義詞；同一行的重疊規則採最長優先。
   // 不同服務即使寫在同一行，只要文字區段不重疊，仍可各自套用。
+  // 第 018-168 批：另外記住「員工明確設定的優惠組合同義詞」及其文字範圍。
+  // 後方內建買送規則只能處理尚未被同義詞覆蓋的文字，避免同時輸出買2節3s與買2送1。
   const aliasSourceLines = String(block || '')
     .split(/\r?\n/)
     .map(line => line.trim())
     .filter(Boolean)
 
-  aliasSourceLines.forEach(sourceLine => {
+  aliasSourceLines.forEach((sourceLine, lineIndex) => {
     const matches = getLineAliasMatches(sourceLine, aliases)
-    matches.forEach(({ from, to }) => {
+    matches.forEach(({ from, to, start, end }) => {
+      const outputTokens = []
+
       to.split(/\s+/).filter(Boolean).forEach(item => {
         const outputToken = buildAliasOutputTokenWithExplicitAmount(from, item, sourceLine)
         if (!outputToken) return
         found.add(outputToken)
+        outputTokens.push(outputToken)
         if (hasMonetaryServiceSuffix(outputToken) && aliasSourceCarriesTargetAmount(from, outputToken, sourceLine)) {
           explicitPaidAliasOutputs.add(outputToken)
         }
       })
+
+      if (outputTokens.some(isPromotionServiceToken)) {
+        explicitPromotionAliasMatches.push({
+          lineIndex,
+          start,
+          end,
+          outputs: outputTokens.filter(isPromotionServiceToken)
+        })
+      }
     })
   })
 
@@ -7219,12 +7478,57 @@ function extractServices(block) {
     }
   })
 
-  // 第 018-115 批：服務加價必須以文件1明確 +金額 為準。
-  // 同義詞可以改名稱，但不能因舊規則自行補上 +500 / +1000。
+  // 第 018-166 批：雙飛後方若有搭配小姐名，文件2統一顯示「雙飛：小姐名」。
+  // 有明確對象時移除泛用的「雙飛」，避免同時出現「雙飛 雙飛：琳琳」。
+  const doubleFlyPartnerServices = extractDoubleFlyPartnerServices(block)
+  if (doubleFlyPartnerServices.length) {
+    found.delete('雙飛')
+    doubleFlyPartnerServices.forEach(item => found.add(item))
+  }
+
+  // 第 018-163 批：入珠同時可能出現在『禁止酒客/入珠/吸毒』限制句，
+  // 也可能是店家明確列出的加價服務『入珠+500』。限制句會在文件1清理階段移除；
+  // 這裡只在原文確實帶有 +金額 時加入文件2，且不依賴資料庫內既有同義詞規則，
+  // 避免舊機房規則尚未包含入珠時，更新程式後仍然漏抓。
+  const explicitBeadAmount = findExplicitAmountForServiceName(block, '入珠')
+  if (explicitBeadAmount) {
+    const explicitBeadService = `入珠+${explicitBeadAmount}`
+    found.add(explicitBeadService)
+    explicitPaidAliasOutputs.add(explicitBeadService)
+  }
+
+  // 第 018-167 批：入珠客屬於完整加價條件。文件1寫「入珠客+500元」時，
+  // 文件1保留原意，文件2統一去掉「元」顯示成「入珠客+500」。
+  const explicitBeadCustomerAmount = findExplicitAmountForServiceName(block, '入珠客')
+  if (explicitBeadCustomerAmount) {
+    const explicitBeadCustomerService = `入珠客+${explicitBeadCustomerAmount}`
+    found.add(explicitBeadCustomerService)
+    explicitPaidAliasOutputs.add(explicitBeadCustomerService)
+  }
+
+  // 第 018-167 批：攝影名稱必須依文件1原意輸出。
+  // 「攝影+1000」不可自行推定為露臉；只有明寫露臉／不露臉時才加上對應文字。
+  const explicitPhotographyAmount = findExplicitAmountForServiceName(block, '攝影')
+  const explicitNoFacePhotographyAmount = findExplicitPhotographyAmount(block, 'no-face')
+  const explicitFacePhotographyAmount = findExplicitPhotographyAmount(block, 'face')
+
   if (shouldPreferNoFacePhotography(block)) {
-    found.delete('攝影露臉+1000')
-    found.delete('攝影不露臉+1000')
-    found.add(hasExplicitPaidAmountForService(block, '攝影不露臉+1000') ? '攝影不露臉+1000' : '攝影不露臉')
+    removePhotographyServiceVariants(found)
+    const amount = explicitNoFacePhotographyAmount || explicitPhotographyAmount
+    const output = amount ? `攝影不露臉+${amount}` : '攝影不露臉'
+    found.add(output)
+    if (amount) explicitPaidAliasOutputs.add(output)
+  } else if (shouldPreferFacePhotography(block)) {
+    removePhotographyServiceVariants(found)
+    const amount = explicitFacePhotographyAmount || explicitPhotographyAmount
+    const output = amount ? `攝影露臉+${amount}` : '攝影露臉'
+    found.add(output)
+    if (amount) explicitPaidAliasOutputs.add(output)
+  } else if (explicitPhotographyAmount) {
+    removePhotographyServiceVariants(found)
+    const output = `攝影+${explicitPhotographyAmount}`
+    found.add(output)
+    explicitPaidAliasOutputs.add(output)
   }
 
   // 第 018-114 批：買節「送艷舞 / 送豔舞」屬於贈送服務，
@@ -7238,7 +7542,7 @@ function extractServices(block) {
   enforceExplicitPaidServices(found, block, explicitPaidAliasOutputs)
   reconcileExplicitServiceAmounts(found, block, aliases)
   normalizeOverlappingServices(found)
-  syncPromotionComboServicesWithSource(found, block)
+  syncPromotionComboServicesWithSource(found, block, explicitPromotionAliasMatches)
 
   const orderIndex = new Map(order.map((item, index) => [normalizeServiceOutputToken(item), index]))
   return Array.from(found).sort((a, b) => {
@@ -7275,6 +7579,7 @@ function getServiceOrderIndex(item, orderIndex) {
     ['絲襪', '絲襪+100'],
     ['0.01套', '0.01套+100'],
     ['2S', '2S+500'],
+    ['攝影', '攝影+1000'],
     ['攝影不露臉', '攝影不露臉+1000'],
     ['攝影露臉', '攝影露臉+1000']
   ])
@@ -7282,48 +7587,51 @@ function getServiceOrderIndex(item, orderIndex) {
   const mapped = aliasOrderMap.get(item)
   if (mapped && orderIndex.has(mapped)) return orderIndex.get(mapped)
 
+  // 第 018-163 批：舊機房已儲存的服務排序可能尚未包含『入珠+500』。
+  // 此時仍把任意明確金額的入珠服務排在顏射後方，而不是掉到整串服務最末端。
+  if (stripMonetaryServiceSuffix(item) === '入珠') {
+    if (orderIndex.has('入珠+500')) return orderIndex.get('入珠+500')
+    if (orderIndex.has('顏射+500')) return orderIndex.get('顏射+500') + 0.1
+    if (orderIndex.has('自慰秀+500')) return orderIndex.get('自慰秀+500') - 0.1
+  }
+
+  if (stripMonetaryServiceSuffix(item) === '入珠客') {
+    if (orderIndex.has('入珠客+500')) return orderIndex.get('入珠客+500')
+    if (orderIndex.has('入珠+500')) return orderIndex.get('入珠+500') + 0.1
+  }
+
+  // 第 018-166 批：使用者舊機房排序通常沒有「雙飛：小姐名」，
+  // 有設定「雙飛」就沿用其位置；沒有則固定排在其他未設定服務之前。
+  if (/^雙飛[:：]/.test(String(item || ''))) {
+    if (orderIndex.has('雙飛')) return orderIndex.get('雙飛')
+    return Number.MAX_SAFE_INTEGER - 1
+  }
+
   return Number.MAX_SAFE_INTEGER
 }
 
-function syncPromotionComboServicesWithSource(found, block) {
-  // 第 018-144 批：先移除舊同義詞可能產生的縮寫或錯誤中文，再只依文件1實際文字重建。
-  // 規則：縮寫轉中文；文件1原本是中文就保留對應中文；文件1沒寫就不自動補。
-  const promotionSignatures = new Set([
-    '2+1', '2+1s', '2+3s', '3+1', '5+3',
-    '買2送1', '買2節送1s', '買2節送1節', '買2節送3s',
-    '買3送1', '買3節送1節',
-    '買5送3', '買5節送3節'
-  ].map(item => normalizeServiceAliasMatchText(item)))
+const PROMOTION_SERVICE_SIGNATURES = new Set([
+  '2+1', '2+1s', '2+3s', '3+1', '5+3',
+  '買2送1', '買2節送1s', '買2節送1節', '買2節送3s', '買2節3s',
+  '買3送1', '買3節送1節',
+  '買5送3', '買5節送3節'
+].map(item => normalizeServiceAliasMatchText(item)))
 
-  Array.from(found).forEach(item => {
-    const signature = normalizeServiceAliasMatchText(normalizeServiceOutputToken(item))
-    if (promotionSignatures.has(signature)) found.delete(item)
-  })
+function isPromotionServiceToken(value) {
+  const signature = normalizeServiceAliasMatchText(normalizeServiceOutputToken(value))
+  return !!signature && PROMOTION_SERVICE_SIGNATURES.has(signature)
+}
 
-  const sourceCompact = normalizeServiceAliasMatchText(block)
-  const sourceSeparated = normalizeDigits(String(block || ''))
-    .normalize('NFKC')
-    .toLowerCase()
-    .replace(/[＋]/g, '+')
-    .replace(/[／]/g, '/')
-    .replace(/兩/g, '2')
-    .replace(/二/g, '2')
-    .replace(/三/g, '3')
-    .replace(/一/g, '1')
-    .replace(/壹/g, '1')
-    .replace(/貳/g, '2')
-    .replace(/參/g, '3')
-    .replace(/[，、,；;｜|\r\n\t]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
+function applyBuiltInPromotionRules(found, sourceText) {
+  const compact = normalizeServiceAliasMatchText(sourceText)
+  if (!compact) return
 
-  if (!sourceCompact && !sourceSeparated) return
-
-  // 中文來源：依文件1原本語意保留，不反向縮寫。
+  // 中文來源：只處理未被使用者同義詞覆蓋的剩餘文字。
   const chineseRules = [
     ['買2節送1s', /買2節送1s/],
     ['買2節送1節', /買2節送1節/],
     ['買2節送3s', /買2節送3s/],
+    ['買2節3s', /買2節\/?3s/],
     ['買2送1', /買2送1/],
     ['買3節送1節', /買3節送1節(?!\d+分)/],
     ['買3送1', /買3送1(?!\d+分)/],
@@ -7332,11 +7640,10 @@ function syncPromotionComboServicesWithSource(found, block) {
   ]
 
   chineseRules.forEach(([output, pattern]) => {
-    if (pattern.test(sourceCompact)) found.add(output)
+    if (pattern.test(compact)) found.add(output)
   })
 
-  // 縮寫來源：只在文件1真的出現時轉成中文。
-  // 2+1S / 2+3S 必須先判斷，避免被 2+1 / 2+3 的短規則吃掉。
+  // 縮寫來源：2+1S / 2+3S 必須先判斷，避免被較短規則吃掉。
   const shorthandRules = [
     ['買2節送1s', /(^|[^0-9])2\+1s(?![a-z0-9])/i],
     ['買2節送3s', /(^|[^0-9])2\+3s(?![a-z0-9])/i],
@@ -7346,7 +7653,49 @@ function syncPromotionComboServicesWithSource(found, block) {
   ]
 
   shorthandRules.forEach(([output, pattern]) => {
-    if (pattern.test(sourceSeparated)) found.add(output)
+    if (pattern.test(compact)) found.add(output)
+  })
+}
+
+function syncPromotionComboServicesWithSource(found, block, explicitAliasMatches = []) {
+  // 第 018-168 批：所有優惠組合先清空，再依「明確同義詞優先、內建規則補漏」重建。
+  // 同義詞有設定時，該段文字完全以使用者最後輸入的右側結果為準；
+  // 內建買送判斷只掃描未被同義詞覆蓋的文字，不再產生重複或把5S方案降成一般買5送3。
+  Array.from(found).forEach(item => {
+    if (isPromotionServiceToken(item)) found.delete(item)
+  })
+
+  const sourceLines = String(block || '')
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+
+  const matchesByLine = new Map()
+  ;(Array.isArray(explicitAliasMatches) ? explicitAliasMatches : []).forEach(match => {
+    if (!match || !Number.isInteger(match.lineIndex)) return
+    const list = matchesByLine.get(match.lineIndex) || []
+    list.push(match)
+    matchesByLine.set(match.lineIndex, list)
+
+    ;(Array.isArray(match.outputs) ? match.outputs : []).forEach(output => {
+      const token = normalizeServiceOutputToken(output)
+      if (token) found.add(token)
+    })
+  })
+
+  sourceLines.forEach((sourceLine, lineIndex) => {
+    const compact = normalizeServiceAliasMatchText(sourceLine)
+    if (!compact) return
+
+    const masked = compact.split('')
+    const lineMatches = matchesByLine.get(lineIndex) || []
+    lineMatches.forEach(match => {
+      const start = Math.max(0, Number(match.start) || 0)
+      const end = Math.min(masked.length, Number(match.end) || 0)
+      for (let index = start; index < end; index += 1) masked[index] = ' '
+    })
+
+    applyBuiltInPromotionRules(found, masked.join(''))
   })
 }
 
@@ -7472,6 +7821,8 @@ function normalizeOverlappingServices(found) {
     { paid: ['口爆+500', '口爆+1000'], base: ['口爆'] },
     { paid: ['吞精+500', '吞精+1000'], base: ['吞精'] },
     { paid: ['顏射+500', '射顏+500'], base: ['顏射', '射顏'] },
+    { paid: ['入珠+500', '入珠+1000'], base: ['入珠'] },
+    { paid: ['入珠客+500', '入珠客+1000'], base: ['入珠客'] },
     { paid: ['自慰秀+500', '自衛秀+500'], base: ['自慰秀', '自衛秀'] },
     { paid: ['情趣用品+500'], base: ['情趣用品'] },
     { paid: ['艷舞+500', '豔舞+500'], base: ['艷舞', '豔舞', '艷舞秀', '豔舞秀'] },
@@ -7493,7 +7844,7 @@ function normalizeOverlappingServices(found) {
     { canonical: '顏射+500', aliases: ['射顏+500'] },
     { canonical: '攝影不露臉', aliases: ['不露臉攝影', '攝影不露臉'] },
     { canonical: '攝影不露臉+1000', aliases: ['不露臉攝影+1000', '攝影+1000不露臉'] },
-    { canonical: '攝影露臉+1000', aliases: ['攝影+1000'] },
+    { canonical: '攝影露臉+1000', aliases: ['露臉攝影+1000'] },
     { canonical: '艷舞', aliases: ['豔舞', '艷舞秀', '豔舞秀'] },
     { canonical: '艷舞+500', aliases: ['豔舞+500'] }
   ]
@@ -7624,8 +7975,12 @@ function hasExplicitPaidAmountForService(sourceText, outputToken) {
   }
 
   if (normalizedBase === normalizeServiceAliasMatchText('攝影露臉')) {
-    const photographyFacePattern = new RegExp(`攝影\\s*(?:露臉)?\\s*(?:\\+|加)?\\s*${amount}`)
-    return photographyFacePattern.test(source)
+    const photographyFacePatterns = [
+      new RegExp(`攝影\\s*露臉\\s*(?:\\+|加)?\\s*${amount}`),
+      new RegExp(`攝影\\s*(?:\\+|加)?\\s*${amount}\\s*露臉`),
+      new RegExp(`露臉\\s*攝影\\s*(?:\\+|加)?\\s*${amount}`)
+    ]
+    return photographyFacePatterns.some(pattern => pattern.test(source))
   }
 
   const escapedBase = escapeRegExp(normalizedBase)
@@ -7707,7 +8062,58 @@ function shouldPreferNoFacePhotography(text) {
   if (!value) return false
 
   return /攝影(?:\+?\d+)?不露臉/.test(value)
-    || /不露臉(?:攝影)?(?:\+?\d+)?/.test(value)
+    || /攝影不露臉(?:\+?\d+)?/.test(value)
+    || /不露臉攝影(?:\+?\d+)?/.test(value)
+}
+
+function shouldPreferFacePhotography(text) {
+  const value = normalizeServiceAliasMatchText(text)
+  if (!value) return false
+
+  return /攝影(?:\+?\d+)?露臉/.test(value)
+    || /攝影露臉(?:\+?\d+)?/.test(value)
+    || /露臉攝影(?:\+?\d+)?/.test(value)
+}
+
+function findExplicitPhotographyAmount(text, mode = 'generic') {
+  const source = normalizeServiceAmountMatchText(text)
+  if (!source) return ''
+
+  const patterns = mode === 'no-face'
+    ? [
+        /攝影\s*(?:\+|加)?\s*(\d{1,5})\s*不露臉/,
+        /攝影\s*不露臉\s*(?:\+|加)\s*(\d{1,5})/,
+        /不露臉\s*攝影\s*(?:\+|加)\s*(\d{1,5})/
+      ]
+    : mode === 'face'
+      ? [
+          /攝影\s*(?:\+|加)?\s*(\d{1,5})\s*露臉/,
+          /攝影\s*露臉\s*(?:\+|加)\s*(\d{1,5})/,
+          /露臉\s*攝影\s*(?:\+|加)\s*(\d{1,5})/
+        ]
+      : []
+
+  for (const pattern of patterns) {
+    const match = source.match(pattern)
+    if (match?.[1]) return match[1]
+  }
+
+  return ''
+}
+
+function removePhotographyServiceVariants(found) {
+  const photographyBases = new Set([
+    '攝影',
+    '攝影露臉',
+    '攝影不露臉',
+    '露臉攝影',
+    '不露臉攝影'
+  ].map(item => normalizeServiceAliasMatchText(item)))
+
+  Array.from(found).forEach(item => {
+    const base = normalizeServiceAliasMatchText(stripMonetaryServiceSuffix(item))
+    if (photographyBases.has(base)) found.delete(item)
+  })
 }
 
 
@@ -9156,6 +9562,42 @@ function appendRuleText(baseValue, supplementValue) {
   return merged.join('\n')
 }
 
+
+function getRuleLineLeftKey(line, normalizeKey = value => String(value || '').trim()) {
+  const text = String(line || '').trim()
+  if (!text) return ''
+
+  const separatorIndex = text.includes('=')
+    ? text.indexOf('=')
+    : text.includes('：')
+      ? text.indexOf('：')
+      : text.includes(':')
+        ? text.indexOf(':')
+        : -1
+  const left = separatorIndex >= 0 ? text.slice(0, separatorIndex) : text
+  return normalizeKey(left)
+}
+
+function mergeRuleTextWithSupplementOverride(baseValue, supplementValue, normalizeKey) {
+  const baseLines = String(baseValue || '').split(/\r?\n/).map(item => item.trim()).filter(Boolean)
+  const supplementLines = String(supplementValue || '').split(/\r?\n/).map(item => item.trim()).filter(Boolean)
+  if (!supplementLines.length) return baseLines.join('\n')
+
+  // 第 018-168 批：老闆規則先套，員工補充後套；同一個左側寫法衝突時最後一條生效。
+  // 使用 normalized key 比對，讓「買二送一 3S」與全形／空白不同寫法仍能正確覆蓋。
+  const combined = [...baseLines, ...supplementLines]
+  const lastIndexByKey = new Map()
+  combined.forEach((line, index) => {
+    const key = getRuleLineLeftKey(line, normalizeKey)
+    if (key) lastIndexByKey.set(key, index)
+  })
+
+  return combined.filter((line, index) => {
+    const key = getRuleLineLeftKey(line, normalizeKey)
+    return !key || lastIndexByKey.get(key) === index
+  }).join('\n')
+}
+
 function mergeOwnerAndEmployeeRules(ownerData = {}, supplementData = {}) {
   const owner = ownerData && typeof ownerData === 'object' ? ownerData : buildDefaultRuleData()
   const extra = normalizeSupplementRuleData(supplementData)
@@ -9163,19 +9605,13 @@ function mergeOwnerAndEmployeeRules(ownerData = {}, supplementData = {}) {
     const value = extra[key]
     return value === '' || value == null ? (owner[key] ?? fallback) : value
   }
-  const amountRules = [
-    ...normalizeAmountRules(owner.amountTransformRules ?? owner.amountTransformRulesText ?? []),
-    ...normalizeAmountRules(extra.amountTransformRules ?? [])
-  ]
-  const dedupAmount = []
-  const amountSeen = new Set()
-  amountRules.forEach(rule => {
-    const key = `${rule.from}=>${rule.to}`
-    if (!amountSeen.has(key)) {
-      amountSeen.add(key)
-      dedupAmount.push(rule)
-    }
-  })
+  const amountRuleMap = new Map()
+  normalizeAmountRules(owner.amountTransformRules ?? owner.amountTransformRulesText ?? [])
+    .forEach(rule => amountRuleMap.set(Number(rule.from), rule))
+  normalizeAmountRules(extra.amountTransformRules ?? [])
+    .forEach(rule => amountRuleMap.set(Number(rule.from), rule))
+  const dedupAmount = Array.from(amountRuleMap.values())
+    .sort((a, b) => Number(a.from) - Number(b.from))
   return {
     ...owner,
     priceMode: choose('priceMode', 'country'),
@@ -9184,16 +9620,40 @@ function mergeOwnerAndEmployeeRules(ownerData = {}, supplementData = {}) {
     amountPriorityMode: choose('amountPriorityMode', 'higher-price'),
     titleMode: choose('titleMode', 'country-name'),
     formatHint: choose('formatHint', owner.formatHint || ''),
-    countryPriceRulesText: appendRuleText(owner.countryPriceRulesText, extra.countryPriceRulesText),
-    minutePriceAddRulesText: appendRuleText(owner.minutePriceAddRulesText, extra.minutePriceAddRulesText),
-    countryAliasText: appendRuleText(owner.countryAliasText, extra.countryAliasText),
+    countryPriceRulesText: mergeRuleTextWithSupplementOverride(
+      owner.countryPriceRulesText,
+      extra.countryPriceRulesText,
+      value => normalizeServiceAliasMatchText(value)
+    ),
+    minutePriceAddRulesText: mergeRuleTextWithSupplementOverride(
+      owner.minutePriceAddRulesText,
+      extra.minutePriceAddRulesText,
+      value => String(value || '').replace(/[^\d]/g, '')
+    ),
+    countryAliasText: mergeRuleTextWithSupplementOverride(
+      owner.countryAliasText,
+      extra.countryAliasText,
+      value => normalizeServiceAliasMatchText(value)
+    ),
     amountTransformRules: dedupAmount,
     serviceOrderText: appendRuleText(owner.serviceOrderText, extra.serviceOrderText),
-    aliasRulesText: appendRuleText(owner.aliasRulesText, extra.aliasRulesText),
+    aliasRulesText: mergeRuleTextWithSupplementOverride(
+      owner.aliasRulesText,
+      extra.aliasRulesText,
+      value => normalizeServiceAliasMatchText(value)
+    ),
     removeWordsText: appendRuleText(owner.removeWordsText, extra.removeWordsText),
     extraKeepText: appendRuleText(owner.extraKeepText, extra.extraKeepText),
-    countryFieldRulesText: appendRuleText(owner.countryFieldRulesText, extra.countryFieldRulesText),
-    bodyCupPrefixText: appendRuleText(owner.bodyCupPrefixText, extra.bodyCupPrefixText),
+    countryFieldRulesText: mergeRuleTextWithSupplementOverride(
+      owner.countryFieldRulesText,
+      extra.countryFieldRulesText,
+      value => normalizeServiceAliasMatchText(value)
+    ),
+    bodyCupPrefixText: mergeRuleTextWithSupplementOverride(
+      owner.bodyCupPrefixText,
+      extra.bodyCupPrefixText,
+      value => normalizeServiceAliasMatchText(value)
+    ),
     notNameWordsText: appendRuleText(owner.notNameWordsText, extra.notNameWordsText)
   }
 }
