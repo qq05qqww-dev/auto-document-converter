@@ -1,3 +1,4 @@
+<!-- 第 018-175 批：年齡在罩杯前＋罩杯字母白名單修正版 -->
 <!-- 第 018-174 批：點號連寫身材＋34D胸圍罩杯辨識修正版 -->
 <!-- 第 018-173 批：全半形統一＋分隔金額＋胸圍罩杯身材辨識修正版 -->
 <!-- batch018-172-thai-wash-header-bottom-price-incomplete-record-fix -->
@@ -559,35 +560,263 @@
           </button>
         </div>
         </div>
-      <div v-if="showFormatSettings" class="rule-grid top-rules setting-content-block compact-control-content top-settings-modal-card top-settings-format-modal">
+      <div v-if="showFormatSettings" class="rule-grid top-rules setting-content-block compact-control-content top-settings-modal-card top-settings-format-modal recognition-format-modal">
         <div class="top-settings-modal-head">
           <div>
-            <h3>輸出格式</h3>
+            <h3>欄位辨識與文件2輸出格式</h3>
             <p>{{ ruleLayerHelpText }}</p>
           </div>
           <div class="top-settings-modal-head-actions single-save-head-actions">
-            <button class="ghost-btn" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('輸出格式', ['formatHint', 'titleMode'])">{{ isSavingScopeRules ? '儲存中...' : '儲存' }}</button>
+            <button
+              class="ghost-btn"
+              type="button"
+              :disabled="isSavingScopeRules"
+              @click="saveRuleFields('欄位辨識與輸出格式', ['headerRecognitionRules', 'bodyRecognitionRules', 'advancedRegexRules', 'bodyOutputOrder', 'formatHint', 'titleMode'])"
+            >
+              {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
+            </button>
             <button class="top-settings-modal-close" type="button" @click="closeTopSettingModal">關閉</button>
           </div>
         </div>
-        <div class="setting-save-item">
-          <label>
-            輸出格式說明
-            <input v-model="formatHint" />
-          </label>
+
+        <div class="format-settings-tabs" role="tablist" aria-label="欄位辨識設定">
+          <button type="button" :class="{ active: formatSettingsTab === 'header' }" @click="formatSettingsTab = 'header'">小姐標題規則</button>
+          <button type="button" :class="{ active: formatSettingsTab === 'body' }" @click="formatSettingsTab = 'body'">身材欄位規則</button>
+          <button type="button" :class="{ active: formatSettingsTab === 'output' }" @click="formatSettingsTab = 'output'">文件2輸出格式</button>
+          <button v-if="isOwner" type="button" :class="{ active: formatSettingsTab === 'regex' }" @click="formatSettingsTab = 'regex'">老闆進階 Regex</button>
         </div>
 
-        <div class="setting-save-item">
-          <label>
-            標題格式
-            <select v-model="titleMode">
-              <option value="country-name">【國籍 名稱】</option>
-              <option value="name-country">【名稱 國籍】</option>
-              <option value="name-only">【名稱】</option>
-            </select>
-          </label>
-        </div>
-        </div>
+        <section v-if="formatSettingsTab === 'header'" class="recognition-settings-panel">
+          <div class="recognition-panel-intro">
+            <strong>來源可有多種標題順序，文件2仍統一輸出。</strong>
+            <span>一般員工只新增結構化規則；老闆全站公版會先套用，員工機房補充會優先嘗試。</span>
+          </div>
+
+          <div class="recognition-builder-grid header-builder-grid">
+            <label>
+              規則名稱
+              <input v-model="newHeaderRuleName" placeholder="例如：姓名在國籍前" />
+            </label>
+            <label>
+              來源順序
+              <select v-model="newHeaderRuleMode">
+                <option v-for="option in headerRuleModeOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+              </select>
+            </label>
+            <label class="recognition-builder-wide">
+              範例
+              <input v-model="newHeaderRuleExample" placeholder="例如：小淫娃 馬來西亞" />
+            </label>
+            <button class="primary-btn recognition-add-btn" type="button" @click="addHeaderRecognitionRule">新增標題規則</button>
+          </div>
+
+          <div v-if="headerRecognitionRules.length" class="recognition-rule-list">
+            <article v-for="(rule, index) in headerRecognitionRules" :key="rule.id || `header-rule-${index}`" class="recognition-rule-card">
+              <label class="recognition-enable-toggle">
+                <input v-model="rule.enabled" type="checkbox" />
+                啟用
+              </label>
+              <div class="recognition-rule-main">
+                <input v-model="rule.name" class="recognition-rule-name" aria-label="標題規則名稱" />
+                <select v-model="rule.mode" aria-label="標題來源順序">
+                  <option v-for="option in headerRuleModeOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+                </select>
+                <input v-model="rule.example" placeholder="來源範例" aria-label="標題規則範例" />
+              </div>
+              <div class="recognition-rule-actions">
+                <button type="button" :disabled="index === 0" @click="moveRecognitionRule(headerRecognitionRules, index, -1)">上移</button>
+                <button type="button" :disabled="index === headerRecognitionRules.length - 1" @click="moveRecognitionRule(headerRecognitionRules, index, 1)">下移</button>
+                <button type="button" class="danger-text-btn" @click="removeRecognitionRule(headerRecognitionRules, index)">刪除</button>
+              </div>
+            </article>
+          </div>
+          <p v-else class="recognition-empty-hint">目前這一層沒有新增標題規則；轉換時仍會套用老闆公版與系統內建辨識。</p>
+
+          <div class="recognition-test-card">
+            <label>
+              即時測試來源
+              <textarea v-model="headerRecognitionTestText" rows="3" placeholder="例如：小淫娃 馬來西亞"></textarea>
+            </label>
+            <div class="recognition-test-result" :class="headerRecognitionPreview.ok ? 'success' : 'warning'">
+              <strong>{{ headerRecognitionPreview.ok ? '辨識成功' : '尚未辨識' }}</strong>
+              <span>{{ headerRecognitionPreview.message }}</span>
+              <code v-if="headerRecognitionPreview.preview">{{ headerRecognitionPreview.preview }}</code>
+            </div>
+          </div>
+        </section>
+
+        <section v-else-if="formatSettingsTab === 'body'" class="recognition-settings-panel">
+          <div class="recognition-panel-intro">
+            <strong>欄位順序可變，系統會先統一全形／半形與常見分隔符號。</strong>
+            <span>來源可寫年齡在罩杯前、罩杯在年齡前或 34D；文件2依固定順序輸出。</span>
+          </div>
+
+          <div class="recognition-builder-grid body-builder-grid">
+            <label>
+              規則名稱
+              <input v-model="newBodyRuleName" placeholder="例如：年齡在罩杯前" />
+            </label>
+            <label v-for="position in 4" :key="`body-field-${position}`">
+              第 {{ position }} 欄
+              <select v-model="newBodyRuleFields[position - 1]">
+                <option value="">不使用</option>
+                <option v-for="option in bodyFieldOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+              </select>
+            </label>
+            <label class="recognition-builder-wide">
+              範例
+              <input v-model="newBodyRuleExample" placeholder="例如：150 40 20y 天然D" />
+            </label>
+            <button class="primary-btn recognition-add-btn" type="button" @click="addBodyRecognitionRule">新增身材規則</button>
+          </div>
+
+          <div v-if="bodyRecognitionRules.length" class="recognition-rule-list">
+            <article v-for="(rule, index) in bodyRecognitionRules" :key="rule.id || `body-rule-${index}`" class="recognition-rule-card body-rule-card">
+              <label class="recognition-enable-toggle">
+                <input v-model="rule.enabled" type="checkbox" />
+                啟用
+              </label>
+              <div class="recognition-rule-main body-rule-main">
+                <input v-model="rule.name" class="recognition-rule-name" aria-label="身材規則名稱" />
+                <div class="body-rule-field-row">
+                  <template v-for="(field, fieldIndex) in rule.fields" :key="`${rule.id}-${fieldIndex}`">
+                    <select v-model="rule.fields[fieldIndex]" aria-label="身材欄位順序">
+                      <option v-for="option in bodyFieldOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+                    </select>
+                    <span v-if="fieldIndex < rule.fields.length - 1">→</span>
+                  </template>
+                </div>
+                <input v-model="rule.example" placeholder="來源範例" aria-label="身材規則範例" />
+              </div>
+              <div class="recognition-rule-actions">
+                <button type="button" :disabled="index === 0" @click="moveRecognitionRule(bodyRecognitionRules, index, -1)">上移</button>
+                <button type="button" :disabled="index === bodyRecognitionRules.length - 1" @click="moveRecognitionRule(bodyRecognitionRules, index, 1)">下移</button>
+                <button type="button" class="danger-text-btn" @click="removeRecognitionRule(bodyRecognitionRules, index)">刪除</button>
+              </div>
+            </article>
+          </div>
+          <p v-else class="recognition-empty-hint">目前這一層沒有新增身材規則；轉換時仍會套用老闆公版與系統內建辨識。</p>
+
+          <div class="recognition-test-card">
+            <label>
+              即時測試來源
+              <textarea v-model="bodyRecognitionTestText" rows="3" placeholder="例如：150 40 20y 天然D"></textarea>
+            </label>
+            <div class="recognition-test-result" :class="bodyRecognitionPreview.ok ? 'success' : 'warning'">
+              <strong>{{ bodyRecognitionPreview.ok ? '辨識成功' : '尚未辨識' }}</strong>
+              <span>{{ bodyRecognitionPreview.message }}</span>
+              <code v-if="bodyRecognitionPreview.preview">{{ bodyRecognitionPreview.preview }}</code>
+            </div>
+          </div>
+        </section>
+
+        <section v-else-if="formatSettingsTab === 'output'" class="recognition-settings-panel output-format-panel">
+          <div class="recognition-panel-intro">
+            <strong>來源順序可以不同，但文件2只使用一種固定輸出順序。</strong>
+            <span>建議維持「身高 → 體重 → 罩杯 → 年齡」，讓文件3、JSON 與中央網站資料一致。</span>
+          </div>
+
+          <div class="setting-save-item">
+            <label>
+              輸出格式說明
+              <input v-model="formatHint" />
+            </label>
+          </div>
+
+          <div class="setting-save-item">
+            <label>
+              標題格式
+              <select v-model="titleMode">
+                <option value="country-name">【國籍 名稱】</option>
+                <option value="name-country">【名稱 國籍】</option>
+                <option value="name-only">【名稱】</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="setting-save-item">
+            <label>
+              身材固定輸出順序
+              <select v-model="bodyOutputOrder" :disabled="!isOwner">
+                <option value="height-weight-cup-age">身高 → 體重 → 罩杯 → 年齡（推薦）</option>
+                <option value="height-weight-age-cup">身高 → 體重 → 年齡 → 罩杯</option>
+              </select>
+              <small v-if="!isOwner">由老闆全站公版統一管理；員工轉換時會自動套用。</small>
+            </label>
+          </div>
+
+          <div class="output-format-preview-card">
+            <span>文件2固定預覽</span>
+            <code>{{ outputFormatPreview }}</code>
+          </div>
+        </section>
+
+        <section v-else-if="formatSettingsTab === 'regex' && isOwner" class="recognition-settings-panel owner-regex-panel">
+          <div class="recognition-panel-intro owner-only-intro">
+            <strong>老闆專用進階正規表示式（Regex）</strong>
+            <span>所有員工轉換時會自動套用，但員工看不到也不能修改。請先用範例測試，避免規則過寬。</span>
+          </div>
+
+          <div class="regex-builder-grid">
+            <label>
+              規則名稱
+              <input v-model="newRegexRuleName" placeholder="例如：特殊店家身材格式" />
+            </label>
+            <label>
+              類型
+              <select v-model="newRegexRuleTarget">
+                <option value="header">小姐標題</option>
+                <option value="body">身材欄位</option>
+              </select>
+            </label>
+            <label>
+              Flags
+              <input v-model="newRegexRuleFlags" placeholder="例如：iu" />
+            </label>
+            <label class="regex-pattern-field">
+              正規表示式
+              <textarea v-model="newRegexRulePattern" rows="2" placeholder="例如：^(\d{3})\s+(\d{2})\s+(\d{2})y\s+.*?([A-K])$"></textarea>
+            </label>
+            <label class="regex-map-field">
+              欄位對應
+              <input v-model="newRegexRuleFieldMap" placeholder="身材：height=1,weight=2,age=3,cup=4" />
+            </label>
+            <label class="regex-example-field">
+              測試範例
+              <input v-model="newRegexRuleExample" placeholder="例如：150 40 20y 天然D" />
+            </label>
+            <button class="primary-btn recognition-add-btn" type="button" @click="addAdvancedRegexRule">新增進階規則</button>
+          </div>
+
+          <div v-if="advancedRegexRules.length" class="recognition-rule-list regex-rule-list">
+            <article v-for="(rule, index) in advancedRegexRules" :key="rule.id || `regex-rule-${index}`" class="recognition-rule-card regex-rule-card">
+              <label class="recognition-enable-toggle">
+                <input v-model="rule.enabled" type="checkbox" />
+                啟用
+              </label>
+              <div class="recognition-rule-main regex-rule-main">
+                <input v-model="rule.name" class="recognition-rule-name" aria-label="Regex 規則名稱" />
+                <select v-model="rule.target" aria-label="Regex 類型">
+                  <option value="header">小姐標題</option>
+                  <option value="body">身材欄位</option>
+                </select>
+                <input v-model="rule.flags" placeholder="flags" aria-label="Regex flags" />
+                <textarea v-model="rule.pattern" rows="2" placeholder="正規表示式" aria-label="Regex pattern"></textarea>
+                <input v-model="rule.fieldMap" placeholder="country=1,name=2 或 height=1,weight=2,cup=3,age=4" aria-label="Regex 欄位對應" />
+                <input v-model="rule.example" placeholder="測試範例" aria-label="Regex 測試範例" />
+                <small v-if="getAdvancedRegexRuleError(rule)" class="regex-rule-error">{{ getAdvancedRegexRuleError(rule) }}</small>
+                <small v-else class="regex-rule-ok">規則格式可用</small>
+              </div>
+              <div class="recognition-rule-actions">
+                <button type="button" :disabled="index === 0" @click="moveRecognitionRule(advancedRegexRules, index, -1)">上移</button>
+                <button type="button" :disabled="index === advancedRegexRules.length - 1" @click="moveRecognitionRule(advancedRegexRules, index, 1)">下移</button>
+                <button type="button" class="danger-text-btn" @click="removeRecognitionRule(advancedRegexRules, index)">刪除</button>
+              </div>
+            </article>
+          </div>
+          <p v-else class="recognition-empty-hint">尚未建立進階 Regex；一般格式會由結構化規則與系統內建辨識處理。</p>
+        </section>
+      </div>
 
       <section v-if="showQuickRules" class="quick-rule-section setting-content-block compact-control-content top-settings-modal-card top-settings-quick-modal">
         <div class="quick-rule-header top-settings-modal-head">
@@ -1578,6 +1807,8 @@
 <!-- batch018-120-sync-id-backfill-media-upload-fix -->
 <!-- batch018-138-central-direct-media-upload-bind-fix -->
 <script setup>
+// batch018-175-age-before-cup-body-and-cup-whitelist-fix
+// batch018-176-structured-source-recognition-owner-regex-output-unification
 // batch018-174-dot-delimited-bra-size-body-age-fix
 // batch018-173-full-half-width-spaced-amount-bra-size-body-fix
 // batch018-171-room-daily-document-media-status
@@ -1864,6 +2095,7 @@ function applyAuthenticatedProfile(user, profile = null) {
     ruleScopeLevel.value = 'global'
     void loadEmployeeProfiles({ silent: true })
   } else {
+    if (formatSettingsTab.value === 'regex') formatSettingsTab.value = 'header'
     employeeProfiles.value = []
   }
 }
@@ -2411,6 +2643,500 @@ const customIncrease = ref(700)
 const amountPriorityMode = ref('higher-price')
 const titleMode = ref('country-name')
 const formatHint = ref('【國籍 名稱】身高 體重 Cup 年齡　短鐘K/30/1S　長鐘K/50/1S')
+const bodyOutputOrder = ref('height-weight-cup-age')
+const formatSettingsTab = ref('header')
+
+const headerRuleModeOptions = [
+  { value: 'country-name', label: '國籍 → 小姐名稱（同一行）' },
+  { value: 'name-country', label: '小姐名稱 → 國籍（同一行）' },
+  { value: 'country-line-name-line', label: '國籍一行 → 姐姐名稱下一行' },
+  { value: 'name-line-country-line', label: '小姐名稱一行 → 國籍下一行' },
+  { value: 'labeled', label: '國籍：○○／姓名：○○' }
+]
+
+const bodyFieldOptions = [
+  { value: 'height', label: '身高' },
+  { value: 'weight', label: '體重' },
+  { value: 'age', label: '年齡' },
+  { value: 'cup', label: '罩杯' },
+  { value: 'braCup', label: '胸圍尺寸＋罩杯（34D）' }
+]
+
+const defaultHeaderRecognitionRules = [
+  { id: 'header-country-name', name: '國籍在姓名前', mode: 'country-name', example: '馬來 小淫娃', enabled: true },
+  { id: 'header-name-country', name: '姓名在國籍前', mode: 'name-country', example: '小淫娃 馬來西亞', enabled: true },
+  { id: 'header-country-line-name-line', name: '國籍與姓名分兩行', mode: 'country-line-name-line', example: '越南\n妃己', enabled: true },
+  { id: 'header-name-line-country-line', name: '姓名與國籍分兩行', mode: 'name-line-country-line', example: '妃己\n越南', enabled: true },
+  { id: 'header-labeled', name: '國籍姓名標籤格式', mode: 'labeled', example: '國籍：越南 姓名：妃己', enabled: true }
+]
+
+const defaultBodyRecognitionRules = [
+  { id: 'body-height-weight-age-cup', name: '年齡在罩杯前', fields: ['height', 'weight', 'age', 'cup'], example: '150 40 20y 天然D', enabled: true },
+  { id: 'body-height-weight-cup-age', name: '罩杯在年齡前', fields: ['height', 'weight', 'cup', 'age'], example: '150 40 天然D 20y', enabled: true },
+  { id: 'body-height-weight-bracup-age', name: '胸圍尺寸加罩杯', fields: ['height', 'weight', 'braCup', 'age'], example: '166.46.真奶34D.22y', enabled: true },
+  { id: 'body-age-height-weight-cup', name: '年齡在最前', fields: ['age', 'height', 'weight', 'cup'], example: '22y 166 46 D', enabled: true },
+  { id: 'body-height-weight-cup', name: '沒有年齡', fields: ['height', 'weight', 'cup'], example: '168 50 E', enabled: true }
+]
+
+const headerRecognitionRules = ref(defaultHeaderRecognitionRules.map(rule => ({ ...rule })))
+const bodyRecognitionRules = ref(defaultBodyRecognitionRules.map(rule => ({ ...rule, fields: [...rule.fields] })))
+const advancedRegexRules = ref([])
+const newHeaderRuleName = ref('')
+const newHeaderRuleMode = ref('name-country')
+const newHeaderRuleExample = ref('')
+const newBodyRuleName = ref('')
+const newBodyRuleFields = ref(['height', 'weight', 'age', 'cup'])
+const newBodyRuleExample = ref('')
+const headerRecognitionTestText = ref('小淫娃 馬來西亞')
+const bodyRecognitionTestText = ref('150 40 20y 天然D')
+const newRegexRuleName = ref('')
+const newRegexRuleTarget = ref('body')
+const newRegexRuleFlags = ref('iu')
+const newRegexRulePattern = ref('')
+const newRegexRuleFieldMap = ref('height=1,weight=2,age=3,cup=4')
+const newRegexRuleExample = ref('')
+
+
+function createRecognitionRuleId(prefix = 'rule') {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `${prefix}-${crypto.randomUUID()}`
+  }
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+}
+
+function normalizeHeaderRecognitionRules(value, options = {}) {
+  const fallback = options.useDefaults === false ? [] : defaultHeaderRecognitionRules
+  const source = Array.isArray(value) ? value : fallback
+  const validModes = new Set(headerRuleModeOptions.map(option => option.value))
+  return source
+    .map((rule, index) => {
+      const mode = validModes.has(rule?.mode) ? rule.mode : 'country-name'
+      return {
+        id: String(rule?.id || createRecognitionRuleId(`header-${index}`)),
+        name: String(rule?.name || headerRuleModeOptions.find(option => option.value === mode)?.label || `標題規則 ${index + 1}`).trim(),
+        mode,
+        example: String(rule?.example || ''),
+        enabled: rule?.enabled !== false
+      }
+    })
+    .filter(rule => rule.name && validModes.has(rule.mode))
+}
+
+function normalizeBodyRecognitionRules(value, options = {}) {
+  const fallback = options.useDefaults === false ? [] : defaultBodyRecognitionRules
+  const source = Array.isArray(value) ? value : fallback
+  const validFields = new Set(bodyFieldOptions.map(option => option.value))
+  return source
+    .map((rule, index) => {
+      const fields = Array.isArray(rule?.fields)
+        ? rule.fields.map(field => String(field || '')).filter(field => validFields.has(field))
+        : []
+      return {
+        id: String(rule?.id || createRecognitionRuleId(`body-${index}`)),
+        name: String(rule?.name || `身材規則 ${index + 1}`).trim(),
+        fields,
+        example: String(rule?.example || ''),
+        enabled: rule?.enabled !== false
+      }
+    })
+    .filter(rule => rule.name && rule.fields.length >= 3 && rule.fields.includes('height') && rule.fields.includes('weight') && rule.fields.some(field => field === 'cup' || field === 'braCup'))
+}
+
+function normalizeAdvancedRegexRules(value) {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((rule, index) => ({
+      id: String(rule?.id || createRecognitionRuleId(`regex-${index}`)),
+      name: String(rule?.name || `進階規則 ${index + 1}`).trim(),
+      target: rule?.target === 'header' ? 'header' : 'body',
+      pattern: String(rule?.pattern || '').trim(),
+      flags: normalizeAdvancedRegexFlags(rule?.flags),
+      fieldMap: String(rule?.fieldMap || '').trim(),
+      example: String(rule?.example || ''),
+      enabled: rule?.enabled !== false
+    }))
+    .filter(rule => rule.name && rule.pattern && rule.fieldMap)
+}
+
+function mergeRecognitionRuleLists(baseValue, supplementValue, type = 'header') {
+  const normalize = type === 'body' ? normalizeBodyRecognitionRules : normalizeHeaderRecognitionRules
+  const base = normalize(baseValue, { useDefaults: type !== 'employee-empty' })
+  const extra = normalize(supplementValue, { useDefaults: false })
+  const result = []
+  const seen = new Set()
+  ;[...extra, ...base].forEach(rule => {
+    const signature = type === 'body'
+      ? `${rule.fields.join('>')}::${rule.name}`
+      : `${rule.mode}::${rule.name}`
+    if (seen.has(signature)) return
+    seen.add(signature)
+    result.push(cloneRuleFieldValue(rule))
+  })
+  return result
+}
+
+function headerRuleModeLabel(mode) {
+  return headerRuleModeOptions.find(option => option.value === mode)?.label || mode
+}
+
+function bodyFieldLabel(field) {
+  return bodyFieldOptions.find(option => option.value === field)?.label || field
+}
+
+function moveRecognitionRule(listRef, index, direction) {
+  const list = Array.isArray(listRef) ? listRef : []
+  const target = index + direction
+  if (index < 0 || target < 0 || index >= list.length || target >= list.length) return
+  const [item] = list.splice(index, 1)
+  list.splice(target, 0, item)
+}
+
+function removeRecognitionRule(listRef, index) {
+  if (!Array.isArray(listRef) || index < 0 || index >= listRef.length) return
+  listRef.splice(index, 1)
+}
+
+function addHeaderRecognitionRule() {
+  const mode = newHeaderRuleMode.value
+  const name = String(newHeaderRuleName.value || '').trim() || headerRuleModeLabel(mode)
+  const duplicate = headerRecognitionRules.value.some(rule => rule.mode === mode && rule.name === name)
+  if (duplicate) {
+    showActionToast('已有相同名稱與順序的標題規則。', 'warning')
+    return
+  }
+  headerRecognitionRules.value.push({
+    id: createRecognitionRuleId('header'),
+    name,
+    mode,
+    example: String(newHeaderRuleExample.value || '').trim(),
+    enabled: true
+  })
+  newHeaderRuleName.value = ''
+  newHeaderRuleExample.value = ''
+  showActionToast('已新增小姐標題規則；請按上方「儲存」。', 'success')
+}
+
+function addBodyRecognitionRule() {
+  const fields = newBodyRuleFields.value.map(field => String(field || '')).filter(Boolean)
+  if (fields.length < 3 || !fields.includes('height') || !fields.includes('weight') || !fields.some(field => field === 'cup' || field === 'braCup')) {
+    showActionToast('身材規則至少需要身高、體重與罩杯／34D。', 'warning')
+    return
+  }
+  if (new Set(fields).size !== fields.length) {
+    showActionToast('同一條身材規則不能重複使用相同欄位。', 'warning')
+    return
+  }
+  const name = String(newBodyRuleName.value || '').trim() || fields.map(bodyFieldLabel).join(' → ')
+  const signature = fields.join('>')
+  if (bodyRecognitionRules.value.some(rule => rule.fields.join('>') === signature && rule.name === name)) {
+    showActionToast('已有相同名稱與欄位順序的身材規則。', 'warning')
+    return
+  }
+  bodyRecognitionRules.value.push({
+    id: createRecognitionRuleId('body'),
+    name,
+    fields,
+    example: String(newBodyRuleExample.value || '').trim(),
+    enabled: true
+  })
+  newBodyRuleName.value = ''
+  newBodyRuleExample.value = ''
+  showActionToast('已新增身材欄位規則；請按上方「儲存」。', 'success')
+}
+
+function normalizeAdvancedRegexFlags(value) {
+  const flags = [...new Set(String(value || 'iu').toLowerCase().split('').filter(flag => ['i', 'm', 's', 'u'].includes(flag)))]
+  if (!flags.includes('u')) flags.push('u')
+  return flags.join('')
+}
+
+function parseAdvancedRegexFieldMap(value) {
+  const map = {}
+  String(value || '').split(/[，,;；\n]+/).forEach(item => {
+    const [keyRaw, indexRaw] = item.split(/[:=：]/)
+    const key = String(keyRaw || '').trim()
+    const index = Number(String(indexRaw || '').replace(/[^\d]/g, ''))
+    if (key && Number.isInteger(index) && index > 0 && index <= 20) map[key] = index
+  })
+  return map
+}
+
+function isSafeAdvancedRegexPattern(pattern) {
+  const value = String(pattern || '')
+  if (!value || value.length > 300) return false
+  if (/\\[1-9]/.test(value)) return false
+  if (/\((?:[^()]|\\.)*[+*](?:[^()]|\\.)*\)[+*{]/.test(value)) return false
+  if (/(?:\.\*|\.\+){2,}/.test(value)) return false
+  return true
+}
+
+function getAdvancedRegexRuleError(rule) {
+  if (!rule?.pattern) return '請輸入正規表示式。'
+  if (!isSafeAdvancedRegexPattern(rule.pattern)) return '規則過長或包含高風險重複結構／反向參照。'
+  const map = parseAdvancedRegexFieldMap(rule.fieldMap)
+  const required = rule.target === 'header' ? ['country', 'name'] : ['height', 'weight', 'cup']
+  if (!required.every(key => map[key])) return `欄位對應至少需要：${required.join('、')}`
+  try {
+    new RegExp(rule.pattern, normalizeAdvancedRegexFlags(rule.flags))
+  } catch (error) {
+    return `正規表示式錯誤：${error.message || error}`
+  }
+  return ''
+}
+
+function addAdvancedRegexRule() {
+  if (!isOwner.value) {
+    showActionToast('只有老闆可以新增進階 Regex。', 'warning')
+    return
+  }
+  const rule = {
+    id: createRecognitionRuleId('regex'),
+    name: String(newRegexRuleName.value || '').trim() || '老闆進階規則',
+    target: newRegexRuleTarget.value === 'header' ? 'header' : 'body',
+    pattern: String(newRegexRulePattern.value || '').trim(),
+    flags: normalizeAdvancedRegexFlags(newRegexRuleFlags.value),
+    fieldMap: String(newRegexRuleFieldMap.value || '').trim(),
+    example: String(newRegexRuleExample.value || '').trim(),
+    enabled: true
+  }
+  const error = getAdvancedRegexRuleError(rule)
+  if (error) {
+    showActionToast(error, 'warning')
+    return
+  }
+  advancedRegexRules.value.push(rule)
+  newRegexRuleName.value = ''
+  newRegexRulePattern.value = ''
+  newRegexRuleExample.value = ''
+  showActionToast('已新增老闆進階 Regex；請按上方「儲存」。', 'success')
+}
+
+function getHeaderRulesForCurrentParse() {
+  return normalizeHeaderRecognitionRules(headerRecognitionRules.value, { useDefaults: true }).filter(rule => rule.enabled)
+}
+
+function getBodyRulesForCurrentParse() {
+  return normalizeBodyRecognitionRules(bodyRecognitionRules.value, { useDefaults: true }).filter(rule => rule.enabled)
+}
+
+function getAdvancedRegexRulesForCurrentParse(target) {
+  return normalizeAdvancedRegexRules(advancedRegexRules.value).filter(rule => rule.enabled && rule.target === target && !getAdvancedRegexRuleError(rule))
+}
+
+function parseHeaderWithAdvancedRegex(line) {
+  const source = String(line || '').normalize('NFKC').trim()
+  if (!source) return null
+  for (const rule of getAdvancedRegexRulesForCurrentParse('header')) {
+    const match = source.match(new RegExp(rule.pattern, normalizeAdvancedRegexFlags(rule.flags)))
+    if (!match) continue
+    const map = parseAdvancedRegexFieldMap(rule.fieldMap)
+    const country = normalizeCountry(match[map.country] || '')
+    const name = cleanName(match[map.name] || '')
+    if (country && isValidName(name)) return { country, name, matchedRule: rule.name }
+  }
+  return null
+}
+
+function matchKnownCountryToken(value) {
+  const cleaned = normalizeHeaderText(value)
+  if (!cleaned) return null
+  const compact = cleaned.replace(/\s+/g, '')
+  const countries = getCountryKeys().sort((a, b) => b.length - a.length)
+  for (const country of countries) {
+    if (compact === country) return { raw: country, country: normalizeCountry(country) }
+  }
+  return null
+}
+
+function parseStructuredHeaderSameLine(line, rules = getHeaderRulesForCurrentParse()) {
+  const cleaned = normalizeHeaderText(line)
+  if (!cleaned) return null
+  const compact = cleaned.replace(/\s+/g, '')
+  const countries = getCountryKeys().sort((a, b) => b.length - a.length)
+
+  for (const rule of rules) {
+    if (!rule.enabled || ['country-line-name-line', 'name-line-country-line'].includes(rule.mode)) continue
+
+    if (rule.mode === 'labeled') {
+      const countryMatch = cleaned.match(/(?:國籍|國家)\s*[:：]?\s*([\u4e00-\u9fa5A-Za-z]+)/)
+      const nameMatch = cleaned.match(/(?:姓名|名字|名稱|小姐)\s*[:：]?\s*([\u4e00-\u9fa5A-Za-z0-9]{1,18})/)
+      if (countryMatch && nameMatch) {
+        const country = normalizeCountry(countryMatch[1])
+        const name = cleanName(nameMatch[1])
+        if (country && isValidName(name)) return { country, name, matchedRule: rule.name }
+      }
+      continue
+    }
+
+    if (isNotHeaderLine(cleaned)) continue
+
+    for (const countryAlias of countries) {
+      const fixedCountry = normalizeCountry(countryAlias)
+      if (rule.mode === 'country-name' && compact.startsWith(countryAlias)) {
+        const name = cleanName(removeHeaderNoise(compact.slice(countryAlias.length)))
+        if (isValidName(name)) return { country: fixedCountry, name, matchedRule: rule.name }
+      }
+      if (rule.mode === 'name-country' && compact.endsWith(countryAlias)) {
+        const name = cleanName(removeHeaderNoise(compact.slice(0, -countryAlias.length)))
+        if (isValidName(name)) return { country: fixedCountry, name, matchedRule: rule.name }
+      }
+    }
+  }
+  return null
+}
+
+function parseStructuredHeaderAt(lines, index, rules = getHeaderRulesForCurrentParse()) {
+  const sourceLines = Array.isArray(lines) ? lines : String(lines || '').split(/\r?\n/)
+  const current = String(sourceLines[index] || '').trim()
+  if (!current) return null
+
+  const advanced = parseHeaderWithAdvancedRegex(current)
+  if (advanced) return { ...advanced, startIndex: index, consumedLines: 1 }
+
+  const sameLine = parseStructuredHeaderSameLine(current, rules)
+  if (sameLine) return { ...sameLine, startIndex: index, consumedLines: 1 }
+
+  const next = String(sourceLines[index + 1] || '').trim()
+  if (!next) return null
+  for (const rule of rules) {
+    if (!rule.enabled) continue
+    if (rule.mode === 'country-line-name-line') {
+      const countryMatch = matchKnownCountryToken(current)
+      const name = cleanName(next)
+      if (countryMatch && !isNotHeaderLine(next) && isValidName(name)) {
+        return { country: countryMatch.country, name, matchedRule: rule.name, startIndex: index, consumedLines: 2 }
+      }
+    }
+    if (rule.mode === 'name-line-country-line') {
+      const countryMatch = matchKnownCountryToken(next)
+      const name = cleanName(current)
+      if (countryMatch && !isNotHeaderLine(current) && isValidName(name)) {
+        return { country: countryMatch.country, name, matchedRule: rule.name, startIndex: index, consumedLines: 2 }
+      }
+    }
+  }
+  return null
+}
+
+function bodyRuleFieldPattern(field) {
+  if (field === 'height') return { key: 'height', pattern: '(\\d{3})' }
+  if (field === 'weight') return { key: 'weight', pattern: '(\\d{2})' }
+  if (field === 'age') return { key: 'age', pattern: '(\\d{2})\\s*(?:歲|y|Y)?' }
+  if (field === 'cup' || field === 'braCup') {
+    return {
+      key: 'cup',
+      pattern: '(?:(?:真奶|天然|真|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓|奶|罩杯|胸)\\s*)?(?:\\d{2,3}\\s*)?([A-Ka-k])\\s*(?:奶|杯)?'
+    }
+  }
+  return null
+}
+
+function validateParsedBodyResult(result) {
+  const height = Number(result?.height)
+  const weight = Number(result?.weight)
+  const ageNumber = Number(String(result?.age || '').replace(/[^\d]/g, ''))
+  const cup = String(result?.cup || '').toUpperCase()
+  if (!Number.isFinite(height) || height < 130 || height > 210) return null
+  if (!Number.isFinite(weight) || weight < 30 || weight > 120) return null
+  if (!/^[A-K]$/.test(cup)) return null
+  if (ageNumber && (ageNumber < 18 || ageNumber > 65)) return null
+  return {
+    height: String(height),
+    weight: String(weight),
+    cup,
+    age: ageNumber ? `${ageNumber}y` : ''
+  }
+}
+
+function parseBodyWithAdvancedRegex(line) {
+  const source = String(line || '').normalize('NFKC').trim()
+  if (!source) return null
+  for (const rule of getAdvancedRegexRulesForCurrentParse('body')) {
+    const match = source.match(new RegExp(rule.pattern, normalizeAdvancedRegexFlags(rule.flags)))
+    if (!match) continue
+    const map = parseAdvancedRegexFieldMap(rule.fieldMap)
+    const parsed = validateParsedBodyResult({
+      height: match[map.height] || '',
+      weight: match[map.weight] || '',
+      cup: match[map.cup] || '',
+      age: map.age ? match[map.age] || '' : ''
+    })
+    if (parsed) return { ...parsed, matchedRule: rule.name }
+  }
+  return null
+}
+
+function parseBodyWithStructuredRules(line, rules = getBodyRulesForCurrentParse()) {
+  const source = normalizeDigits(String(line || '')).normalize('NFKC').trim()
+  if (!source) return null
+  const separator = '(?:\\s+|\\s*[/.。·・,，:：_\\-]\\s*)'
+
+  for (const rule of rules) {
+    if (!rule.enabled) continue
+    const fields = rule.fields.map(bodyRuleFieldPattern)
+    if (fields.some(field => !field)) continue
+    const captureKeys = fields.map(field => field.key)
+    const pattern = `^\\s*${fields.map(field => field.pattern).join(separator)}(?:\\s|$)`
+    let match = null
+    try {
+      match = source.match(new RegExp(pattern, 'iu'))
+    } catch {
+      continue
+    }
+    if (!match) continue
+
+    const raw = {}
+    captureKeys.forEach((key, index) => {
+      raw[key] = match[index + 1] || raw[key] || ''
+    })
+    const parsed = validateParsedBodyResult(raw)
+    if (parsed) return { ...parsed, matchedRule: rule.name }
+  }
+  return null
+}
+
+function getBodyOutputKeys() {
+  return bodyOutputOrder.value === 'height-weight-age-cup'
+    ? ['height', 'weight', 'age', 'cup']
+    : ['height', 'weight', 'cup', 'age']
+}
+
+function formatBodyOutput(body = {}) {
+  return getBodyOutputKeys().map(key => String(body?.[key] || '').trim()).filter(Boolean).join(' ')
+}
+
+const outputFormatPreview = computed(() => {
+  const title = buildPreviewHeaderTitle('小淫娃', '馬來')
+  return `${title}${formatBodyOutput({ height: '150', weight: '40', cup: 'D', age: '20y' })}  3K/30/1S  3.3K/50/1S`
+})
+
+const headerRecognitionPreview = computed(() => {
+  const lines = String(headerRecognitionTestText.value || '').split(/\r?\n/)
+  for (let index = 0; index < lines.length; index += 1) {
+    const result = parseStructuredHeaderAt(lines, index)
+      || parseHeaderWithAdvancedRegex(lines[index])
+      || parseHeaderLine(lines[index])
+      || parseStrictNameCountryHeaderLine(lines[index])
+    if (result) {
+      return {
+        ok: true,
+        message: `國籍：${result.country}｜小姐名稱：${result.name}${result.matchedRule ? `｜命中：${result.matchedRule}` : ''}`,
+        preview: buildPreviewHeaderTitle(result.name, result.country)
+      }
+    }
+  }
+  return { ok: false, message: '尚未命中目前規則；請調整來源順序、國籍同義詞或範例。', preview: '' }
+})
+
+const bodyRecognitionPreview = computed(() => {
+  const result = parseBody(bodyRecognitionTestText.value)
+  if (!result) return { ok: false, message: '尚未辨識身高、體重與罩杯。', preview: '' }
+  return {
+    ok: true,
+    message: `身高：${result.height}｜體重：${result.weight}｜罩杯：${result.cup}｜年齡：${result.age || '未提供'}${result.matchedRule ? `｜命中：${result.matchedRule}` : ''}`,
+    preview: formatBodyOutput(result)
+  }
+})
 
 const defaultCountryPriceRules = [
   '台妹=1000',
@@ -6780,12 +7506,20 @@ function splitBlocks(text) {
   // 舊版只要先找到第 1 種，就完全不再掃描純姓名起點，導致第 2 位小姐被併入上一筆。
   lines.forEach((line, index) => {
     const normalizedLine = normalizeThaiCountryHeaderLine(line)
+    const structuredHeader = parseStructuredHeaderAt(lines, index)
     // 第 018-169 批：標準規則若因員工／機房自訂規則誤把「妮妮 馬來西亞」
     // 判成非標題，仍以固定國籍清單做第二層結構辨識，避免整份文件切出 0 筆。
     const hasCountryHeader = Boolean(
-      parseHeaderLine(normalizedLine) || parseStrictNameCountryHeaderLine(normalizedLine)
+      structuredHeader || parseHeaderLine(normalizedLine) || parseStrictNameCountryHeaderLine(normalizedLine)
+    )
+    const previousStructuredHeader = index > 0 ? parseStructuredHeaderAt(lines, index - 1) : null
+    const isStructuredHeaderContinuation = Boolean(
+      previousStructuredHeader
+      && previousStructuredHeader.consumedLines === 2
+      && previousStructuredHeader.startIndex === index - 1
     )
     const hasNameOnlyHeader = !hasCountryHeader
+      && !isStructuredHeaderContinuation
       && isNameOnlyHeaderLine(line)
       && looksLikeNameOnlyRecordStart(lines, index)
 
@@ -6903,9 +7637,7 @@ function analyzeRecordForPreview(block) {
 
   const complete = Boolean(header && body && prices.length)
   const title = buildPreviewHeaderTitle(header?.name, finalCountry)
-  const bodyText = body
-    ? [body.height, body.weight, body.cup, body.age].filter(Boolean).join(' ')
-    : ''
+  const bodyText = body ? formatBodyOutput(body) : ''
   const firstLine = [title, bodyText, prices.join('  ')].filter(Boolean).join('  ')
   const previewLines = [firstLine]
 
@@ -7000,8 +7732,11 @@ function parseNameOnlyRecord(block) {
 function findHeaderInBlock(block) {
   const lines = String(block || '').split('\n')
 
-  for (const line of lines.slice(0, 12)) {
-    const normalizedLine = normalizeThaiCountryHeaderLine(line)
+  for (let index = 0; index < Math.min(lines.length, 12); index += 1) {
+    const structuredHeader = parseStructuredHeaderAt(lines, index)
+    if (structuredHeader) return structuredHeader
+
+    const normalizedLine = normalizeThaiCountryHeaderLine(lines[index])
     const header = parseHeaderLine(normalizedLine) || parseStrictNameCountryHeaderLine(normalizedLine)
     if (header) return header
   }
@@ -7124,7 +7859,15 @@ function parseStrictNameCountryHeaderLine(line) {
 
 function parseHeaderLine(line) {
   const cleaned = normalizeHeaderText(line)
-  if (!cleaned || isNotHeaderLine(cleaned)) return null
+  if (!cleaned) return null
+
+  const advancedHeader = parseHeaderWithAdvancedRegex(line)
+  if (advancedHeader) return advancedHeader
+
+  const structuredHeader = parseStructuredHeaderSameLine(line)
+  if (structuredHeader) return structuredHeader
+
+  if (isNotHeaderLine(cleaned)) return null
 
   const countries = getCountryKeys().sort((a, b) => b.length - a.length)
   const compact = cleaned.replace(/\s+/g, '')
@@ -7275,8 +8018,20 @@ function isValidName(name) {
 }
 
 function parseBody(text) {
-  const lines = normalizeDigits(String(text || ''))
+  const rawLines = normalizeDigits(String(text || ''))
     .split('\n')
+    .map(line => String(line || '').normalize('NFKC').trim())
+    .filter(Boolean)
+
+  for (const line of rawLines) {
+    const advancedBody = parseBodyWithAdvancedRegex(line)
+    if (advancedBody) return advancedBody
+
+    const structuredBody = parseBodyWithStructuredRules(line)
+    if (structuredBody) return structuredBody
+  }
+
+  const lines = rawLines
     .map(line => normalizeBodyText(line).trim())
     .filter(Boolean)
 
@@ -7288,7 +8043,7 @@ function parseBody(text) {
     // 例：166.46.真奶34D.22y、166／46／真奶34Ｄ／22歲。
     // 34 是內衣胸圍尺寸，文件2只取 D；點號只是欄位分隔，不可因此判定缺少身材。
     const delimitedBraSizeBodyMatch = line.match(
-      /^\s*(\d{3})\s*[\/.．。·・,，:：_-]\s*(\d{2})\s*[\/.．。·・,，:：_-]\s*(?:(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)\s*)?(?:奶|罩杯|胸)?\s*(?:\d{2,3}\s*)?([A-Za-z])\s*(?:奶|杯)?(?:\s*[\/.．。·・,，:：_-]\s*|\s+)?(?:(\d{2})\s*(?:歲|y|Y))?(?=\s|$)/
+      /^\s*(\d{3})\s*[\/.．。·・,，:：_-]\s*(\d{2})\s*[\/.．。·・,，:：_-]\s*(?:(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)\s*)?(?:奶|罩杯|胸)?\s*(?:\d{2,3}\s*)?([A-Ka-k])\s*(?:奶|杯)?(?:\s*[\/.．。·・,，:：_-]\s*|\s+)?(?:(\d{2})\s*(?:歲|y|Y))?(?=\s|$)/
     )
     if (delimitedBraSizeBodyMatch) {
       return {
@@ -7299,7 +8054,7 @@ function parseBody(text) {
       }
     }
 
-    const ageFirstMatch = line.match(/(\d{2})\s*(?:歲|y|Y)\s*[.．\s]*\s*(\d{3})\s*[\/.．]\s*(\d{2})\s*[\/.．]?\s*(?:\d{2})?\s*(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)?([A-Za-z])\s*(?:奶|杯)?/)
+    const ageFirstMatch = line.match(/(\d{2})\s*(?:歲|y|Y)\s*[.．\s]*\s*(\d{3})\s*[\/.．]\s*(\d{2})\s*[\/.．]?\s*(?:\d{2})?\s*(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)?([A-Ka-k])\s*(?:奶|杯)?/)
     if (ageFirstMatch) {
       return {
         height: ageFirstMatch[2],
@@ -7309,7 +8064,7 @@ function parseBody(text) {
       }
     }
 
-    const bodyWithExplicitAgeMatch = line.match(/(\d{3})\s*[\/.．]\s*(\d{2})\s*[\/.．]?\s*(?:\d{2})?\s*(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)?([A-Za-z])\s*(?:奶|杯)?\s*[\/\s]*?(\d{2})\s*(?:歲|y|Y)\b/)
+    const bodyWithExplicitAgeMatch = line.match(/(\d{3})\s*[\/.．]\s*(\d{2})\s*[\/.．]?\s*(?:\d{2})?\s*(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)?([A-Ka-k])\s*(?:奶|杯)?\s*[\/\s]*?(\d{2})\s*(?:歲|y|Y)\b/)
     if (bodyWithExplicitAgeMatch) {
       return {
         height: bodyWithExplicitAgeMatch[1],
@@ -7321,11 +8076,26 @@ function parseBody(text) {
   }
 
   for (const line of lines) {
+    // 第 018-175 批：支援年齡寫在罩杯前面。
+    // 例：150 40 20y 天然D、150／40／20歲／天然D。
+    // 舊版會把年齡尾碼 y 誤抓成罩杯 Y；這裡先以明確順序解析，且罩杯只接受 A～K。
+    const ageBeforeCupBodyMatch = line.match(
+      /^\s*(\d{3})\s*(?:[\/.．。·・,，:：_-]\s*|\s+)(\d{2})\s*(?:[\/.．。·・,，:：_-]\s*|\s+)(\d{2})\s*(?:歲|y|Y)\s*(?:[\/.．。·・,，:：_-]\s*|\s+)(?:(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)\s*)?(?:奶|罩杯|胸)?\s*(?:\d{2,3}\s*)?([A-Ka-k])\s*(?:奶|杯)?(?=\s|$)/
+    )
+    if (ageBeforeCupBodyMatch) {
+      return {
+        height: ageBeforeCupBodyMatch[1],
+        weight: ageBeforeCupBodyMatch[2],
+        cup: ageBeforeCupBodyMatch[4].toUpperCase(),
+        age: `${ageBeforeCupBodyMatch[3]}y`
+      }
+    }
+
     // 第 018-173 批：支援內衣胸圍數字黏在罩杯前面的寫法。
     // 例：166 46 真奶34D 22y、166 46 34D 22歲。
     // 34 是胸圍尺寸，文件2只取罩杯 D；不可因此整行判定為缺少身材。
     const spacedBraSizeBodyMatch = line.match(
-      /^\s*(\d{3})\s+(\d{2})\s+(?:(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)\s*)?(?:奶|罩杯|胸)?\s*(?:\d{2,3}\s*)?([A-Za-z])\s*(?:奶|杯)?\s*(?:(\d{2})\s*(?:歲|y|Y))?/
+      /^\s*(\d{3})\s+(\d{2})\s+(?:(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)\s*)?(?:奶|罩杯|胸)?\s*(?:\d{2,3}\s*)?([A-Ka-k])\s*(?:奶|杯)?\s*(?:(\d{2})\s*(?:歲|y|Y))?/
     )
     if (spacedBraSizeBodyMatch) {
       return {
@@ -7338,7 +8108,7 @@ function parseBody(text) {
 
     // 第 018-149 批：支援「158 47 20 E」＝身高 158、體重 47、年齡 20、罩杯 E。
     // 第三個兩位數位於體重與罩杯之間時，視為明確年齡，不再被舊版略過。
-    const spacedBodyWithAgeMatch = line.match(/^\s*(\d{3})\s+(\d{2})\s+(\d{2})\s+(?:(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)\s*)?([A-Za-z])\s*(?:奶|杯)?/)
+    const spacedBodyWithAgeMatch = line.match(/^\s*(\d{3})\s+(\d{2})\s+(\d{2})\s+(?:(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)\s*)?([A-Ka-k])\s*(?:奶|杯)?/)
     if (spacedBodyWithAgeMatch) {
       return {
         height: spacedBodyWithAgeMatch[1],
@@ -7350,7 +8120,7 @@ function parseBody(text) {
 
     // batch018-71：支援「155.44.莫奶D」「155/44/莫奶D」這種點號身材。
     // 這類資料常把 Cup 放在中文描述最後，原本只認「真D」或「D」，會導致整筆小姐解析失敗。
-    const descriptiveBodyMatch = line.match(/(\d{3})\s*[\/.．]\s*(\d{2})\s*[\/.．]\s*(?:[\u4e00-\u9fa5]{0,8})?([A-Za-z])\s*(?:奶|杯)?(?:\s*(\d{2})\s*(?:歲|y|Y))?/)
+    const descriptiveBodyMatch = line.match(/(\d{3})\s*[\/.．]\s*(\d{2})\s*[\/.．]\s*(?:[\u4e00-\u9fa5]{0,8})?([A-Ka-k])\s*(?:奶|杯)?(?:\s*(\d{2})\s*(?:歲|y|Y))?/)
     if (descriptiveBodyMatch) {
       return {
         height: descriptiveBodyMatch[1],
@@ -7360,7 +8130,7 @@ function parseBody(text) {
       }
     }
 
-    const bodyOnlyMatch = line.match(/(\d{3})\s*[\/.．]\s*(\d{2})\s*[\/.．]?\s*(?:\d{2})?\s*(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)?([A-Za-z])\s*(?:奶|杯)?/)
+    const bodyOnlyMatch = line.match(/(\d{3})\s*[\/.．]\s*(\d{2})\s*[\/.．]?\s*(?:\d{2})?\s*(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)?([A-Ka-k])\s*(?:奶|杯)?/)
     if (bodyOnlyMatch) {
       return {
         height: bodyOnlyMatch[1],
@@ -7370,7 +8140,7 @@ function parseBody(text) {
       }
     }
 
-    const spacedBodyMatch = line.match(/(\d{3})\s+(\d{2})\s+(?:\d{2}\s*)?(?:[\u4e00-\u9fa5]{0,8})?(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)?([A-Za-z])\s*(?:奶|杯)?/)
+    const spacedBodyMatch = line.match(/(\d{3})\s+(\d{2})\s+(?:\d{2}\s*)?(?:[\u4e00-\u9fa5]{0,8})?(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)?([A-Ka-k])\s*(?:奶|杯)?/)
     if (spacedBodyMatch) {
       const spacedAgeMatch = line.match(/(?:^|\s)(\d{2})\s*(?:歲|y|Y)\b/)
       return {
@@ -8337,9 +9107,10 @@ function hasExplicitPaidAmountForService(sourceText, outputToken) {
 }
 
 function buildTitle({ name, country, height, weight, cup, age }) {
-  if (titleMode.value === 'name-country') return `【${name} ${country}】${height} ${weight} ${cup}${age ? ` ${age}` : ''}`
-  if (titleMode.value === 'name-only') return `【${name}】${height} ${weight} ${cup}${age ? ` ${age}` : ''}`
-  return `【${country} ${name}】${height} ${weight} ${cup}${age ? ` ${age}` : ''}`
+  const bodyText = formatBodyOutput({ height, weight, cup, age })
+  if (titleMode.value === 'name-country') return `【${name} ${country}】${bodyText}`
+  if (titleMode.value === 'name-only') return `【${name}】${bodyText}`
+  return `【${country} ${name}】${bodyText}`
 }
 
 function getAppliedIncrease(country) {
@@ -9713,7 +10484,11 @@ function buildDefaultRuleData() {
     customIncrease: 700,
     amountPriorityMode: 'higher-price',
     titleMode: 'country-name',
+    bodyOutputOrder: 'height-weight-cup-age',
     formatHint: '【國籍 名稱】身高 體重 Cup 年齡　短鐘K/30/1S　長鐘K/50/1S',
+    headerRecognitionRules: normalizeHeaderRecognitionRules(defaultHeaderRecognitionRules),
+    bodyRecognitionRules: normalizeBodyRecognitionRules(defaultBodyRecognitionRules),
+    advancedRegexRules: [],
     countryPriceRulesText: defaultCountryPriceRules.join('\n'),
     minutePriceAddRulesText: defaultMinutePriceAddRules.join('\n'),
     countryAliasText: defaultCountryAliases.join('\n'),
@@ -9893,7 +10668,11 @@ function buildEmptyEmployeeSupplementData() {
     customIncrease: null,
     amountPriorityMode: '',
     titleMode: '',
+    bodyOutputOrder: '',
     formatHint: '',
+    headerRecognitionRules: [],
+    bodyRecognitionRules: [],
+    advancedRegexRules: [],
     countryPriceRulesText: '',
     minutePriceAddRulesText: '',
     countryAliasText: '',
@@ -9916,6 +10695,9 @@ function normalizeSupplementRuleData(data = {}) {
     kind: EMPLOYEE_SUPPLEMENT_RULE_KIND,
     globalIncrease: data.globalIncrease === '' || data.globalIncrease == null ? null : Number(data.globalIncrease),
     customIncrease: data.customIncrease === '' || data.customIncrease == null ? null : Number(data.customIncrease),
+    headerRecognitionRules: normalizeHeaderRecognitionRules(data.headerRecognitionRules, { useDefaults: false }),
+    bodyRecognitionRules: normalizeBodyRecognitionRules(data.bodyRecognitionRules, { useDefaults: false }),
+    advancedRegexRules: [],
     amountTransformRules: normalizeAmountRules(data.amountTransformRules ?? data.amountTransformRulesText ?? [])
   }
 }
@@ -9986,7 +10768,11 @@ function mergeOwnerAndEmployeeRules(ownerData = {}, supplementData = {}) {
     customIncrease: Number(choose('customIncrease', 700)),
     amountPriorityMode: choose('amountPriorityMode', 'higher-price'),
     titleMode: choose('titleMode', 'country-name'),
+    bodyOutputOrder: owner.bodyOutputOrder || 'height-weight-cup-age',
     formatHint: choose('formatHint', owner.formatHint || ''),
+    headerRecognitionRules: mergeRecognitionRuleLists(owner.headerRecognitionRules, extra.headerRecognitionRules, 'header'),
+    bodyRecognitionRules: mergeRecognitionRuleLists(owner.bodyRecognitionRules, extra.bodyRecognitionRules, 'body'),
+    advancedRegexRules: normalizeAdvancedRegexRules(owner.advancedRegexRules),
     countryPriceRulesText: mergeRuleTextWithSupplementOverride(
       owner.countryPriceRulesText,
       extra.countryPriceRulesText,
@@ -10094,7 +10880,11 @@ function applyEmployeeSupplementData(data, options = {}) {
   customIncrease.value = extra.customIncrease ?? ''
   amountPriorityMode.value = extra.amountPriorityMode
   titleMode.value = extra.titleMode
+  bodyOutputOrder.value = extra.bodyOutputOrder || ownerBaseRuleData.value?.bodyOutputOrder || 'height-weight-cup-age'
   formatHint.value = extra.formatHint
+  headerRecognitionRules.value = normalizeHeaderRecognitionRules(extra.headerRecognitionRules, { useDefaults: false })
+  bodyRecognitionRules.value = normalizeBodyRecognitionRules(extra.bodyRecognitionRules, { useDefaults: false })
+  advancedRegexRules.value = []
   countryPriceRulesText.value = extra.countryPriceRulesText
   minutePriceAddRulesText.value = extra.minutePriceAddRulesText
   countryAliasText.value = extra.countryAliasText
@@ -10151,7 +10941,11 @@ function normalizeRuleDataForCompare(data = {}) {
     customIncrease: Number(data.customIncrease ?? 700),
     amountPriorityMode: String(data.amountPriorityMode ?? 'higher-price'),
     titleMode: String(data.titleMode ?? 'country-name'),
+    bodyOutputOrder: String(data.bodyOutputOrder ?? 'height-weight-cup-age'),
     formatHint: normalizeRuleTextForCompare(data.formatHint),
+    headerRecognitionRules: normalizeHeaderRecognitionRules(data.headerRecognitionRules, { useDefaults: true }),
+    bodyRecognitionRules: normalizeBodyRecognitionRules(data.bodyRecognitionRules, { useDefaults: true }),
+    advancedRegexRules: normalizeAdvancedRegexRules(data.advancedRegexRules),
     countryPriceRulesText: normalizeRuleTextForCompare(data.countryPriceRulesText),
     minutePriceAddRulesText: normalizeRuleTextForCompare(data.minutePriceAddRulesText),
     countryAliasText: normalizeRuleTextForCompare(data.countryAliasText),
@@ -10534,7 +11328,11 @@ function collectRuleData() {
     customIncrease: customIncrease.value,
     amountPriorityMode: amountPriorityMode.value,
     titleMode: titleMode.value,
+    bodyOutputOrder: bodyOutputOrder.value,
     formatHint: formatHint.value,
+    headerRecognitionRules: normalizeHeaderRecognitionRules(headerRecognitionRules.value, { useDefaults: isOwner.value }),
+    bodyRecognitionRules: normalizeBodyRecognitionRules(bodyRecognitionRules.value, { useDefaults: isOwner.value }),
+    advancedRegexRules: isOwner.value ? normalizeAdvancedRegexRules(advancedRegexRules.value) : [],
     countryPriceRulesText: countryPriceRulesText.value,
     minutePriceAddRulesText: minutePriceAddRulesText.value,
     countryAliasText: countryAliasText.value,
@@ -10556,7 +11354,11 @@ function applyRuleData(data, options = {}) {
   customIncrease.value = Number(data.customIncrease ?? 700)
   amountPriorityMode.value = data.amountPriorityMode ?? 'higher-price'
   titleMode.value = data.titleMode ?? 'country-name'
+  bodyOutputOrder.value = data.bodyOutputOrder || 'height-weight-cup-age'
   formatHint.value = data.formatHint ?? formatHint.value
+  headerRecognitionRules.value = normalizeHeaderRecognitionRules(data.headerRecognitionRules, { useDefaults: true })
+  bodyRecognitionRules.value = normalizeBodyRecognitionRules(data.bodyRecognitionRules, { useDefaults: true })
+  advancedRegexRules.value = normalizeAdvancedRegexRules(data.advancedRegexRules)
   countryPriceRulesText.value = data.countryPriceRulesText ?? countryPriceRulesText.value
   minutePriceAddRulesText.value = data.minutePriceAddRulesText ?? minutePriceAddRulesText.value
   countryAliasText.value = data.countryAliasText ?? countryAliasText.value
@@ -10757,7 +11559,11 @@ function resetRules() {
   customIncrease.value = defaults.customIncrease
   amountPriorityMode.value = defaults.amountPriorityMode
   titleMode.value = defaults.titleMode
+  bodyOutputOrder.value = defaults.bodyOutputOrder
   formatHint.value = defaults.formatHint
+  headerRecognitionRules.value = normalizeHeaderRecognitionRules(defaults.headerRecognitionRules)
+  bodyRecognitionRules.value = normalizeBodyRecognitionRules(defaults.bodyRecognitionRules)
+  advancedRegexRules.value = normalizeAdvancedRegexRules(defaults.advancedRegexRules)
   countryPriceRulesText.value = defaults.countryPriceRulesText
   minutePriceAddRulesText.value = defaults.minutePriceAddRulesText
   countryAliasText.value = defaults.countryAliasText
@@ -17421,6 +18227,298 @@ button:disabled {
   border-radius: 10px;
   color: #94a3b8;
   font-size: 12px;
+}
+
+
+
+/* 第 018-176 批：結構化來源欄位規則與老闆專用 Regex */
+.recognition-format-modal {
+  width: min(1160px, calc(100vw - 32px));
+  max-height: min(86vh, 900px);
+  overflow: auto;
+}
+
+.format-settings-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 4px 0 16px;
+  border-bottom: 1px solid rgba(120, 143, 174, 0.2);
+}
+
+.format-settings-tabs button {
+  border: 1px solid rgba(75, 126, 180, 0.24);
+  border-radius: 999px;
+  background: #f3f7fb;
+  color: #31435a;
+  padding: 10px 16px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.format-settings-tabs button.active {
+  color: #fff;
+  border-color: transparent;
+  background: linear-gradient(135deg, #2f80ed, #25a7b8);
+  box-shadow: 0 10px 24px rgba(45, 129, 190, 0.2);
+}
+
+.recognition-settings-panel {
+  display: grid;
+  gap: 16px;
+  padding-top: 16px;
+}
+
+.recognition-panel-intro {
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(47, 128, 237, 0.09), rgba(37, 167, 184, 0.08));
+  border: 1px solid rgba(47, 128, 237, 0.14);
+  color: #30445c;
+}
+
+.recognition-panel-intro strong {
+  color: #1f334b;
+}
+
+.recognition-panel-intro span {
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.owner-only-intro {
+  background: linear-gradient(135deg, rgba(136, 74, 210, 0.1), rgba(235, 72, 145, 0.08));
+  border-color: rgba(136, 74, 210, 0.18);
+}
+
+.recognition-builder-grid,
+.regex-builder-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.body-builder-grid {
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+}
+
+.recognition-builder-grid label,
+.regex-builder-grid label,
+.recognition-test-card label {
+  display: grid;
+  gap: 7px;
+  color: #42556d;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.recognition-builder-grid input,
+.recognition-builder-grid select,
+.regex-builder-grid input,
+.regex-builder-grid select,
+.regex-builder-grid textarea,
+.recognition-rule-main input,
+.recognition-rule-main select,
+.recognition-rule-main textarea,
+.recognition-test-card textarea {
+  width: 100%;
+  border: 1px solid rgba(92, 116, 146, 0.26);
+  border-radius: 12px;
+  background: #fff;
+  color: #24364d;
+  padding: 10px 12px;
+  font: inherit;
+  box-sizing: border-box;
+}
+
+.recognition-builder-wide,
+.regex-pattern-field,
+.regex-map-field,
+.regex-example-field {
+  grid-column: span 2;
+}
+
+.recognition-add-btn {
+  min-height: 42px;
+}
+
+.recognition-rule-list {
+  display: grid;
+  gap: 10px;
+}
+
+.recognition-rule-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid rgba(89, 116, 149, 0.2);
+  border-radius: 15px;
+  background: rgba(249, 251, 254, 0.94);
+}
+
+.recognition-enable-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 800;
+  color: #466078;
+  padding-top: 10px;
+}
+
+.recognition-rule-main {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.8fr) minmax(210px, 1fr) minmax(180px, 1fr);
+  gap: 9px;
+}
+
+.body-rule-main,
+.regex-rule-main {
+  grid-template-columns: 1fr;
+}
+
+.body-rule-field-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+}
+
+.body-rule-field-row select {
+  width: auto;
+  min-width: 120px;
+}
+
+.recognition-rule-name {
+  font-weight: 800 !important;
+}
+
+.recognition-rule-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.recognition-rule-actions button {
+  border: 1px solid rgba(87, 112, 143, 0.2);
+  border-radius: 9px;
+  background: #fff;
+  color: #405870;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.recognition-rule-actions button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.recognition-rule-actions .danger-text-btn {
+  color: #b44256;
+}
+
+.recognition-empty-hint {
+  margin: 0;
+  color: #748397;
+  font-size: 13px;
+}
+
+.recognition-test-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+  gap: 12px;
+  padding: 14px;
+  border: 1px dashed rgba(47, 128, 237, 0.28);
+  border-radius: 16px;
+  background: rgba(244, 249, 255, 0.68);
+}
+
+.recognition-test-result {
+  display: grid;
+  align-content: center;
+  gap: 7px;
+  padding: 13px 15px;
+  border-radius: 13px;
+  font-size: 13px;
+}
+
+.recognition-test-result.success {
+  color: #176444;
+  background: rgba(43, 181, 116, 0.1);
+}
+
+.recognition-test-result.warning {
+  color: #8a5c15;
+  background: rgba(233, 168, 54, 0.12);
+}
+
+.recognition-test-result code,
+.output-format-preview-card code {
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: inherit;
+  font-family: inherit;
+  font-weight: 800;
+}
+
+.output-format-preview-card {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 16px;
+  background: #f5f8fc;
+  border: 1px solid rgba(83, 108, 139, 0.15);
+}
+
+.output-format-preview-card span {
+  color: #63758a;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.regex-rule-error {
+  color: #b44256;
+  font-weight: 700;
+}
+
+.regex-rule-ok {
+  color: #207a55;
+  font-weight: 700;
+}
+
+@media (max-width: 900px) {
+  .body-builder-grid,
+  .recognition-builder-grid,
+  .regex-builder-grid,
+  .recognition-test-card {
+    grid-template-columns: 1fr;
+  }
+
+  .recognition-builder-wide,
+  .regex-pattern-field,
+  .regex-map-field,
+  .regex-example-field {
+    grid-column: auto;
+  }
+
+  .recognition-rule-card {
+    grid-template-columns: 1fr;
+  }
+
+  .recognition-rule-main {
+    grid-template-columns: 1fr;
+  }
+
+  .recognition-rule-actions {
+    justify-content: flex-start;
+  }
 }
 
 </style>
