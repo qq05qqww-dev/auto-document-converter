@@ -8,6 +8,8 @@
 <!-- 第 018-165 批：獨立國籍行切筆＋空格分鐘價格加價修正版 -->
 <!-- 第 018-163 批：入珠明確加價保留並輸出文件2修正版 -->
 <!-- 第 018-162 批：文件1貼上自動留兩行＋情趣用品明確加價保留版 -->
+<!-- 第 018-171 批：機房本日文件3與媒體更新狀態同步顯示版 -->
+<!-- batch018-171-room-daily-document-media-status -->
 <!-- 第 018-161 批：媒體上傳下拉本次已上傳排序＋名稱固定寬度對齊圖片影片數量版 -->
 <!-- 第 018-157 批：服務同義詞逐行最長優先避免短規則重複套用版 -->
 <!-- 第 018-156 批：同義詞來源內嵌金額保留＋分鐘加價不重複累加修正版 -->
@@ -277,11 +279,14 @@
               </select>
             </label>
 
-            <label>
-              機房
+            <label class="room-daily-status-select">
+              <span class="room-daily-status-heading">
+                <span>機房</span>
+                <em>{{ managerRoomDailyUpdatedSummary }}</em>
+              </span>
               <select v-model="ruleScopeRoom" :disabled="!managerSelectedCity || !managerSelectedDistrict || !managerSelectedType">
                 <option value="">請選機房</option>
-                <option v-for="room in managerRooms" :key="room" :value="room">{{ room }}</option>
+                <option v-for="room in managerRooms" :key="room" :value="room">{{ getRoomOptionDisplayLabel(room) }}</option>
               </select>
             </label>
 
@@ -290,6 +295,9 @@
             </button>
           </div>
 
+          <small v-if="ruleScopeRoom" class="room-daily-current-status" :class="`is-${currentRoomDailyStatus.state}`">
+            {{ currentRoomDailyStatus.detail }}
+          </small>
         </div>
 
         <div class="room-rule-action-row scope-manager-action-shell">
@@ -1567,6 +1575,7 @@
 <!-- batch018-120-sync-id-backfill-media-upload-fix -->
 <!-- batch018-138-central-direct-media-upload-bind-fix -->
 <script setup>
+// batch018-171-room-daily-document-media-status
 // batch018-148-explicit-addon-amount-cleanup-alias-fix
 // batch018-140-individual-setting-save-buttons
 // 第 018-107 批：登入後預設展開地區機房管理，並記住最後使用的縣市 / 地區 / 定點外送 / 機房。
@@ -1583,6 +1592,8 @@ const RESULT_STORAGE_KEY = 'auto-document-converter-result-current'
 const RULE_SCOPE_STORAGE_KEY = 'auto-document-converter-scope-rules-current'
 const LOCATION_SCOPE_STORAGE_KEY = 'auto-document-converter-location-room-options-current'
 const LAST_SCOPE_SELECTION_STORAGE_KEY = 'auto-document-converter-last-scope-selection-current'
+const ROOM_DAILY_STATUS_STORAGE_KEY = 'auto-document-converter-room-daily-status-current'
+const ROOM_DAILY_BUSINESS_DAY_START_HOUR = 6
 const DEFAULT_MANAGER_SCOPE_TYPE = '定點'
 const CLEAN_START_PANEL_STORAGE_KEY = 'auto-document-converter-clean-start-panel-always-clean-home'
 const ONLINE_READY_VERSION_LABEL = '第 018-126 批：中央媒體來源統一與前後台數量同步修正版'
@@ -1814,6 +1825,7 @@ const employeeManageStatus = ref('老闆可在此建立員工帳號。')
 const employeeManageStatusType = ref('')
 const isEmployeeBusy = ref(false)
 const currentStaffName = ref(cleanStaffName(localStorage.getItem(STAFF_PROFILE_STORAGE_KEY) || STAFF_DEFAULT_NAME))
+const roomDailyStatusByScope = ref(readRoomDailyStatusStore())
 const staffLoginInput = ref(currentStaffName.value)
 const authUserEmail = computed(() => authUser.value?.email || '尚未登入')
 const isOwner = computed(() => authProfile.value?.role === 'owner')
@@ -1841,6 +1853,7 @@ function applyAuthenticatedProfile(user, profile = null) {
   currentStaffName.value = nextName
   staffLoginInput.value = nextName
   localStorage.setItem(STAFF_PROFILE_STORAGE_KEY, nextName)
+  roomDailyStatusByScope.value = readRoomDailyStatusStore()
 
   if (profile?.role === 'owner') {
     ruleScopeLevel.value = 'global'
@@ -2270,6 +2283,7 @@ async function switchStaffProfile() {
   currentStaffName.value = nextName
   staffLoginInput.value = nextName
   localStorage.setItem(STAFF_PROFILE_STORAGE_KEY, nextName)
+  roomDailyStatusByScope.value = readRoomDailyStatusStore()
 
   managerSelectedCity.value = ''
   managerSelectedDistrict.value = ''
@@ -5059,6 +5073,10 @@ async function uploadLadyMedia() {
       mergeUploadedMediaIntoLocalPreview(uploadTargetLadyId || mediaUploadLadyId.value, uploadedCentralMediaItems, uploadTargetPreviewLady)
     }
 
+    if (successCount || skippedDuplicateCount) {
+      markCurrentRoomMediaChecked({ uploadSucceeded: true })
+    }
+
     if (!successCount && skippedDuplicateCount) {
       mediaUploadStatusText.value = `媒體上傳已完成：成功 0 個，略過重複 ${skippedDuplicateCount} 個，失敗 0 個。沒有新增重複媒體。`
       return
@@ -5084,6 +5102,7 @@ async function uploadLadyMedia() {
         mergeUploadedMediaIntoLocalPreview(targetLadyId || mediaUploadLadyId.value, uploadedCentralMediaItems, uploadTargetPreviewLady)
       }
 
+      markCurrentRoomMediaChecked({ uploadSucceeded: successCount > 0 || skippedDuplicateCount > 0 })
       mediaUploadStatusText.value = `媒體疊加上傳完成：成功 ${successCount} 個，略過重複 ${skippedDuplicateCount} 個，失敗 ${failCount} 個。已直接上傳 R2 並綁定 01 中央網站 listing_media；沒有再重送整筆小姐資料，避免媒體被覆蓋。`
     } catch (syncError) {
       if (uploadedCentralMediaItems.length) {
@@ -5939,6 +5958,7 @@ async function submitDocument4ToDatabase(options = {}) {
 
     if (!plan.itemsToSubmit.length) {
       databaseSaved = true
+      markCurrentRoomDocumentSaved(payload)
       setDatabaseSubmitFeedback(`本次 ${plan.syncedCount} 筆皆已同步，已略過資料庫寫入；正在同步本次文件到中央網站...`, 'pending')
       centralWebsiteSyncNeedsRetry.value = false
       const centralSync = await syncSavedLadiesToCentralWebsite(payload)
@@ -5992,6 +6012,7 @@ async function submitDocument4ToDatabase(options = {}) {
     }
 
     databaseSaved = true
+    markCurrentRoomDocumentSaved(payload)
     apiStatusText.value = `${data.message || '資料庫儲存成功'} 正在自動同步中央網站...`
     setDatabaseSubmitFeedback('資料庫儲存成功，正在同步中央網站...', 'pending')
 
@@ -6112,6 +6133,240 @@ function getCurrentListingLocation() {
     locationText: [city, district, mode, room].filter(Boolean).join(' / ')
   }
 }
+
+
+function getBusinessDayKey(value = new Date()) {
+  const date = value instanceof Date ? new Date(value.getTime()) : new Date(value)
+  const safeDate = Number.isNaN(date.getTime()) ? new Date() : date
+  safeDate.setHours(safeDate.getHours() - ROOM_DAILY_BUSINESS_DAY_START_HOUR)
+  const pad = number => String(number).padStart(2, '0')
+  return `${safeDate.getFullYear()}-${pad(safeDate.getMonth() + 1)}-${pad(safeDate.getDate())}`
+}
+
+function makeRoomDailyScopeKey(scope = {}) {
+  const city = cleanScopeText(scope.city)
+  const district = cleanScopeText(scope.district)
+  const mode = cleanScopeText(scope.mode || scope.type)
+  const room = cleanScopeText(scope.room)
+  if (!city || !district || !mode || !room) return ''
+  return `${city}__${district}__${mode}__${room}`
+}
+
+function normalizeRoomDailyStatusRecord(record = {}) {
+  if (!record || typeof record !== 'object') return null
+  const businessDayKey = cleanScopeText(record.businessDayKey || record.business_day_key)
+  if (!businessDayKey) return null
+  return {
+    businessDayKey,
+    documentSavedAt: cleanScopeText(record.documentSavedAt || record.document_saved_at),
+    mediaUploadedAt: cleanScopeText(record.mediaUploadedAt || record.media_uploaded_at),
+    documentItemCount: Math.max(0, Number(record.documentItemCount || record.document_item_count || 0)),
+    mediaReadyCount: Math.max(0, Number(record.mediaReadyCount || record.media_ready_count || 0)),
+    mediaTotalCount: Math.max(0, Number(record.mediaTotalCount || record.media_total_count || 0)),
+    imageCount: Math.max(0, Number(record.imageCount || record.image_count || 0)),
+    videoCount: Math.max(0, Number(record.videoCount || record.video_count || 0)),
+    updatedAt: cleanScopeText(record.updatedAt || record.updated_at || record.documentSavedAt || record.mediaUploadedAt)
+  }
+}
+
+function normalizeRoomDailyStatusStore(store = {}) {
+  if (!store || typeof store !== 'object' || Array.isArray(store)) return {}
+  return Object.entries(store).reduce((result, [key, value]) => {
+    const normalized = normalizeRoomDailyStatusRecord(value)
+    if (cleanScopeText(key) && normalized) result[key] = normalized
+    return result
+  }, {})
+}
+
+function readRoomDailyStatusStore() {
+  try {
+    return normalizeRoomDailyStatusStore(JSON.parse(localStorage.getItem(getStaffScopedStorageKey(ROOM_DAILY_STATUS_STORAGE_KEY)) || '{}'))
+  } catch {
+    return {}
+  }
+}
+
+function writeRoomDailyStatusStore(store = roomDailyStatusByScope.value) {
+  const normalized = normalizeRoomDailyStatusStore(store)
+  roomDailyStatusByScope.value = normalized
+  localStorage.setItem(getStaffScopedStorageKey(ROOM_DAILY_STATUS_STORAGE_KEY), JSON.stringify(normalized))
+  return normalized
+}
+
+function mergeRoomDailyStatusStores(localStore = {}, onlineStore = {}) {
+  const local = normalizeRoomDailyStatusStore(localStore)
+  const online = normalizeRoomDailyStatusStore(onlineStore)
+  const keys = new Set([...Object.keys(local), ...Object.keys(online)])
+  const merged = {}
+
+  keys.forEach(key => {
+    const localItem = local[key]
+    const onlineItem = online[key]
+    if (!localItem) {
+      merged[key] = onlineItem
+      return
+    }
+    if (!onlineItem) {
+      merged[key] = localItem
+      return
+    }
+
+    const localTime = new Date(localItem.updatedAt || localItem.documentSavedAt || localItem.mediaUploadedAt || 0).getTime() || 0
+    const onlineTime = new Date(onlineItem.updatedAt || onlineItem.documentSavedAt || onlineItem.mediaUploadedAt || 0).getTime() || 0
+    merged[key] = onlineTime > localTime ? onlineItem : localItem
+  })
+
+  return merged
+}
+
+function formatRoomDailyStatusTime(value) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const pad = number => String(number).padStart(2, '0')
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+function getCurrentDocumentMediaSummary() {
+  const ladies = Array.isArray(currentDocumentPreviewLadies.value) ? currentDocumentPreviewLadies.value : []
+  let mediaReadyCount = 0
+  let imageCount = 0
+  let videoCount = 0
+
+  ladies.forEach(lady => {
+    const mediaItems = Array.isArray(lady?.media) ? lady.media.filter(media => media?.url) : []
+    if (mediaItems.length) mediaReadyCount += 1
+    mediaItems.forEach(media => {
+      if (String(media?.mediaType || '').toLowerCase() === 'video') videoCount += 1
+      else imageCount += 1
+    })
+  })
+
+  return {
+    mediaReadyCount,
+    mediaTotalCount: ladies.length,
+    imageCount,
+    videoCount
+  }
+}
+
+function updateCurrentRoomDailyStatus(patch = {}, options = {}) {
+  const location = options.location || getCurrentListingLocation()
+  const key = makeRoomDailyScopeKey(location)
+  if (!key) return null
+
+  const now = new Date().toISOString()
+  const businessDayKey = getBusinessDayKey(now)
+  const currentStore = normalizeRoomDailyStatusStore(roomDailyStatusByScope.value)
+  const previous = currentStore[key]?.businessDayKey === businessDayKey ? currentStore[key] : {}
+  const nextRecord = normalizeRoomDailyStatusRecord({
+    ...previous,
+    ...patch,
+    businessDayKey,
+    updatedAt: now
+  })
+
+  roomDailyStatusByScope.value = {
+    ...currentStore,
+    [key]: nextRecord
+  }
+  writeRoomDailyStatusStore(roomDailyStatusByScope.value)
+
+  if (options.syncOnline !== false && isOnlineWorkspaceReady()) {
+    void saveLocationOptionsOnline(locationOptions.value, { silent: true })
+  }
+
+  return nextRecord
+}
+
+function markCurrentRoomDocumentSaved(payload = null) {
+  const items = Array.isArray(payload?.items) ? payload.items : []
+  if (!items.length) return null
+  const mediaSummary = getCurrentDocumentMediaSummary()
+  return updateCurrentRoomDailyStatus({
+    documentSavedAt: new Date().toISOString(),
+    documentItemCount: items.length,
+    ...mediaSummary
+  })
+}
+
+function markCurrentRoomMediaChecked(options = {}) {
+  const mediaSummary = getCurrentDocumentMediaSummary()
+  const currentLocation = getCurrentListingLocation()
+  const key = makeRoomDailyScopeKey(currentLocation)
+  const currentDay = getBusinessDayKey()
+  const existing = key ? normalizeRoomDailyStatusStore(roomDailyStatusByScope.value)[key] : null
+  const documentItemCount = Math.max(Number(existing?.documentItemCount || 0), Number(mediaSummary.mediaTotalCount || 0))
+  const allCurrentLadiesHaveMedia = documentItemCount > 0 && mediaSummary.mediaReadyCount >= documentItemCount
+
+  return updateCurrentRoomDailyStatus({
+    ...mediaSummary,
+    documentItemCount,
+    mediaUploadedAt: options.uploadSucceeded && allCurrentLadiesHaveMedia
+      ? new Date().toISOString()
+      : (existing?.businessDayKey === currentDay ? existing?.mediaUploadedAt || '' : '')
+  })
+}
+
+function getRoomDailyStatus(room, scope = {}) {
+  const location = {
+    city: scope.city || managerSelectedCity.value || ruleScopeCity.value,
+    district: scope.district || managerSelectedDistrict.value || ruleScopeDistrict.value,
+    mode: scope.mode || scope.type || managerSelectedType.value || ruleScopeType.value,
+    room
+  }
+  const key = makeRoomDailyScopeKey(location)
+  const record = key ? normalizeRoomDailyStatusStore(roomDailyStatusByScope.value)[key] : null
+  const businessDayKey = getBusinessDayKey()
+  const emptyStatus = {
+    state: 'idle',
+    shortLabel: '⚪ 今日尚未更新',
+    detail: '今日尚未更新文件3與媒體。',
+    complete: false,
+    documentSaved: false
+  }
+
+  if (!record || record.businessDayKey !== businessDayKey) return emptyStatus
+
+  const documentSaved = Boolean(record.documentSavedAt && getBusinessDayKey(record.documentSavedAt) === businessDayKey)
+  const mediaUploaded = Boolean(record.mediaUploadedAt && getBusinessDayKey(record.mediaUploadedAt) === businessDayKey)
+  const totalCount = Math.max(Number(record.documentItemCount || 0), Number(record.mediaTotalCount || 0))
+  const readyCount = Math.min(totalCount || Number(record.mediaReadyCount || 0), Number(record.mediaReadyCount || 0))
+  const complete = documentSaved && mediaUploaded && totalCount > 0 && readyCount >= totalCount
+  const timeText = formatRoomDailyStatusTime(record.mediaUploadedAt || record.documentSavedAt)
+
+  if (complete) {
+    return {
+      state: 'complete',
+      shortLabel: `✅ 本日已更新${timeText ? ` ${timeText}` : ''}`,
+      detail: `文件3與媒體均已完成｜小姐 ${readyCount}/${totalCount}｜圖 ${record.imageCount || 0}／影 ${record.videoCount || 0}`,
+      complete: true,
+      documentSaved: true
+    }
+  }
+
+  if (documentSaved) {
+    const mediaProgress = totalCount > 0 ? `${readyCount}/${totalCount}` : '未完成'
+    return {
+      state: 'partial',
+      shortLabel: `🟡 文件3已更新・媒體 ${mediaProgress}`,
+      detail: `文件3已於 ${formatRoomDailyStatusTime(record.documentSavedAt) || '今日'} 儲存；媒體完成 ${mediaProgress}，全部小姐有媒體後才會顯示本日已更新。`,
+      complete: false,
+      documentSaved: true
+    }
+  }
+
+  return emptyStatus
+}
+
+function getRoomOptionDisplayLabel(room) {
+  const status = getRoomDailyStatus(room)
+  return `${room}｜${status.shortLabel}`
+}
+
+const managerRoomDailyUpdatedCount = computed(() => managerRooms.value.filter(room => getRoomDailyStatus(room).complete).length)
+const managerRoomDailyUpdatedSummary = computed(() => `今日已更新 ${managerRoomDailyUpdatedCount.value}/${managerRooms.value.length}`)
+const currentRoomDailyStatus = computed(() => ruleScopeRoom.value ? getRoomDailyStatus(ruleScopeRoom.value) : getRoomDailyStatus(''))
 
 function validateCurrentListingLocation() {
   const location = getCurrentListingLocation()
@@ -8705,7 +8960,8 @@ function buildOnlineOptionsPayload(options = locationOptions.value) {
     kind: ONLINE_OPTIONS_KIND,
     savedAt: new Date().toISOString(),
     options: normalizeLocationOptions(options),
-    lastScope: readLastScopeSelection()
+    lastScope: readLastScopeSelection(),
+    roomDailyStatus: normalizeRoomDailyStatusStore(roomDailyStatusByScope.value)
   }
 }
 
@@ -8757,8 +9013,13 @@ async function loadLocationOptionsOnline(opts = {}) {
 
   const onlineOptions = data?.rules?.options
   const onlineLastScope = normalizeLastScopeSelection(data?.rules?.lastScope)
+  const onlineRoomDailyStatus = normalizeRoomDailyStatusStore(data?.rules?.roomDailyStatus)
   if (onlineLastScope) {
     writeLastScopeSelection(onlineLastScope, { keepSavedAt: true })
+  }
+  if (Object.keys(onlineRoomDailyStatus).length) {
+    roomDailyStatusByScope.value = mergeRoomDailyStatusStores(readRoomDailyStatusStore(), onlineRoomDailyStatus)
+    writeRoomDailyStatusStore(roomDailyStatusByScope.value)
   }
 
   if (onlineOptions && typeof onlineOptions === 'object') {
@@ -13942,6 +14203,48 @@ select:focus, input:focus, textarea:focus {
   background: #fff;
   padding: 0 14px;
   font: inherit;
+}
+
+.room-daily-status-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.room-daily-status-heading em {
+  overflow: hidden;
+  color: #64748b;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.room-daily-current-status {
+  display: block;
+  overflow: hidden;
+  min-height: 16px;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.room-daily-current-status.is-complete {
+  color: #047857;
+}
+
+.room-daily-current-status.is-partial {
+  color: #b45309;
+}
+
+.room-daily-current-status.is-idle {
+  color: #64748b;
 }
 
 .manager-crud-toggle {
