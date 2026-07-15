@@ -583,7 +583,7 @@
           <button type="button" :class="{ active: formatSettingsTab === 'header' }" @click="formatSettingsTab = 'header'">小姐標題規則</button>
           <button type="button" :class="{ active: formatSettingsTab === 'body' }" @click="formatSettingsTab = 'body'">身材欄位規則</button>
           <button type="button" :class="{ active: formatSettingsTab === 'output' }" @click="formatSettingsTab = 'output'">文件2輸出格式</button>
-          <button v-if="isOwner" type="button" :class="{ active: formatSettingsTab === 'regex' }" @click="formatSettingsTab = 'regex'">老闆進階 Regex</button>
+          <button v-if="isOwner" type="button" :class="{ active: formatSettingsTab === 'regex' }" @click="formatSettingsTab = 'regex'">老闆特殊格式</button>
         </div>
 
         <section v-if="formatSettingsTab === 'header'" class="recognition-settings-panel">
@@ -753,59 +753,68 @@
 
         <section v-else-if="formatSettingsTab === 'regex' && isOwner" class="recognition-settings-panel owner-regex-panel">
           <div class="recognition-panel-intro owner-only-intro">
-            <strong>老闆專用進階正規表示式（Regex）</strong>
-            <span>所有員工轉換時會自動套用，但員工看不到也不能修改。請先用範例測試，避免規則過寬。</span>
+            <strong>老闆專用特殊格式</strong>
+            <span>不用輸入英文公式。直接用中文欄位標記來源格式，員工轉換時會自動套用，但看不到也不能修改。</span>
           </div>
 
-          <div class="regex-builder-grid">
+          <div class="special-format-help-card">
+            <strong>使用方式</strong>
+            <span>例如輸入「身高{身高} 體重{體重} 年齡{年齡} 罩杯{罩杯}」，再放入測試範例「身高150 體重40 年齡20y 罩杯天然D」。</span>
+            <span>大括號內是系統欄位，外面的中文是店家固定寫法；全形、半形與常見分隔符號會自動統一。</span>
+          </div>
+
+          <div class="special-format-builder-grid">
             <label>
               規則名稱
               <input v-model="newRegexRuleName" placeholder="例如：特殊店家身材格式" />
             </label>
             <label>
-              類型
+              資料類型
               <select v-model="newRegexRuleTarget">
                 <option value="header">小姐標題</option>
-                <option value="body">身材欄位</option>
+                <option value="body">身材資料</option>
               </select>
             </label>
-            <label>
-              Flags
-              <input v-model="newRegexRuleFlags" placeholder="例如：iu" />
+            <label class="special-template-field">
+              來源格式範本
+              <textarea v-model="newSpecialRuleTemplate" rows="3" :placeholder="specialRuleTemplatePlaceholder"></textarea>
             </label>
-            <label class="regex-pattern-field">
-              正規表示式
-              <textarea v-model="newRegexRulePattern" rows="2" placeholder="例如：^(\d{3})\s+(\d{2})\s+(\d{2})y\s+.*?([A-K])$"></textarea>
-            </label>
-            <label class="regex-map-field">
-              欄位對應
-              <input v-model="newRegexRuleFieldMap" placeholder="身材：height=1,weight=2,age=3,cup=4" />
-            </label>
-            <label class="regex-example-field">
+            <div class="special-placeholder-panel">
+              <span>點一下加入欄位：</span>
+              <button
+                v-for="item in specialRulePlaceholderOptions"
+                :key="item.value"
+                type="button"
+                @click="appendSpecialRulePlaceholder(item.value)"
+              >{{ item.label }}</button>
+            </div>
+            <label class="special-example-field">
               測試範例
-              <input v-model="newRegexRuleExample" placeholder="例如：150 40 20y 天然D" />
+              <input v-model="newRegexRuleExample" :placeholder="specialRuleExamplePlaceholder" />
             </label>
-            <button class="primary-btn recognition-add-btn" type="button" @click="addAdvancedRegexRule">新增進階規則</button>
+            <div class="recognition-test-result special-rule-preview" :class="specialRulePreview.ok ? 'success' : 'warning'">
+              <strong>{{ specialRulePreview.ok ? '測試成功' : '尚未辨識' }}</strong>
+              <span>{{ specialRulePreview.message }}</span>
+              <code v-if="specialRulePreview.preview">{{ specialRulePreview.preview }}</code>
+            </div>
+            <button class="primary-btn recognition-add-btn special-add-btn" type="button" @click="addAdvancedRegexRule">新增特殊格式</button>
           </div>
 
           <div v-if="advancedRegexRules.length" class="recognition-rule-list regex-rule-list">
-            <article v-for="(rule, index) in advancedRegexRules" :key="rule.id || `regex-rule-${index}`" class="recognition-rule-card regex-rule-card">
+            <article v-for="(rule, index) in advancedRegexRules" :key="rule.id || `regex-rule-${index}`" class="recognition-rule-card regex-rule-card special-rule-card">
               <label class="recognition-enable-toggle">
                 <input v-model="rule.enabled" type="checkbox" />
                 啟用
               </label>
-              <div class="recognition-rule-main regex-rule-main">
-                <input v-model="rule.name" class="recognition-rule-name" aria-label="Regex 規則名稱" />
-                <select v-model="rule.target" aria-label="Regex 類型">
-                  <option value="header">小姐標題</option>
-                  <option value="body">身材欄位</option>
-                </select>
-                <input v-model="rule.flags" placeholder="flags" aria-label="Regex flags" />
-                <textarea v-model="rule.pattern" rows="2" placeholder="正規表示式" aria-label="Regex pattern"></textarea>
-                <input v-model="rule.fieldMap" placeholder="country=1,name=2 或 height=1,weight=2,cup=3,age=4" aria-label="Regex 欄位對應" />
-                <input v-model="rule.example" placeholder="測試範例" aria-label="Regex 測試範例" />
-                <small v-if="getAdvancedRegexRuleError(rule)" class="regex-rule-error">{{ getAdvancedRegexRuleError(rule) }}</small>
-                <small v-else class="regex-rule-ok">規則格式可用</small>
+              <div class="recognition-rule-main regex-rule-main special-rule-main">
+                <input v-model="rule.name" class="recognition-rule-name" aria-label="特殊格式規則名稱" />
+                <div class="special-rule-summary">
+                  <strong>{{ rule.target === 'header' ? '小姐標題' : '身材資料' }}</strong>
+                  <span>{{ rule.template || '舊版特殊規則（已保留，仍會自動套用）' }}</span>
+                </div>
+                <input v-model="rule.example" placeholder="測試範例" aria-label="特殊格式測試範例" />
+                <small v-if="getAdvancedRegexRuleError(rule)" class="regex-rule-error">這條規則目前無法使用，請刪除後用上方中文格式重新建立。</small>
+                <small v-else class="regex-rule-ok">規則可正常套用</small>
               </div>
               <div class="recognition-rule-actions">
                 <button type="button" :disabled="index === 0" @click="moveRecognitionRule(advancedRegexRules, index, -1)">上移</button>
@@ -814,7 +823,7 @@
               </div>
             </article>
           </div>
-          <p v-else class="recognition-empty-hint">尚未建立進階 Regex；一般格式會由結構化規則與系統內建辨識處理。</p>
+          <p v-else class="recognition-empty-hint">尚未建立老闆特殊格式；一般來源會由標題規則、身材規則與系統內建辨識處理。</p>
         </section>
       </div>
 
@@ -1809,6 +1818,7 @@
 <script setup>
 // batch018-175-age-before-cup-body-and-cup-whitelist-fix
 // batch018-176-structured-source-recognition-owner-regex-output-unification
+// batch018-177-wide-recognition-modal-owner-chinese-special-format
 // batch018-174-dot-delimited-bra-size-body-age-fix
 // batch018-173-full-half-width-spaced-amount-bra-size-body-fix
 // batch018-171-room-daily-document-media-status
@@ -2695,6 +2705,7 @@ const newRegexRuleFlags = ref('iu')
 const newRegexRulePattern = ref('')
 const newRegexRuleFieldMap = ref('height=1,weight=2,age=3,cup=4')
 const newRegexRuleExample = ref('')
+const newSpecialRuleTemplate = ref('{身高} {體重} {年齡} {罩杯}')
 
 
 function createRecognitionRuleId(prefix = 'rule') {
@@ -2752,6 +2763,7 @@ function normalizeAdvancedRegexRules(value) {
       pattern: String(rule?.pattern || '').trim(),
       flags: normalizeAdvancedRegexFlags(rule?.flags),
       fieldMap: String(rule?.fieldMap || '').trim(),
+      template: String(rule?.template || ''),
       example: String(rule?.example || ''),
       enabled: rule?.enabled !== false
     }))
@@ -2863,52 +2875,178 @@ function parseAdvancedRegexFieldMap(value) {
 
 function isSafeAdvancedRegexPattern(pattern) {
   const value = String(pattern || '')
-  if (!value || value.length > 300) return false
+  if (!value || value.length > 600) return false
   if (/\\[1-9]/.test(value)) return false
   if (/\((?:[^()]|\\.)*[+*](?:[^()]|\\.)*\)[+*{]/.test(value)) return false
   if (/(?:\.\*|\.\+){2,}/.test(value)) return false
   return true
 }
 
+const SPECIAL_RULE_PLACEHOLDERS = {
+  身高: { key: 'height', pattern: '(\\d{3})' },
+  體重: { key: 'weight', pattern: '(\\d{2,3})' },
+  年齡: { key: 'age', pattern: '(\\d{2})\\s*(?:歲|y|Y)?' },
+  罩杯: { key: 'cup', pattern: '(?:(?:真奶|天然|真|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓|奶|罩杯|胸)\\s*)?(?:\\d{2,3}\\s*)?([A-Ka-k])\\s*(?:奶|杯)?' },
+  胸圍罩杯: { key: 'cup', pattern: '(?:(?:真奶|天然|真|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓|奶|罩杯|胸)\\s*)?(?:\\d{2,3}\\s*)?([A-Ka-k])\\s*(?:奶|杯)?' },
+  國籍: { key: 'country', pattern: '([\\u4e00-\\u9fa5A-Za-z]{1,10})' },
+  小姐名稱: { key: 'name', pattern: '([\\u4e00-\\u9fa5A-Za-z0-9]{1,18})' }
+}
+
+function escapeSpecialRuleLiteral(value = '') {
+  return String(value || '')
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/\s+/g, '\\s*')
+}
+
+function compileChineseSpecialRule(templateValue, targetValue) {
+  const template = String(templateValue || '').normalize('NFKC').trim()
+  if (!template) return { error: '請輸入來源格式範本。' }
+  const placeholderRegex = /\{(身高|體重|年齡|罩杯|胸圍罩杯|國籍|小姐名稱)\}/g
+  const map = {}
+  const parts = []
+  let lastIndex = 0
+  let groupIndex = 0
+  let match
+  while ((match = placeholderRegex.exec(template))) {
+    parts.push(escapeSpecialRuleLiteral(template.slice(lastIndex, match.index)))
+    const definition = SPECIAL_RULE_PLACEHOLDERS[match[1]]
+    groupIndex += 1
+    if (!map[definition.key]) map[definition.key] = groupIndex
+    parts.push(definition.pattern)
+    lastIndex = match.index + match[0].length
+  }
+  parts.push(escapeSpecialRuleLiteral(template.slice(lastIndex)))
+
+  if (!groupIndex) return { error: '範本內至少要加入一個大括號欄位。' }
+  const target = targetValue === 'header' ? 'header' : 'body'
+  const required = target === 'header' ? ['country', 'name'] : ['height', 'weight', 'cup']
+  if (!required.every(key => map[key])) {
+    return {
+      error: target === 'header'
+        ? '小姐標題至少需要「{國籍}」與「{小姐名稱}」。'
+        : '身材資料至少需要「{身高}」、「{體重}」與「{罩杯}／{胸圍罩杯}」。'
+    }
+  }
+  const fieldMap = Object.entries(map).map(([key, index]) => `${key}=${index}`).join(',')
+  return {
+    target,
+    template,
+    pattern: `^\\s*${parts.join('')}\\s*$`,
+    flags: 'iu',
+    fieldMap,
+    map
+  }
+}
+
 function getAdvancedRegexRuleError(rule) {
-  if (!rule?.pattern) return '請輸入正規表示式。'
-  if (!isSafeAdvancedRegexPattern(rule.pattern)) return '規則過長或包含高風險重複結構／反向參照。'
+  if (!rule?.pattern) return '規則內容不完整。'
+  if (!isSafeAdvancedRegexPattern(rule.pattern)) return '規則內容過長或包含高風險結構。'
   const map = parseAdvancedRegexFieldMap(rule.fieldMap)
   const required = rule.target === 'header' ? ['country', 'name'] : ['height', 'weight', 'cup']
-  if (!required.every(key => map[key])) return `欄位對應至少需要：${required.join('、')}`
+  if (!required.every(key => map[key])) return '必要欄位不足。'
   try {
     new RegExp(rule.pattern, normalizeAdvancedRegexFlags(rule.flags))
-  } catch (error) {
-    return `正規表示式錯誤：${error.message || error}`
+  } catch {
+    return '規則格式無法使用。'
   }
   return ''
 }
 
+function appendSpecialRulePlaceholder(value) {
+  const token = `{${value}}`
+  const current = String(newSpecialRuleTemplate.value || '')
+  newSpecialRuleTemplate.value = current ? `${current.trimEnd()} ${token}` : token
+}
+
+const specialRulePlaceholderOptions = computed(() => newRegexRuleTarget.value === 'header'
+  ? [
+      { value: '國籍', label: '國籍' },
+      { value: '小姐名稱', label: '小姐名稱' }
+    ]
+  : [
+      { value: '身高', label: '身高' },
+      { value: '體重', label: '體重' },
+      { value: '年齡', label: '年齡' },
+      { value: '罩杯', label: '罩杯' },
+      { value: '胸圍罩杯', label: '34D' }
+    ])
+
+const specialRuleTemplatePlaceholder = computed(() => newRegexRuleTarget.value === 'header'
+  ? '例如：國籍：{國籍} 姓名：{小姐名稱}'
+  : '例如：身高{身高} 體重{體重} 年齡{年齡} 罩杯{罩杯}')
+
+const specialRuleExamplePlaceholder = computed(() => newRegexRuleTarget.value === 'header'
+  ? '例如：國籍：越南 姓名：妃己'
+  : '例如：身高150 體重40 年齡20y 罩杯天然D')
+
+watch(newRegexRuleTarget, target => {
+  newSpecialRuleTemplate.value = target === 'header'
+    ? '國籍：{國籍} 姓名：{小姐名稱}'
+    : '{身高} {體重} {年齡} {罩杯}'
+  newRegexRuleExample.value = ''
+})
+
+const specialRulePreview = computed(() => {
+  const compiled = compileChineseSpecialRule(newSpecialRuleTemplate.value, newRegexRuleTarget.value)
+  if (compiled.error) return { ok: false, message: compiled.error, preview: '' }
+  const example = String(newRegexRuleExample.value || '').normalize('NFKC').trim()
+  if (!example) return { ok: false, message: '請輸入一筆測試範例。', preview: '' }
+  let match = null
+  try {
+    match = example.match(new RegExp(compiled.pattern, compiled.flags))
+  } catch {
+    return { ok: false, message: '來源格式範本無法建立，請重新輸入。', preview: '' }
+  }
+  if (!match) return { ok: false, message: '測試範例與來源格式範本不相符。', preview: '' }
+  if (compiled.target === 'header') {
+    const country = normalizeCountry(match[compiled.map.country] || '')
+    const name = cleanName(match[compiled.map.name] || '')
+    if (!country || !isValidName(name)) return { ok: false, message: '國籍或小姐名稱無法確認。', preview: '' }
+    return { ok: true, message: `國籍：${country}｜小姐名稱：${name}`, preview: buildPreviewHeaderTitle(name, country) }
+  }
+  const parsed = validateParsedBodyResult({
+    height: match[compiled.map.height] || '',
+    weight: match[compiled.map.weight] || '',
+    cup: match[compiled.map.cup] || '',
+    age: compiled.map.age ? match[compiled.map.age] || '' : ''
+  })
+  if (!parsed) return { ok: false, message: '身高、體重或罩杯不在合理範圍。', preview: '' }
+  return {
+    ok: true,
+    message: `身高：${parsed.height}｜體重：${parsed.weight}｜罩杯：${parsed.cup}｜年齡：${parsed.age || '未提供'}`,
+    preview: formatBodyOutput(parsed)
+  }
+})
+
 function addAdvancedRegexRule() {
   if (!isOwner.value) {
-    showActionToast('只有老闆可以新增進階 Regex。', 'warning')
+    showActionToast('只有老闆可以新增特殊格式。', 'warning')
+    return
+  }
+  const compiled = compileChineseSpecialRule(newSpecialRuleTemplate.value, newRegexRuleTarget.value)
+  if (compiled.error) {
+    showActionToast(compiled.error, 'warning')
+    return
+  }
+  if (!specialRulePreview.value.ok) {
+    showActionToast('請先讓測試範例顯示「測試成功」。', 'warning')
     return
   }
   const rule = {
-    id: createRecognitionRuleId('regex'),
-    name: String(newRegexRuleName.value || '').trim() || '老闆進階規則',
-    target: newRegexRuleTarget.value === 'header' ? 'header' : 'body',
-    pattern: String(newRegexRulePattern.value || '').trim(),
-    flags: normalizeAdvancedRegexFlags(newRegexRuleFlags.value),
-    fieldMap: String(newRegexRuleFieldMap.value || '').trim(),
+    id: createRecognitionRuleId('special'),
+    name: String(newRegexRuleName.value || '').trim() || '老闆特殊格式',
+    target: compiled.target,
+    pattern: compiled.pattern,
+    flags: compiled.flags,
+    fieldMap: compiled.fieldMap,
+    template: compiled.template,
     example: String(newRegexRuleExample.value || '').trim(),
     enabled: true
   }
-  const error = getAdvancedRegexRuleError(rule)
-  if (error) {
-    showActionToast(error, 'warning')
-    return
-  }
   advancedRegexRules.value.push(rule)
   newRegexRuleName.value = ''
-  newRegexRulePattern.value = ''
   newRegexRuleExample.value = ''
-  showActionToast('已新增老闆進階 Regex；請按上方「儲存」。', 'success')
+  showActionToast('已新增老闆特殊格式；請按上方「儲存」。', 'success')
 }
 
 function getHeaderRulesForCurrentParse() {
@@ -18518,6 +18656,268 @@ button:disabled {
 
   .recognition-rule-actions {
     justify-content: flex-start;
+  }
+}
+
+
+/* 第 018-177 批：欄位辨識視窗加寬、固定單欄、移除水平走位，老闆特殊格式改中文操作 */
+.top-settings-format-modal.recognition-format-modal {
+  display: block !important;
+  width: min(1480px, calc(100vw - 28px)) !important;
+  max-width: none !important;
+  max-height: calc(100vh - 28px) !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  padding: 24px 28px 28px !important;
+}
+
+.recognition-format-modal .top-settings-modal-head {
+  position: sticky;
+  top: -24px;
+  z-index: 8;
+  margin-inline: -28px;
+  padding: 20px 28px 14px;
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(12px);
+}
+
+.recognition-format-modal .format-settings-tabs {
+  position: sticky;
+  top: 77px;
+  z-index: 7;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  width: 100%;
+  padding: 12px 0 14px;
+  background: rgba(255, 255, 255, 0.97);
+  backdrop-filter: blur(10px);
+}
+
+.recognition-format-modal .format-settings-tabs button {
+  width: 100%;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.recognition-format-modal .recognition-settings-panel,
+.recognition-format-modal .recognition-rule-list,
+.recognition-format-modal .recognition-test-card,
+.recognition-format-modal .output-format-panel {
+  width: 100%;
+  min-width: 0;
+}
+
+.recognition-format-modal .header-builder-grid {
+  grid-template-columns: minmax(220px, 0.9fr) minmax(300px, 1.2fr) minmax(0, 1.8fr) auto;
+}
+
+.recognition-format-modal .header-builder-grid .recognition-builder-wide {
+  grid-column: auto;
+}
+
+.recognition-format-modal .body-builder-grid {
+  grid-template-columns: minmax(220px, 1.2fr) repeat(4, minmax(135px, 0.8fr));
+}
+
+.recognition-format-modal .body-builder-grid .recognition-builder-wide {
+  grid-column: 1 / -2;
+}
+
+.recognition-format-modal .body-builder-grid .recognition-add-btn {
+  grid-column: -2 / -1;
+}
+
+.recognition-format-modal .recognition-rule-card {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.recognition-format-modal .recognition-rule-main {
+  grid-template-columns: minmax(180px, 0.75fr) minmax(260px, 1.15fr) minmax(220px, 1fr);
+}
+
+.recognition-format-modal .body-rule-main,
+.recognition-format-modal .regex-rule-main {
+  grid-template-columns: 1fr;
+}
+
+.recognition-format-modal .body-rule-field-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(130px, 1fr));
+  gap: 8px;
+}
+
+.recognition-format-modal .body-rule-field-row span {
+  display: none;
+}
+
+.recognition-format-modal .body-rule-field-row select {
+  width: 100%;
+  min-width: 0;
+}
+
+.special-format-help-card {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid rgba(139, 92, 246, 0.16);
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.08), rgba(236, 72, 153, 0.06));
+  color: #4b3c66;
+}
+
+.special-format-help-card span {
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.special-format-builder-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(220px, 0.7fr) minmax(0, 1.5fr);
+  gap: 12px;
+  align-items: end;
+}
+
+.special-format-builder-grid label {
+  display: grid;
+  gap: 7px;
+  color: #42556d;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.special-format-builder-grid input,
+.special-format-builder-grid select,
+.special-format-builder-grid textarea {
+  width: 100%;
+  border: 1px solid rgba(92, 116, 146, 0.26);
+  border-radius: 12px;
+  background: #fff;
+  color: #24364d;
+  padding: 10px 12px;
+  font: inherit;
+  box-sizing: border-box;
+}
+
+.special-template-field {
+  grid-column: 1 / -1;
+}
+
+.special-placeholder-panel {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: #f6f3ff;
+  color: #5b4a76;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.special-placeholder-panel button {
+  border: 1px solid rgba(139, 92, 246, 0.24);
+  border-radius: 999px;
+  background: #fff;
+  color: #6548a0;
+  padding: 7px 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.special-example-field {
+  grid-column: 1 / 3;
+}
+
+.special-rule-preview {
+  min-height: 44px;
+}
+
+.special-add-btn {
+  grid-column: 1 / -1;
+  justify-self: start;
+  min-width: 190px;
+}
+
+.special-rule-summary {
+  display: grid;
+  gap: 5px;
+  padding: 11px 13px;
+  border-radius: 12px;
+  background: #f5f7fb;
+  color: #42556d;
+}
+
+.special-rule-summary span {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+@media (max-width: 1180px) {
+  .recognition-format-modal .format-settings-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    top: 96px;
+  }
+
+  .recognition-format-modal .header-builder-grid,
+  .recognition-format-modal .body-builder-grid,
+  .special-format-builder-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .recognition-format-modal .header-builder-grid .recognition-builder-wide,
+  .recognition-format-modal .body-builder-grid .recognition-builder-wide,
+  .recognition-format-modal .body-builder-grid .recognition-add-btn,
+  .special-template-field,
+  .special-placeholder-panel,
+  .special-add-btn {
+    grid-column: 1 / -1;
+  }
+
+  .special-example-field {
+    grid-column: auto;
+  }
+
+  .recognition-format-modal .recognition-rule-card {
+    grid-template-columns: 1fr;
+  }
+
+  .recognition-format-modal .recognition-rule-actions {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 720px) {
+  .top-settings-format-modal.recognition-format-modal {
+    width: calc(100vw - 12px) !important;
+    max-height: calc(100vh - 12px) !important;
+    padding: 16px !important;
+  }
+
+  .recognition-format-modal .top-settings-modal-head {
+    top: -16px;
+    margin-inline: -16px;
+    padding: 16px;
+  }
+
+  .recognition-format-modal .format-settings-tabs {
+    position: static;
+    grid-template-columns: 1fr;
+  }
+
+  .recognition-format-modal .header-builder-grid,
+  .recognition-format-modal .body-builder-grid,
+  .special-format-builder-grid,
+  .recognition-format-modal .recognition-test-card,
+  .recognition-format-modal .body-rule-field-row {
+    grid-template-columns: 1fr;
+  }
+
+  .special-example-field {
+    grid-column: 1 / -1;
   }
 }
 
