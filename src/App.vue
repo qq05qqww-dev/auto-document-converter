@@ -1,3 +1,5 @@
+<!-- 第 018-172 批：泰國洗誤切小姐＋底價在前後格式＋不完整小姐保留預覽修正版 -->
+<!-- batch018-172-thai-wash-header-bottom-price-incomplete-record-fix -->
 <!-- 第 018-170 批：金額在前空格方案辨識修正版 -->
 <!-- batch018-170-amount-first-space-price-plan -->
 <!-- 第 018-169 批：姓名＋馬來西亞標題強制辨識與文件1切筆回歸修正版 -->
@@ -6794,10 +6796,17 @@ function splitBlocks(text) {
         const endIndex = index + 1 < uniqueStartIndexes.length ? uniqueStartIndexes[index + 1] : lines.length
         return lines.slice(startIndex, endIndex).join('\n').trim()
       })
-      .filter(block => hasMinimumRecordFields(block) || !!parseNameOnlyRecord(block))
+      // 第 018-172 批：文件2本來就允許顯示「缺少身材／價格」的不完整小姐，
+      // 因此切筆後只要仍有可辨識的小姐標題就必須保留。
+      // 舊版用 hasMinimumRecordFields() 先要求價格完整，會讓使用者把備註加入
+      // 「不想出現文字」後，原本僅靠錯誤姓名候選被保留下來的台妹整筆消失。
+      .filter(block => Boolean(findHeaderInBlock(block) || parseNameOnlyRecord(block)))
   }
 
-  return hasMinimumRecordFields(text) ? [text.trim()] : []
+  const fallbackBlock = String(text || '').trim()
+  return fallbackBlock && (findHeaderInBlock(fallbackBlock) || parseNameOnlyRecord(fallbackBlock))
+    ? [fallbackBlock]
+    : []
 }
 
 function normalizeThaiCountryHeaderLine(line) {
@@ -7222,6 +7231,16 @@ function isNotHeaderLine(line) {
   const value = String(line || '')
   const serviceAliasValue = normalizeServiceAliasMatchText(value)
 
+  // 第 018-172 批：「泰國洗+500元」中的「泰國」是服務名稱的一部分，
+  // 不是國籍標題。必須在國籍＋姓名解析前先排除，避免被切成假小姐「洗500元」。
+  const thaiWashServiceMatched = /^(?:泰國洗|泰洗|泰式洗)(?:\+|加)?\d{0,5}(?:元)?$/.test(serviceAliasValue)
+  if (thaiWashServiceMatched) return true
+
+  // 一般提醒句不可成為無國籍小姐名。這類文字被加入「不想出現文字」後，
+  // 也不得影響前一位小姐是否保留在文件2。
+  const customerNoticeMatched = /(?:請客人|客人.*(?:自備|零鈔)|盡量自備|自備零鈔)/.test(value)
+  if (customerNoticeMatched) return true
+
   // 第 018-98 批：避免「買2節送1S」這種短服務行被當成無國籍小姐名。
   // 舊版 name-only 切筆會往後看 10 行，如果下一位小姐的身材/價格剛好在範圍內，
   // 服務行就會變成假的切筆點，導致上一位小姐漏掉 2+1s / 3+1 / 5+3。
@@ -7243,6 +7262,12 @@ function isValidName(name) {
   if (value.length > 18) return false
   if (/^\d+$/.test(value)) return false
   if (/^(分|分鐘|回|歲|奶|杯|國家|國籍|服務|套餐|超值|升級|底單|最低)$/.test(value)) return false
+
+  // 第 018-172 批：姓名候選若帶有明確金額尾碼或完整服務名稱，必定不是小姐名。
+  // 例：「泰國洗+500元」不能因移除國籍「泰國」後變成「洗500元」。
+  if (/\d{3,5}(?:元)?$/.test(value)) return false
+  if (/(?:泰國洗|泰洗|泰式洗|共浴|口爆|吞精|顏射|按摩|攝影|買\d|送\d)/.test(value)) return false
+
   return true
 }
 
@@ -7506,6 +7531,19 @@ function parsePrices(text, increase) {
       if (minutes && sessionCount && kAmount) {
         pushPrice(minutes, sessionCount, kAmount * 1000)
       }
+      return
+    }
+
+    // 第 018-172 批：支援「底」寫在金額前面的方案。
+    // 例：短鐘30分1S 底2.8、長鐘50分1S 底3.1。
+    const bottomBeforeAmountMatch = normalized.match(
+      /(?:快餐|短[鐘鍾]|長[鐘鍾])?\s*(\d{2,3})\s*(?:分鐘|分)\s*(NS|N\s*\/?\s*S|\d+\s*S)?\s*底(?:價)?\s*([0-9]+(?:\.[0-9]+)?)/i
+    )
+    if (bottomBeforeAmountMatch) {
+      const minutes = Number(bottomBeforeAmountMatch[1])
+      const sessionCount = bottomBeforeAmountMatch[2] || '1S'
+      const amount = parseBottomPriceAmount(bottomBeforeAmountMatch[3])
+      pushPrice(minutes, sessionCount, amount)
       return
     }
 
