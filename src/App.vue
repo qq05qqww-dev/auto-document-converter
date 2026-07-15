@@ -1,3 +1,5 @@
+<!-- 第 018-170 批：金額在前空格方案辨識修正版 -->
+<!-- batch018-170-amount-first-space-price-plan -->
 <!-- 第 018-169 批：姓名＋馬來西亞標題強制辨識與文件1切筆回歸修正版 -->
 <!-- batch018-169-strict-name-country-header-fallback -->
 <!-- 第 018-168 批：員工服務同義詞最後輸入優先＋優惠組合避免重複漏抓版 -->
@@ -7190,6 +7192,24 @@ function parsePrices(text, increase) {
       .replace(/[／]/g, '/')
       .replace(/　/g, ' ')
       .trim()
+
+    // 第 018-170 批：支援「金額 分鐘 節數」的空格方案格式。
+    // 例：1500 20 1S、1900 40 1S、3500 90 2S。
+    // 整行必須只包含金額、分鐘與可選節數，並限制金額與分鐘範圍，
+    // 避免把身高／體重／年齡或服務數字誤判為正式價格。
+    const plainAmountMinuteMatch = normalized.match(
+      /^([0-9]{3,5})\s+(\d{2,3})(?:\s+(NS|N\s*\/?\s*S|\d+\s*S))?$/i
+    )
+    if (plainAmountMinuteMatch) {
+      const amount = Number(plainAmountMinuteMatch[1])
+      const minutes = Number(plainAmountMinuteMatch[2])
+      const sessionCount = plainAmountMinuteMatch[3] || '1S'
+
+      if (amount >= 1000 && minutes >= 10 && minutes <= 180) {
+        pushPrice(minutes, sessionCount, amount)
+        return
+      }
+    }
 
     // 第 018-164 批：支援只有空格、未寫「分／分鐘」的正式價格。
     // 例：30 2500 → 2.5K/30/1S；50 2800 → 2.8K/50/1S。
