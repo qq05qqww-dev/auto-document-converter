@@ -1819,6 +1819,7 @@
 // batch018-175-age-before-cup-body-and-cup-whitelist-fix
 // batch018-176-structured-source-recognition-owner-regex-output-unification
 // batch018-177-wide-recognition-modal-owner-chinese-special-format
+// batch018-178-separated-digit-body-name-only-boundary-fix
 // batch018-174-dot-delimited-bra-size-body-age-fix
 // batch018-173-full-half-width-spaced-amount-bra-size-body-fix
 // batch018-171-room-daily-document-media-status
@@ -7720,7 +7721,16 @@ function looksLikeNameOnlyRecordStart(lines, index) {
 
   if (bodyIndex < 0) return false
 
-  const pricePreview = followingLines.slice(bodyIndex + 1, bodyIndex + 5).join('\n')
+  // 第 018-178 批：純姓名下一個非空白行若立即就是有效身材，
+  // 即可確認為新小姐起點，不必再要求價格在 4 行內出現。
+  // 來源常在身材與價格之間插入多行服務，舊版因此漏切下一位小姐，
+  // 導致下一位的身材被錯套到上一位。
+  if (bodyIndex === 0) return true
+
+  // 姓名後先獨立寫國籍，再接身材，也視為明確新筆。
+  if (bodyIndex === 1 && extractStandaloneCountryFromLine(followingLines[0])) return true
+
+  const pricePreview = followingLines.slice(bodyIndex + 1, bodyIndex + 8).join('\n')
   return parsePrices(pricePreview, 0).length > 0
 }
 
@@ -8155,6 +8165,33 @@ function isValidName(name) {
   return true
 }
 
+function parseSeparatedDigitBodyLine(line) {
+  const source = normalizeDigits(String(line || '')).normalize('NFKC').trim()
+  if (!source) return null
+
+  // 第 018-178 批：支援店家把身高、體重逐字分開。
+  // 例：1 6 2 4 8 D ＝ 162 / 48 / D。
+  // 僅接受「5 個單一數字＋A～K 罩杯」，避免將價格或電話誤判為身材。
+  const compactMatch = source.match(
+    /^\s*(\d)\s+(\d)\s+(\d)\s+(\d)\s+(\d)\s+(?:(\d)\s+(\d)\s*(?:歲|y|Y)\s+)?(?:(?:真奶|天然|真|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓|奶|罩杯|胸)\s*)?(?:\d{2,3}\s*)?([A-Ka-k])\s*(?:奶|杯)?(?:\s+(\d)\s+(\d)\s*(?:歲|y|Y))?\s*$/iu
+  )
+  if (!compactMatch) return null
+
+  const ageBeforeCup = compactMatch[6] && compactMatch[7]
+    ? `${compactMatch[6]}${compactMatch[7]}y`
+    : ''
+  const ageAfterCup = compactMatch[9] && compactMatch[10]
+    ? `${compactMatch[9]}${compactMatch[10]}y`
+    : ''
+
+  return validateParsedBodyResult({
+    height: `${compactMatch[1]}${compactMatch[2]}${compactMatch[3]}`,
+    weight: `${compactMatch[4]}${compactMatch[5]}`,
+    cup: compactMatch[8],
+    age: ageBeforeCup || ageAfterCup
+  })
+}
+
 function parseBody(text) {
   const rawLines = normalizeDigits(String(text || ''))
     .split('\n')
@@ -8162,6 +8199,9 @@ function parseBody(text) {
     .filter(Boolean)
 
   for (const line of rawLines) {
+    const separatedDigitBody = parseSeparatedDigitBodyLine(line)
+    if (separatedDigitBody) return separatedDigitBody
+
     const advancedBody = parseBodyWithAdvancedRegex(line)
     if (advancedBody) return advancedBody
 
