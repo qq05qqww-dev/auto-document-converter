@@ -1,3 +1,5 @@
+<!-- 第 018-185 批：分鐘＋節數＋兩位數底價正式方案通用解析修正版 -->
+<!-- batch018-185-minute-session-short-bottom-price-plan-fix -->
 <!-- 第 018-184 批：姓名尾碼國籍代碼 Unicode 通用正規化＋VN 越妹顯示修正版 -->
 <!-- batch018-184-unicode-country-code-suffix-nationality-label-fix -->
 <!-- 第 018-183 批：Unicode 小型國籍代碼 TW／SG／VN／MY 正規化修正版 -->
@@ -8661,6 +8663,25 @@ function parsePrices(text, increase) {
       const sessionCount = bottomAmountFirstMatch[3] || '1S'
 
       if (amount >= 1000 && amount <= 50000 && minutes >= 10 && minutes <= 180) {
+        pushPrice(minutes, sessionCount, amount)
+        return
+      }
+    }
+
+    // 第 018-185 批：支援「分鐘＋節數＋兩位數底價」且分鐘未寫「分／分鐘」的正式方案。
+    // 例：40 1S 21底、60 1S 25底、60 2S 30底。
+    // 整行必須完整符合，並且必須具有節數與「底」標記，避免將身材或一般數字列誤判為價格。
+    // 兩位數底價仍沿用既有 parseBottomPriceAmount：21底 = 2100、30底 = 3000，
+    // 後續照常套用國籍／固定加價與分鐘加價規則。
+    const minuteSessionShortBottomMatch = normalized.match(
+      /^(?:快餐|短[鐘鍾]|長[鐘鍾])?\s*(\d{2,3})\s*(?:分鐘|分)?\s*(NS|N\s*\/?\s*S|\d+\s*S?)\s*([0-9]+(?:\.[0-9]+)?)\s*底(?:價)?$/i
+    )
+    if (minuteSessionShortBottomMatch) {
+      const minutes = Number(minuteSessionShortBottomMatch[1])
+      const sessionCount = minuteSessionShortBottomMatch[2] || '1S'
+      const amount = parseBottomPriceAmount(minuteSessionShortBottomMatch[3])
+
+      if (minutes >= 10 && minutes <= 180 && amount >= 1000 && amount <= 50000) {
         pushPrice(minutes, sessionCount, amount)
         return
       }
