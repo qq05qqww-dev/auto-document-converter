@@ -1,3 +1,5 @@
+<!-- 第 018-193 批：雙飛對象固定置於一般服務末端／加值服務前方版 -->
+<!-- batch018-193-double-fly-before-addon-service-order -->
 <!-- 第 018-192 批：Unicode 行／段落分隔符正規化與多小姐切筆恢復版 -->
 <!-- batch018-192-unicode-line-separator-multi-record-split-fix -->
 <!-- 第 018-191 批：雙飛對象限縮同機房／同縣市地區／文件3本批名單安全抓取版 -->
@@ -9791,7 +9793,36 @@ function extractServices(block, currentLady = {}) {
   })
 }
 
+// 第 018-193 批：雙飛屬於一般服務關係，不應混在 +金額加值服務中間。
+// 無論小姐名稱是否不同，統一排在一般服務最後、第一個加值／優惠服務之前。
+function isDoubleFlyServiceToken018193(value) {
+  return /^雙飛(?:[:：].+)?$/.test(String(value || '').trim())
+}
+
+function getDoubleFlyBeforeAddonOrderIndex018193(orderIndex) {
+  let firstAddonIndex = Number.POSITIVE_INFINITY
+  let lastOrderedIndex = -1
+
+  for (const [orderedItem, index] of orderIndex.entries()) {
+    const numericIndex = Number(index)
+    if (!Number.isFinite(numericIndex)) continue
+    lastOrderedIndex = Math.max(lastOrderedIndex, numericIndex)
+
+    const normalizedItem = normalizeServiceOutputToken(orderedItem)
+    if (hasMonetaryServiceSuffix(normalizedItem) || isPromotionServiceToken(normalizedItem)) {
+      firstAddonIndex = Math.min(firstAddonIndex, numericIndex)
+    }
+  }
+
+  if (Number.isFinite(firstAddonIndex)) return firstAddonIndex - 0.5
+  return lastOrderedIndex >= 0 ? lastOrderedIndex + 0.5 : 0
+}
+
 function getServiceOrderIndex(item, orderIndex) {
+  if (isDoubleFlyServiceToken018193(item)) {
+    return getDoubleFlyBeforeAddonOrderIndex018193(orderIndex)
+  }
+
   if (orderIndex.has(item)) return orderIndex.get(item)
 
   // 如果使用者把 2節3S 改顯示成 2+1s，
@@ -9835,13 +9866,6 @@ function getServiceOrderIndex(item, orderIndex) {
   if (stripMonetaryServiceSuffix(item) === '入珠客') {
     if (orderIndex.has('入珠客+500')) return orderIndex.get('入珠客+500')
     if (orderIndex.has('入珠+500')) return orderIndex.get('入珠+500') + 0.1
-  }
-
-  // 第 018-166 批：使用者舊機房排序通常沒有「雙飛：小姐名」，
-  // 有設定「雙飛」就沿用其位置；沒有則固定排在其他未設定服務之前。
-  if (/^雙飛[:：]/.test(String(item || ''))) {
-    if (orderIndex.has('雙飛')) return orderIndex.get('雙飛')
-    return Number.MAX_SAFE_INTEGER - 1
   }
 
   // 第 018-179 批：無套內／外射的金額可由來源動態決定，例如 +1500、+2000。
