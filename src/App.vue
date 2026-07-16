@@ -1,3 +1,5 @@
+<!-- 第 018-188 批：分鐘＋無節數＋完整金額底價正式方案通用解析修正版 -->
+<!-- batch018-188-minute-no-session-full-bottom-amount-price-plan-fix -->
 <!-- 第 018-187 批：同範圍同名身材分流＋調派鎖定同步相容修正版 -->
 <!-- batch018-187-same-scope-body-identity-and-transfer-lock-compatibility -->
 <!-- 第 018-186 批：同姓名跨縣市主檔 ID／媒體隔離修正版 -->
@@ -3887,6 +3889,13 @@ function isPriceLine(line) {
 
   // 30分/1S 2.2K、60分鐘 回3200、短鐘30分/2.5底
   if (/\d{2,3}\s*(?:分鐘|分)/.test(value) && /([0-9]+(?:\.[0-9]+)?\s*[kK]|[0-9]{3,5}|[0-9]+(?:\.[0-9]+)?\s*底|回\s*[0-9]{3,5})/.test(value)) return true
+
+  // 第 018-188 批：支援未寫「分／分鐘」與節數、但明確帶「底」的正式價格列。
+  // 例：40 2000底、60 2300底、40 21底；「底」是必要標記，避免身材數字被誤判。
+  if (/^(?:快餐|短[鐘鍾]|長[鐘鍾])?\s*\d{2,3}\s+[0-9]+(?:\.[0-9]+)?\s*底(?:價)?$/i.test(value)) return true
+
+  // 同時保留有節數的無分鐘單位格式：40 1S 21底、60 2S 3000底。
+  if (/^(?:快餐|短[鐘鍾]|長[鐘鍾])?\s*\d{2,3}\s+(?:NS|N\s*\/?\s*S|\d+\s*S?)\s+[0-9]+(?:\.[0-9]+)?\s*底(?:價)?$/i.test(value)) return true
 
   return false
 }
@@ -8862,6 +8871,23 @@ function parsePrices(text, increase) {
 
       if (amount >= 1000 && amount <= 50000 && minutes >= 10 && minutes <= 180) {
         pushPrice(minutes, sessionCount, amount)
+        return
+      }
+    }
+
+    // 第 018-188 批：支援「分鐘＋完整金額底價」，且分鐘可省略「分／分鐘」、節數可省略。
+    // 例：40 2000底、60 2300底、40 21底、短鐘 40 2000底。
+    // 沒寫節數時固定正規化為 1S；同時支援兩位數底價與完整金額底價。
+    // 整行必須完整符合且帶有「底」，避免把身高／體重或其他一般數字列誤判為價格。
+    const minuteNoSessionBottomAmountMatch = normalized.match(
+      /^(?:快餐|短[鐘鍾]|長[鐘鍾])?\s*(\d{2,3})\s*(?:分鐘|分)?\s*([0-9]+(?:\.[0-9]+)?)\s*底(?:價)?$/i
+    )
+    if (minuteNoSessionBottomAmountMatch) {
+      const minutes = Number(minuteNoSessionBottomAmountMatch[1])
+      const amount = parseBottomPriceAmount(minuteNoSessionBottomAmountMatch[2])
+
+      if (minutes >= 10 && minutes <= 180 && amount >= 1000 && amount <= 50000) {
+        pushPrice(minutes, '1S', amount)
         return
       }
     }
