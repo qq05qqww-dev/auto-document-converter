@@ -1,3 +1,4 @@
+<!-- 第 018-183 批：Unicode 小型國籍代碼 TW／SG／VN／MY 正規化修正版 -->
 <!-- 第 018-182 批：TW／SG／VN 姓名尾碼國籍＋底價金額在前方案修正版 -->
 <!-- batch018-182-country-code-suffix-header-and-bottom-amount-first-price-fix -->
 <!-- 第 018-181 批：MY／馬國籍縮寫標題＋小數K價格方案修正版 -->
@@ -3091,7 +3092,7 @@ function parseHeaderWithAdvancedRegex(line) {
 }
 
 function matchKnownCountryToken(value) {
-  const cleaned = normalizeHeaderText(value)
+  const cleaned = normalizeHeaderText(normalizeCountryCodeGlyphs018183(value))
   if (!cleaned) return null
   const compact = cleaned.replace(/\s+/g, '')
   const countryCode = COUNTRY_CODE_SUFFIX_MAP_018182.get(compact.toUpperCase())
@@ -3127,6 +3128,23 @@ function parseMalaysiaShortHeaderLine(line) {
 }
 
 
+// 第 018-183 批：店家從通訊軟體貼上的 TW／SG／VN／MY，可能不是 ASCII 英文字母，
+// 而是 Unicode 小型大寫字母（例：ᴛᴡ、ꜱɢ、ᴠɴ、ᴍʏ）。
+// NFKC 不會完整轉換這些 IPA／small-cap 字元；若直接清理，代碼會被刪掉，
+// 後續就只剩純姓名並套用預設馬來國籍。先統一成 ASCII 再解析。
+function normalizeCountryCodeGlyphs018183(value = '') {
+  return String(value ?? '')
+    .normalize('NFKC')
+    .replace(/[ᴛ]/g, 'T')
+    .replace(/[ᴡ]/g, 'W')
+    .replace(/[ꜱѕ]/g, 'S')
+    .replace(/[ɢ]/g, 'G')
+    .replace(/[ᴠ]/g, 'V')
+    .replace(/[ɴ]/g, 'N')
+    .replace(/[ᴍ]/g, 'M')
+    .replace(/[ʏ]/g, 'Y')
+}
+
 const COUNTRY_CODE_SUFFIX_MAP_018182 = new Map([
   ['TW', '台妹'],
   ['SG', '新加坡'],
@@ -3139,7 +3157,7 @@ const COUNTRY_CODE_SUFFIX_MAP_018182 = new Map([
 // 只有代碼位於姓名尾端，且後方是明確 3 位身高或整行結束時才命中，
 // 避免一般英文姓名內含 TW / SG / VN 時被誤拆。
 function parseCountryCodeSuffixHeaderLine(line) {
-  const cleaned = normalizeHeaderText(normalizeDigits(String(line || '')).normalize('NFKC'))
+  const cleaned = normalizeHeaderText(normalizeCountryCodeGlyphs018183(normalizeDigits(String(line || ''))))
   if (!cleaned) return null
 
   const bodyAttachedMatch = cleaned.match(
@@ -7622,7 +7640,7 @@ function extractDoubleFlyPartnerServices(text = '') {
 }
 
 function cleanupSourceText(text) {
-  let cleaned = normalizeDigits(String(text || ''))
+  let cleaned = normalizeCountryCodeGlyphs018183(normalizeDigits(String(text || '')))
 
   cleaned = cleaned
     .replace(/[^\u4e00-\u9fa5A-Za-z0-9\s\n\/／\.\+\-\:\：]/g, ' ')
@@ -9580,7 +9598,7 @@ function getCountryKeys() {
 
 
 function normalizeCountry(country) {
-  const value = String(country || '').trim()
+  const value = normalizeCountryCodeGlyphs018183(String(country || '')).trim()
   const countryCode = COUNTRY_CODE_SUFFIX_MAP_018182.get(value.toUpperCase())
   if (countryCode) return countryCode
   return getCountryAliasMap().get(value) || value
