@@ -1,3 +1,5 @@
+<!-- 第 018-179 批：外送免選地區新增機房＋無套內外射動態金額修正版 -->
+<!-- batch018-179-delivery-no-district-room-and-bareback-dynamic-amount-fix -->
 <!-- 第 018-175 批：年齡在罩杯前＋罩杯字母白名單修正版 -->
 <!-- 第 018-174 批：點號連寫身材＋34D胸圍罩杯辨識修正版 -->
 <!-- 第 018-173 批：全半形統一＋分隔金額＋胸圍罩杯身材辨識修正版 -->
@@ -245,7 +247,7 @@
             目前選擇：
             <strong>{{ managerSelectedCity || '未選縣市' }}</strong>
             <span>→</span>
-            <strong>{{ managerSelectedDistrict || '未選地區' }}</strong>
+            <strong>{{ managerSelectedDistrictDisplay }}</strong>
             <span>→</span>
             <strong>{{ managerSelectedType || '未選定點/外送' }}</strong>
             <span>→</span>
@@ -269,9 +271,12 @@
 
             <label>
               地區
-              <select v-model="managerSelectedDistrict" :disabled="!managerSelectedCity">
-                <option value="">請選地區</option>
-                <option v-for="district in managerDistricts" :key="district" :value="district">{{ district }}</option>
+              <select v-model="managerSelectedDistrict" :disabled="!managerSelectedCity || isManagerOutsideDelivery">
+                <option v-if="isManagerOutsideDelivery" :value="OUTSIDE_DELIVERY_SCOPE_DISTRICT">外送免選地區</option>
+                <option v-else value="">請選地區</option>
+                <template v-if="!isManagerOutsideDelivery">
+                  <option v-for="district in managerDistricts" :key="district" :value="district">{{ district }}</option>
+                </template>
               </select>
             </label>
 
@@ -288,7 +293,7 @@
                 <span>機房</span>
                 <em>{{ managerRoomDailyUpdatedSummary }}</em>
               </span>
-              <select v-model="ruleScopeRoom" :disabled="!managerSelectedCity || !managerSelectedDistrict || !managerSelectedType">
+              <select v-model="ruleScopeRoom" :disabled="!isManagerScopeBaseReady">
                 <option value="">請選機房</option>
                 <option v-for="room in managerRooms" :key="room" :value="room">{{ getRoomOptionDisplayLabel(room) }}</option>
               </select>
@@ -359,9 +364,12 @@
                     <option v-for="city in locationCities" :key="city" :value="city">{{ city }}</option>
                   </select>
                 </label>
-                <select v-model="roomManagerSelectedDistrict" :disabled="!roomManagerSelectedCity">
-                  <option value="">請先選地區</option>
-                  <option v-for="district in roomManagerDistricts" :key="district" :value="district">{{ district }}</option>
+                <select v-model="roomManagerSelectedDistrict" :disabled="!roomManagerSelectedCity || isRoomManagerOutsideDelivery">
+                  <option v-if="isRoomManagerOutsideDelivery" :value="OUTSIDE_DELIVERY_SCOPE_DISTRICT">外送免選地區</option>
+                  <option v-else value="">請先選地區</option>
+                  <template v-if="!isRoomManagerOutsideDelivery">
+                    <option v-for="district in roomManagerDistricts" :key="district" :value="district">{{ district }}</option>
+                  </template>
                 </select>
                 <select v-model="roomManagerSelectedType">
                   <option value="">請選定點 / 外送</option>
@@ -370,12 +378,12 @@
                 <div class="option-inline-input">
                   <input
                     v-model="newRoomName"
-                    :disabled="!roomManagerSelectedCity || !roomManagerSelectedDistrict || !roomManagerSelectedType"
+                    :disabled="!isRoomManagerScopeReady"
                     placeholder="新增機房，例如：A機房"
                   />
                   <button
                     type="button"
-                    :disabled="!roomManagerSelectedCity || !roomManagerSelectedDistrict || !roomManagerSelectedType"
+                    :disabled="!isRoomManagerScopeReady"
                     @click="addLocationRoom"
                   >新增</button>
                 </div>
@@ -397,7 +405,7 @@
                       <em>{{ currentManagedRoom === room ? '已選' : '選取' }}</em>
                     </button>
                   </div>
-                  <div v-else class="managed-room-empty">此縣市／地區／類型目前尚未建立機房。</div>
+                  <div v-else class="managed-room-empty">此縣市／地區／類型目前尚未建立機房；外送可免選地區。</div>
                 </div>
                 <div class="option-current-text">目前：{{ currentManagedRoom || '請從上方清單選擇機房' }}</div>
                 <div class="option-action-row">
@@ -6991,13 +6999,15 @@ function parsePriceTextToObject(priceText) {
 
 function getCurrentListingLocation() {
   const city = cleanScopeText(ruleScopeCity.value || managerSelectedCity.value)
-  const district = cleanScopeText(ruleScopeDistrict.value || managerSelectedDistrict.value)
   const mode = cleanScopeText(ruleScopeType.value || managerSelectedType.value)
+  const scopeDistrict = resolveScopeDistrictForType(ruleScopeDistrict.value || managerSelectedDistrict.value, mode)
+  const district = isOutsideDeliveryType(mode) ? '' : cleanScopeText(scopeDistrict)
   const room = cleanScopeText(ruleScopeRoom.value)
 
   return {
     city,
     district,
+    scopeDistrict,
     mode,
     room,
     locationText: [city, district, mode, room].filter(Boolean).join(' / ')
@@ -7015,8 +7025,8 @@ function getBusinessDayKey(value = new Date()) {
 
 function makeRoomDailyScopeKey(scope = {}) {
   const city = cleanScopeText(scope.city)
-  const district = cleanScopeText(scope.district)
   const mode = cleanScopeText(scope.mode || scope.type)
+  const district = resolveScopeDistrictForType(scope.scopeDistrict || scope.district, mode)
   const room = cleanScopeText(scope.room)
   if (!city || !district || !mode || !room) return ''
   return `${city}__${district}__${mode}__${room}`
@@ -7242,7 +7252,7 @@ function validateCurrentListingLocation() {
   const location = getCurrentListingLocation()
   const missingParts = []
   if (!location.city) missingParts.push('縣市')
-  if (!location.district) missingParts.push('地區')
+  if (!location.district && !isOutsideDeliveryType(location.mode)) missingParts.push('地區')
   if (!location.mode) missingParts.push('定點 / 外送')
   if (!location.room) missingParts.push('機房')
 
@@ -7354,7 +7364,7 @@ function ensureSourceTextBottomBlankLines(text = '') {
 const isManagerScopeReadyForConvert = computed(() => {
   return Boolean(
     cleanScopeText(managerSelectedCity.value) &&
-    cleanScopeText(managerSelectedDistrict.value) &&
+    cleanScopeText(managerEffectiveDistrict.value) &&
     cleanScopeText(managerSelectedType.value) &&
     cleanScopeText(ruleScopeRoom.value)
   )
@@ -7363,7 +7373,7 @@ const isManagerScopeReadyForConvert = computed(() => {
 function getMissingManagerScopePartsForConvert() {
   const missing = []
   if (!cleanScopeText(managerSelectedCity.value)) missing.push('縣市')
-  if (!cleanScopeText(managerSelectedDistrict.value)) missing.push('地區')
+  if (!cleanScopeText(managerEffectiveDistrict.value)) missing.push('地區')
   if (!cleanScopeText(managerSelectedType.value)) missing.push('定點 / 外送')
   if (!cleanScopeText(ruleScopeRoom.value)) missing.push('機房')
   return missing
@@ -8666,6 +8676,47 @@ function getLineAliasMatches(sourceLine, aliases = []) {
   return selected.sort((a, b) => a.start - b.start)
 }
 
+function extractExplicitBarebackEjaculationServices(sourceText) {
+  const results = []
+  const seen = new Set()
+  const lines = String(sourceText || '').split(/\r?\n/)
+
+  const addResult = (kind, amount) => {
+    const numericAmount = String(amount || '').replace(/\D/g, '')
+    if (!numericAmount) return
+    const service = kind === 'inside' ? `無套內射+${numericAmount}` : `無套外射+${numericAmount}`
+    if (seen.has(service)) return
+    seen.add(service)
+    results.push(service)
+  }
+
+  lines.forEach(rawLine => {
+    const line = collapseSpacedSingleDigitAmounts(normalizeDigits(String(rawLine || '')))
+      .normalize('NFKC')
+      .replace(/[＋]/g, '+')
+      .replace(/\s+/g, ' ')
+      .trim()
+    if (!line || !line.includes('無套')) return
+
+    let match = line.match(/無套\s*(?:\+|加)\s*(\d{2,5})\s*(可?內射|外射|可外射)/)
+    if (match) {
+      addResult(match[2].includes('內射') ? 'inside' : 'outside', match[1])
+      return
+    }
+
+    match = line.match(/無套\s*(可?內射|外射|可外射)\s*(?:\+|加)\s*(\d{2,5})/)
+    if (match) {
+      addResult(match[1].includes('內射') ? 'inside' : 'outside', match[2])
+      return
+    }
+
+    match = line.match(/(可?內射|外射|可外射)\s*無套\s*(?:\+|加)\s*(\d{2,5})/)
+    if (match) addResult(match[1].includes('內射') ? 'inside' : 'outside', match[2])
+  })
+
+  return results
+}
+
 function extractServices(block) {
   const found = new Set()
   const order = parseList(serviceOrderText.value)
@@ -8675,6 +8726,13 @@ function extractServices(block) {
   const searchableBlock = normalizeServiceAliasMatchText(block)
   const explicitPaidAliasOutputs = new Set()
   const explicitPromotionAliasMatches = []
+
+  // 第 018-179 批：來源可寫「無套+1500 外射」或「無套+2000 可內射」。
+  // 金額與射精方式分開時也必須合併成正式服務，不依賴使用者是否已建立同義詞。
+  extractExplicitBarebackEjaculationServices(block).forEach(service => {
+    found.add(service)
+    explicitPaidAliasOutputs.add(service)
+  })
 
   // 第 018-157 批：逐行套用同義詞；同一行的重疊規則採最長優先。
   // 不同服務即使寫在同一行，只要文字區段不重疊，仍可各自套用。
@@ -8899,6 +8957,15 @@ function getServiceOrderIndex(item, orderIndex) {
   if (/^雙飛[:：]/.test(String(item || ''))) {
     if (orderIndex.has('雙飛')) return orderIndex.get('雙飛')
     return Number.MAX_SAFE_INTEGER - 1
+  }
+
+  // 第 018-179 批：無套內／外射的金額可由來源動態決定，例如 +1500、+2000。
+  // 舊排序通常只列 +1000 或 +1500，動態金額仍沿用同一服務的排序位置。
+  const dynamicPaidBase = stripMonetaryServiceSuffix(item)
+  if (dynamicPaidBase === '無套內射' || dynamicPaidBase === '無套外射') {
+    for (const [orderedItem, index] of orderIndex.entries()) {
+      if (stripMonetaryServiceSuffix(orderedItem) === dynamicPaidBase) return index
+    }
   }
 
   return Number.MAX_SAFE_INTEGER
@@ -9128,6 +9195,15 @@ function normalizeOverlappingServices(found) {
     const hasPaidVersion = paid.some(item => found.has(item))
     if (!hasPaidVersion) return
     base.forEach(item => found.delete(item))
+  })
+
+  // 第 018-179 批：無套內／外射金額由文件1動態帶入。
+  // 只要已有明確加價版，就移除同名無金額版，避免同時顯示兩次。
+  ;['無套內射', '無套外射'].forEach(base => {
+    const hasPaidVersion = Array.from(found).some(item => (
+      stripMonetaryServiceSuffix(item) === base && hasMonetaryServiceSuffix(item)
+    ))
+    if (hasPaidVersion) found.delete(base)
   })
 
   // 第 018-102 批：服務同義詞自動去重時，保留完整服務名稱。
@@ -9751,6 +9827,22 @@ function cleanScopeText(value) {
   return String(value || '').trim().replace(/\s+/g, ' ')
 }
 
+const OUTSIDE_DELIVERY_SCOPE_DISTRICT = '外送免選地區'
+
+function isOutsideDeliveryType(value) {
+  return cleanScopeText(value) === '外送'
+}
+
+function resolveScopeDistrictForType(district, type) {
+  if (isOutsideDeliveryType(type)) return OUTSIDE_DELIVERY_SCOPE_DISTRICT
+  return cleanScopeText(district)
+}
+
+function getScopeDistrictDisplay(district, type, fallback = '未選地區') {
+  if (isOutsideDeliveryType(type)) return '外送免選地區'
+  return cleanScopeText(district) || fallback
+}
+
 const defaultLocationOptions = {
   cities: [
     '基隆市', '台北市', '新北市', '桃園市', '新竹市', '新竹縣',
@@ -9841,28 +9933,44 @@ const scopeDistricts = computed(() => {
   return locationOptions.value.districts?.[city] || []
 })
 const scopeRooms = computed(() => {
-  const key = `${cleanScopeText(ruleScopeCity.value)}__${cleanScopeText(ruleScopeDistrict.value)}__${cleanScopeText(ruleScopeType.value)}`
+  const district = resolveScopeDistrictForType(ruleScopeDistrict.value, ruleScopeType.value)
+  const key = `${cleanScopeText(ruleScopeCity.value)}__${cleanScopeText(district)}__${cleanScopeText(ruleScopeType.value)}`
   return locationOptions.value.rooms?.[key] || []
 })
 const managerDistricts = computed(() => locationOptions.value.districts?.[managerSelectedCity.value] || [])
+const isManagerOutsideDelivery = computed(() => isOutsideDeliveryType(managerSelectedType.value))
+const isRoomManagerOutsideDelivery = computed(() => isOutsideDeliveryType(roomManagerSelectedType.value))
+const managerSelectedDistrictDisplay = computed(() => getScopeDistrictDisplay(managerSelectedDistrict.value, managerSelectedType.value))
+const managerEffectiveDistrict = computed(() => resolveScopeDistrictForType(managerSelectedDistrict.value, managerSelectedType.value))
+const roomManagerEffectiveDistrict = computed(() => resolveScopeDistrictForType(roomManagerSelectedDistrict.value, roomManagerSelectedType.value))
+const isManagerScopeBaseReady = computed(() => Boolean(
+  cleanScopeText(managerSelectedCity.value) &&
+  cleanScopeText(managerSelectedType.value) &&
+  cleanScopeText(managerEffectiveDistrict.value)
+))
+const isRoomManagerScopeReady = computed(() => Boolean(
+  cleanScopeText(roomManagerSelectedCity.value) &&
+  cleanScopeText(roomManagerSelectedType.value) &&
+  cleanScopeText(roomManagerEffectiveDistrict.value)
+))
 const managerRooms = computed(() => {
-  const key = `${cleanScopeText(managerSelectedCity.value)}__${cleanScopeText(managerSelectedDistrict.value)}__${cleanScopeText(managerSelectedType.value)}`
+  const key = `${cleanScopeText(managerSelectedCity.value)}__${cleanScopeText(managerEffectiveDistrict.value)}__${cleanScopeText(managerSelectedType.value)}`
   return locationOptions.value.rooms?.[key] || []
 })
 const roomManagerDistricts = computed(() => locationOptions.value.districts?.[roomManagerSelectedCity.value] || [])
 const roomManagerRooms = computed(() => {
-  const key = `${cleanScopeText(roomManagerSelectedCity.value)}__${cleanScopeText(roomManagerSelectedDistrict.value)}__${cleanScopeText(roomManagerSelectedType.value)}`
+  const key = `${cleanScopeText(roomManagerSelectedCity.value)}__${cleanScopeText(roomManagerEffectiveDistrict.value)}__${cleanScopeText(roomManagerSelectedType.value)}`
   return locationOptions.value.rooms?.[key] || []
 })
 const currentManagedRoom = computed(() => {
   const city = cleanScopeText(roomManagerSelectedCity.value)
-  const district = cleanScopeText(roomManagerSelectedDistrict.value)
+  const district = cleanScopeText(roomManagerEffectiveDistrict.value)
   const type = cleanScopeText(roomManagerSelectedType.value)
   const room = cleanScopeText(ruleScopeRoom.value)
 
   if (!city || !district || !type || !room) return ''
   if (cleanScopeText(ruleScopeCity.value) !== city) return ''
-  if (cleanScopeText(ruleScopeDistrict.value) !== district) return ''
+  if (resolveScopeDistrictForType(ruleScopeDistrict.value, ruleScopeType.value) !== district) return ''
   if (cleanScopeText(ruleScopeType.value) !== type) return ''
   return roomManagerRooms.value.includes(room) ? room : ''
 })
@@ -9937,8 +10045,10 @@ function resolveStoredScopeSelection(scope) {
   const room = normalized?.room || ''
 
   const validCity = city && locationCities.value.includes(city) ? city : ''
-  const validDistrict = validCity && (locationOptions.value.districts?.[validCity] || []).includes(district) ? district : ''
   const validType = locationTypes.value.includes(type) ? type : getDefaultManagerScopeType()
+  const validDistrict = isOutsideDeliveryType(validType)
+    ? OUTSIDE_DELIVERY_SCOPE_DISTRICT
+    : (validCity && (locationOptions.value.districts?.[validCity] || []).includes(district) ? district : '')
   const roomKey = `${validCity}__${validDistrict}__${validType}`
   const validRoom = validCity && validDistrict && validType && (locationOptions.value.rooms?.[roomKey] || []).includes(room) ? room : ''
 
@@ -10419,8 +10529,8 @@ function removeLocationType(type) {
 
 function selectRoomForManagement(room) {
   const city = cleanScopeText(roomManagerSelectedCity.value)
-  const district = cleanScopeText(roomManagerSelectedDistrict.value)
   const type = cleanScopeText(roomManagerSelectedType.value)
+  const district = resolveScopeDistrictForType(roomManagerSelectedDistrict.value, type)
   const targetRoom = cleanScopeText(room)
 
   if (!city || !district || !type || !targetRoom || !roomManagerRooms.value.includes(targetRoom)) {
@@ -10434,17 +10544,19 @@ function selectRoomForManagement(room) {
   ruleScopeRoom.value = targetRoom
   syncRuleScopeLevelFromSelection()
   rememberCurrentScopeSelection({ syncOnline: true })
-  statusMessage.value = `已選取機房：${city} / ${district} / ${type} / ${targetRoom}`
+  statusMessage.value = `已選取機房：${city} / ${getScopeDistrictDisplay(district, type)} / ${type} / ${targetRoom}`
   return true
 }
 
 function addLocationRoom() {
   const city = cleanScopeText(roomManagerSelectedCity.value)
-  const district = cleanScopeText(roomManagerSelectedDistrict.value)
   const type = cleanScopeText(roomManagerSelectedType.value)
+  const district = resolveScopeDistrictForType(roomManagerSelectedDistrict.value, type)
   const room = cleanScopeText(newRoomName.value)
   if (!city || !district || !type || !room) {
-    statusMessage.value = '請先選縣市、地區、定點/外送，並輸入機房/店家。'
+    statusMessage.value = isOutsideDeliveryType(type)
+      ? '請先選縣市與外送，並輸入機房/店家。'
+      : '請先選縣市、地區、定點/外送，並輸入機房/店家。'
     return
   }
   const key = `${city}__${district}__${type}`
@@ -10452,13 +10564,13 @@ function addLocationRoom() {
   newRoomName.value = ''
   saveLocationOptions()
   selectRoomForManagement(room)
-  statusMessage.value = `已新增並選取機房/店家：${city} / ${district} / ${type} / ${room}`
+  statusMessage.value = `已新增並選取機房/店家：${city} / ${getScopeDistrictDisplay(district, type)} / ${type} / ${room}`
 }
 
 function removeLocationRoom(room) {
   const city = cleanScopeText(roomManagerSelectedCity.value)
-  const district = cleanScopeText(roomManagerSelectedDistrict.value)
   const type = cleanScopeText(roomManagerSelectedType.value)
+  const district = resolveScopeDistrictForType(roomManagerSelectedDistrict.value, type)
   const targetRoom = cleanScopeText(room)
   const key = `${city}__${district}__${type}`
 
@@ -10548,8 +10660,8 @@ function renameLocationType(type) {
 
 function renameLocationRoom(room) {
   const city = cleanScopeText(roomManagerSelectedCity.value)
-  const district = cleanScopeText(roomManagerSelectedDistrict.value)
   const type = cleanScopeText(roomManagerSelectedType.value)
+  const district = resolveScopeDistrictForType(roomManagerSelectedDistrict.value, type)
   const targetRoom = cleanScopeText(room)
   const key = `${city}__${district}__${type}`
 
@@ -10576,17 +10688,20 @@ function renameLocationRoom(room) {
 watch(managerSelectedCity, value => {
   if (isRestoringLastScopeSelection) return
   ruleScopeCity.value = value
-  managerSelectedDistrict.value = ''
-  ruleScopeDistrict.value = ''
-  ruleScopeType.value = managerSelectedType.value || getDefaultManagerScopeType()
+  const nextType = managerSelectedType.value || getDefaultManagerScopeType()
+  const nextDistrict = isOutsideDeliveryType(nextType) ? OUTSIDE_DELIVERY_SCOPE_DISTRICT : ''
+  managerSelectedDistrict.value = nextDistrict
+  ruleScopeDistrict.value = nextDistrict
+  ruleScopeType.value = nextType
   ruleScopeRoom.value = ''
   syncRuleScopeLevelFromSelection()
 })
 
 watch(managerSelectedDistrict, value => {
   if (isRestoringLastScopeSelection) return
-  ruleScopeDistrict.value = value
-  ruleScopeType.value = managerSelectedType.value || getDefaultManagerScopeType()
+  const nextType = managerSelectedType.value || getDefaultManagerScopeType()
+  ruleScopeDistrict.value = resolveScopeDistrictForType(value, nextType)
+  ruleScopeType.value = nextType
   ruleScopeRoom.value = ''
   syncRuleScopeLevelFromSelection()
 })
@@ -10598,6 +10713,11 @@ watch(managerSelectedType, value => {
     managerSelectedType.value = nextType
     return
   }
+  const nextDistrict = isOutsideDeliveryType(nextType)
+    ? OUTSIDE_DELIVERY_SCOPE_DISTRICT
+    : (managerSelectedDistrict.value === OUTSIDE_DELIVERY_SCOPE_DISTRICT ? '' : managerSelectedDistrict.value)
+  managerSelectedDistrict.value = nextDistrict
+  ruleScopeDistrict.value = nextDistrict
   ruleScopeType.value = nextType
   ruleScopeRoom.value = ''
   syncRuleScopeLevelFromSelection()
@@ -10619,8 +10739,9 @@ watch(ruleScopeRoom, async value => {
 })
 
 watch(roomManagerSelectedCity, () => {
-  roomManagerSelectedDistrict.value = ''
-  roomManagerSelectedType.value = roomManagerSelectedType.value || getDefaultManagerScopeType()
+  const nextType = roomManagerSelectedType.value || getDefaultManagerScopeType()
+  roomManagerSelectedType.value = nextType
+  roomManagerSelectedDistrict.value = isOutsideDeliveryType(nextType) ? OUTSIDE_DELIVERY_SCOPE_DISTRICT : ''
   ruleScopeRoom.value = ''
 })
 
@@ -10628,7 +10749,10 @@ watch(roomManagerSelectedDistrict, () => {
   ruleScopeRoom.value = ''
 })
 
-watch(roomManagerSelectedType, () => {
+watch(roomManagerSelectedType, value => {
+  roomManagerSelectedDistrict.value = isOutsideDeliveryType(value)
+    ? OUTSIDE_DELIVERY_SCOPE_DISTRICT
+    : (roomManagerSelectedDistrict.value === OUTSIDE_DELIVERY_SCOPE_DISTRICT ? '' : roomManagerSelectedDistrict.value)
   ruleScopeRoom.value = ''
 })
 
@@ -10794,14 +10918,15 @@ function getGlobalRuleDataFallback() {
 function getEffectiveScopedRuleData() {
   const store = readScopeRuleStore()
   const city = cleanScopeText(ruleScopeCity.value)
-  const district = cleanScopeText(ruleScopeDistrict.value)
   const type = cleanScopeText(ruleScopeType.value)
+  const district = resolveScopeDistrictForType(ruleScopeDistrict.value, type)
+  const displayDistrict = getScopeDistrictDisplay(district, type)
   const room = cleanScopeText(ruleScopeRoom.value)
 
   const candidates = []
-  if (city && district && type && room) candidates.push({ level: 'room', key: `${city}__${district}__${type}__${room}`, label: `機房：${city} / ${district} / ${type} / ${room}` })
-  if (city && district && type) candidates.push({ level: 'type', key: `${city}__${district}__${type}`, label: `定點/外送：${city} / ${district} / ${type}` })
-  if (city && district) candidates.push({ level: 'district', key: `${city}__${district}`, label: `地區：${city} / ${district}` })
+  if (city && district && type && room) candidates.push({ level: 'room', key: `${city}__${district}__${type}__${room}`, label: `機房：${city} / ${displayDistrict} / ${type} / ${room}` })
+  if (city && district && type) candidates.push({ level: 'type', key: `${city}__${district}__${type}`, label: `定點/外送：${city} / ${displayDistrict} / ${type}` })
+  if (city && district) candidates.push({ level: 'district', key: `${city}__${district}`, label: `地區：${city} / ${displayDistrict}` })
   if (city) candidates.push({ level: 'city', key: city, label: `縣市：${city}` })
   candidates.push({ level: 'global', key: 'global', label: '公版規則' })
 
@@ -10820,15 +10945,16 @@ const currentRuleScopeLabel = computed(() => {
   if (isOwner.value) return '老闆全站公版（所有縣市共用）'
 
   const city = cleanScopeText(ruleScopeCity.value)
-  const district = cleanScopeText(ruleScopeDistrict.value)
   const type = cleanScopeText(ruleScopeType.value)
+  const district = resolveScopeDistrictForType(ruleScopeDistrict.value, type)
+  const displayDistrict = getScopeDistrictDisplay(district, type)
   const room = cleanScopeText(ruleScopeRoom.value)
 
   if (ruleScopeLevel.value === 'global') return '公版規則'
   if (ruleScopeLevel.value === 'city') return city ? `縣市：${city}` : '縣市規則（未選縣市）'
-  if (ruleScopeLevel.value === 'district') return city && district ? `地區：${city} / ${district}` : '地區規則（未選完整）'
-  if (ruleScopeLevel.value === 'type') return city && district && type ? `定點/外送：${city} / ${district} / ${type}` : '定點/外送規則（未選完整）'
-  if (ruleScopeLevel.value === 'room') return city && district && type && room ? `機房：${city} / ${district} / ${type} / ${room}` : '機房規則（未選完整）'
+  if (ruleScopeLevel.value === 'district') return city && district ? `地區：${city} / ${displayDistrict}` : '地區規則（未選完整）'
+  if (ruleScopeLevel.value === 'type') return city && district && type ? `定點/外送：${city} / ${displayDistrict} / ${type}` : '定點/外送規則（未選完整）'
+  if (ruleScopeLevel.value === 'room') return city && district && type && room ? `機房：${city} / ${displayDistrict} / ${type} / ${room}` : '機房規則（未選完整）'
   return '公版規則'
 })
 
