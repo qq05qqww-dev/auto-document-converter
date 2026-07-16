@@ -1,3 +1,5 @@
+<!-- 第 018-184 批：姓名尾碼國籍代碼 Unicode 通用正規化＋VN 越妹顯示修正版 -->
+<!-- batch018-184-unicode-country-code-suffix-nationality-label-fix -->
 <!-- 第 018-183 批：Unicode 小型國籍代碼 TW／SG／VN／MY 正規化修正版 -->
 <!-- 第 018-182 批：TW／SG／VN 姓名尾碼國籍＋底價金額在前方案修正版 -->
 <!-- batch018-182-country-code-suffix-header-and-bottom-amount-first-price-fix -->
@@ -1007,7 +1009,10 @@
               <select v-model="newCountryRuleTo">
                 <option value="">請選擇固定國籍</option>
                 <option value="台灣">台灣</option>
+                <option value="台妹">台妹</option>
                 <option value="越南">越南</option>
+                <option value="越妹">越妹</option>
+                <option value="新加坡">新加坡</option>
                 <option value="泰妹">泰妹</option>
                 <option value="馬來">馬來</option>
                 <option value="香港">香港</option>
@@ -3092,10 +3097,10 @@ function parseHeaderWithAdvancedRegex(line) {
 }
 
 function matchKnownCountryToken(value) {
-  const cleaned = normalizeHeaderText(normalizeCountryCodeGlyphs018183(value))
+  const cleaned = normalizeHeaderText(normalizeCountryCodeGlyphs018184(value))
   if (!cleaned) return null
   const compact = cleaned.replace(/\s+/g, '')
-  const countryCode = COUNTRY_CODE_SUFFIX_MAP_018182.get(compact.toUpperCase())
+  const countryCode = COUNTRY_CODE_SUFFIX_MAP_018184.get(compact.toUpperCase())
   if (countryCode) return { raw: compact.toUpperCase(), country: countryCode }
   const countries = getCountryKeys().sort((a, b) => b.length - a.length)
   for (const country of countries) {
@@ -3128,27 +3133,30 @@ function parseMalaysiaShortHeaderLine(line) {
 }
 
 
-// 第 018-183 批：店家從通訊軟體貼上的 TW／SG／VN／MY，可能不是 ASCII 英文字母，
-// 而是 Unicode 小型大寫字母（例：ᴛᴡ、ꜱɢ、ᴠɴ、ᴍʏ）。
-// NFKC 不會完整轉換這些 IPA／small-cap 字元；若直接清理，代碼會被刪掉，
-// 後續就只剩純姓名並套用預設馬來國籍。先統一成 ASCII 再解析。
-function normalizeCountryCodeGlyphs018183(value = '') {
-  return String(value ?? '')
-    .normalize('NFKC')
-    .replace(/[ᴛ]/g, 'T')
-    .replace(/[ᴡ]/g, 'W')
-    .replace(/[ꜱѕ]/g, 'S')
-    .replace(/[ɢ]/g, 'G')
-    .replace(/[ᴠ]/g, 'V')
-    .replace(/[ɴ]/g, 'N')
-    .replace(/[ᴍ]/g, 'M')
-    .replace(/[ʏ]/g, 'Y')
+// 第 018-184 批：通訊軟體的 TW／SG／VN／MY 可能混用 ASCII、全形、
+// small-cap、上標／修飾字等 Unicode 字形。NFKC 可處理多數全形與上標字，
+// 下列對照再補齊 NFKC 不會轉換的小型大寫與常見相似字，避免代碼在清理階段消失。
+const COUNTRY_CODE_GLYPH_MAP_018184 = new Map([
+  ['ᴛ', 'T'], ['ᵀ', 'T'], ['ᵗ', 'T'], ['ₜ', 'T'],
+  ['ᴡ', 'W'], ['ᵂ', 'W'], ['ʷ', 'W'],
+  ['ꜱ', 'S'], ['ꞅ', 'S'], ['ѕ', 'S'], ['ˢ', 'S'], ['ₛ', 'S'],
+  ['ɢ', 'G'], ['ᴳ', 'G'], ['ᵍ', 'G'], ['ᶢ', 'G'],
+  ['ᴠ', 'V'], ['ⱽ', 'V'], ['ᵛ', 'V'],
+  ['ɴ', 'N'], ['ᴺ', 'N'], ['ⁿ', 'N'], ['ₙ', 'N'],
+  ['ᴍ', 'M'], ['ᴹ', 'M'], ['ᵐ', 'M'], ['ₘ', 'M'],
+  ['ʏ', 'Y'], ['ʸ', 'Y']
+])
+
+function normalizeCountryCodeGlyphs018184(value = '') {
+  return Array.from(String(value ?? '').normalize('NFKC'))
+    .map(char => COUNTRY_CODE_GLYPH_MAP_018184.get(char) || char)
+    .join('')
 }
 
-const COUNTRY_CODE_SUFFIX_MAP_018182 = new Map([
+const COUNTRY_CODE_SUFFIX_MAP_018184 = new Map([
   ['TW', '台妹'],
   ['SG', '新加坡'],
-  ['VN', '越南'],
+  ['VN', '越妹'],
   ['MY', '馬來']
 ])
 
@@ -3157,21 +3165,24 @@ const COUNTRY_CODE_SUFFIX_MAP_018182 = new Map([
 // 只有代碼位於姓名尾端，且後方是明確 3 位身高或整行結束時才命中，
 // 避免一般英文姓名內含 TW / SG / VN 時被誤拆。
 function parseCountryCodeSuffixHeaderLine(line) {
-  const cleaned = normalizeHeaderText(normalizeCountryCodeGlyphs018183(normalizeDigits(String(line || ''))))
+  const cleaned = normalizeHeaderText(normalizeCountryCodeGlyphs018184(normalizeDigits(String(line || ''))))
   if (!cleaned) return null
 
   const bodyAttachedMatch = cleaned.match(
     /^([\u4e00-\u9fa5A-Za-z0-9]{1,18}?)\s*(TW|SG|VN|MY)\s+(?=\d{3}(?:\s|$))/i
   )
-  const codeOnlyMatch = bodyAttachedMatch
+  const compactCodeMatch = bodyAttachedMatch
+    ? null
+    : cleaned.replace(/\s+/g, '').match(/^([\u4e00-\u9fa5A-Za-z0-9]{1,18}?)(TW|SG|VN|MY)(?=\d{3}|$)/i)
+  const codeOnlyMatch = bodyAttachedMatch || compactCodeMatch
     ? null
     : cleaned.match(/^([\u4e00-\u9fa5A-Za-z0-9]{1,18}?)\s*(TW|SG|VN|MY)$/i)
-  const match = bodyAttachedMatch || codeOnlyMatch
+  const match = bodyAttachedMatch || compactCodeMatch || codeOnlyMatch
   if (!match) return null
 
   const name = cleanName(match[1])
   const code = String(match[2] || '').toUpperCase()
-  const country = COUNTRY_CODE_SUFFIX_MAP_018182.get(code) || ''
+  const country = COUNTRY_CODE_SUFFIX_MAP_018184.get(code) || ''
   if (!country || !isValidName(name)) return null
 
   return {
@@ -3387,6 +3398,8 @@ const defaultCountryPriceRules = [
   '馬來西亞=500',
   '港澳=1000',
   '越南=500',
+  '越妹=500',
+  '新加坡=500',
   '日本=1000',
   '韓國=1000',
   '外籍=500'
@@ -3401,6 +3414,8 @@ const defaultCountryAliases = [
   '馬來=馬來',
   '港澳=港澳',
   '越南=越南',
+  '越妹=越妹',
+  '新加坡=新加坡',
   '日本=日本',
   '韓國=韓國',
   '外籍=外籍'
@@ -3723,6 +3738,8 @@ const defaultCountryFieldRules = [
   '國籍馬來=馬來',
   '馬來新妹=馬來',
   '越南新妹=越南',
+  '越妹新妹=越妹',
+  '新加坡新妹=新加坡',
   '台灣新妹=台妹',
   '台妹新妹=台妹',
   '港澳新妹=港澳',
@@ -7640,7 +7657,7 @@ function extractDoubleFlyPartnerServices(text = '') {
 }
 
 function cleanupSourceText(text) {
-  let cleaned = normalizeCountryCodeGlyphs018183(normalizeDigits(String(text || '')))
+  let cleaned = normalizeCountryCodeGlyphs018184(normalizeDigits(String(text || '')))
 
   cleaned = cleaned
     .replace(/[^\u4e00-\u9fa5A-Za-z0-9\s\n\/／\.\+\-\:\：]/g, ' ')
@@ -7720,7 +7737,7 @@ function extractLooseCountryContext(line) {
   // 例：「泰國洗無水床+300」只是服務，不得把目前馬來小姐改成泰妹。
   if (isNotHeaderLine(cleaned)) return ''
 
-  const explicitMatch = cleaned.match(/(?:國家|國籍)\s*[:：]?\s*(馬來西亞|馬來|越南|港澳|台灣|台妹|泰國|泰妹|日本|韓國|外籍)/)
+  const explicitMatch = cleaned.match(/(?:國家|國籍)\s*[:：]?\s*(馬來西亞|馬來|越南|越妹|新加坡|港澳|台灣|台妹|泰國|泰妹|日本|韓國|外籍)/)
   if (explicitMatch) return normalizeCountry(explicitMatch[1])
 
   const standaloneCountry = extractStandaloneCountryFromLine(cleaned)
@@ -7732,7 +7749,12 @@ function extractLooseCountryContext(line) {
 
 function parseLooseNameBodyHeaderLine(line) {
   const cleaned = normalizeHeaderText(line)
-  if (!cleaned || parseHeaderLine(cleaned)) return null
+  if (!cleaned) return null
+
+  const countryCodeHeader = parseCountryCodeSuffixHeaderLine(line)
+  if (countryCodeHeader) return countryCodeHeader
+
+  if (parseHeaderLine(cleaned)) return null
 
   const match = cleaned.match(/^([\u4e00-\u9fa5A-Za-z0-9]{1,18})\s+(\d{3})\s+(\d{2})\s+(?:\d{2}\s+)?(?:(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)\s*)?[A-Za-z]\b/i)
   if (!match) return null
@@ -7957,8 +7979,13 @@ function extractCountryFromBlock(block) {
   const recognizedHeader = findHeaderInBlock(text)
   if (recognizedHeader?.country) return normalizeCountry(recognizedHeader.country)
 
+  const countryCodeHeader = lines
+    .map(line => parseCountryCodeSuffixHeaderLine(line))
+    .find(Boolean)
+  if (countryCodeHeader?.country) return normalizeCountry(countryCodeHeader.country)
+
   for (const line of lines) {
-    const labeledMatch = line.match(/(?:國家|國籍)\s*[:：]?\s*(馬來西亞|馬來|越南|港澳|台灣|台妹|泰國|泰妹|日本|韓國|外籍)/)
+    const labeledMatch = line.match(/(?:國家|國籍)\s*[:：]?\s*(馬來西亞|馬來|越南|越妹|新加坡|港澳|台灣|台妹|泰國|泰妹|日本|韓國|外籍)/)
     if (labeledMatch) return normalizeCountry(labeledMatch[1])
   }
 
@@ -8002,6 +8029,16 @@ function extractCountryFromBlock(block) {
 
 function parseNameOnlyRecord(block) {
   const lines = String(block || '').split('\n').map(line => line.trim()).filter(Boolean)
+  const countryCodeHeader = lines
+    .slice(0, 10)
+    .map(line => parseCountryCodeSuffixHeaderLine(line))
+    .find(Boolean)
+  if (countryCodeHeader?.country && countryCodeHeader?.name) {
+    return {
+      country: normalizeCountry(countryCodeHeader.country),
+      name: cleanName(countryCodeHeader.name)
+    }
+  }
 
   for (const line of lines.slice(0, 10)) {
     if (!isNameOnlyHeaderLine(line)) continue
@@ -8072,6 +8109,8 @@ function getStrictBuiltInCountryAliases() {
     ['馬來西亞', '馬來'],
     ['馬來', '馬來'],
     ['越南', '越南'],
+    ['越妹', '越妹'],
+    ['新加坡', '新加坡'],
     ['泰國', '泰妹'],
     ['泰妹', '泰妹'],
     ['台灣', '台妹'],
@@ -9598,8 +9637,8 @@ function getCountryKeys() {
 
 
 function normalizeCountry(country) {
-  const value = normalizeCountryCodeGlyphs018183(String(country || '')).trim()
-  const countryCode = COUNTRY_CODE_SUFFIX_MAP_018182.get(value.toUpperCase())
+  const value = normalizeCountryCodeGlyphs018184(String(country || '')).trim()
+  const countryCode = COUNTRY_CODE_SUFFIX_MAP_018184.get(value.toUpperCase())
   if (countryCode) return countryCode
   return getCountryAliasMap().get(value) || value
 }
