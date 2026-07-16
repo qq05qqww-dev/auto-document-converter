@@ -1,3 +1,5 @@
+<!-- 第 018-190 批：雙飛後方 emoji／媒體佔位文字清除且保留雙飛服務修正版 -->
+<!-- batch018-190-double-fly-media-placeholder-cleanup -->
 <!-- 第 018-189 批：文件3中央正式 ID 回填＋媒體上傳免卡 converter 數字 ID 修正版 -->
 <!-- batch018-189-central-listing-id-hint-and-media-upload-fallback -->
 <!-- 第 018-188 批：分鐘＋無節數＋完整金額底價正式方案通用解析修正版 -->
@@ -7960,6 +7962,37 @@ function shouldKeepExplicitPaidServiceWhenCleaning(word = '') {
   return protectedPaidServiceWords.includes(normalized)
 }
 
+// 第 018-190 批：通訊軟體匯出文字可能把表情、貼圖或圖示寫成
+// emoji / sparkles / fire / flower / sticker / icon。這些文字若剛好接在「雙飛：」後面，
+// 舊版會誤認成搭配小姐姓名並在清理前保護，造成文件1與文件2都留下「雙飛：emoji」。
+// 現在只把這類媒體佔位文字視為無效姓名，並保留真正的泛用服務「雙飛」。
+function normalizeMediaPlaceholderToken018190(value = '') {
+  return normalizeDigits(String(value || ''))
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fa5]/g, '')
+    .trim()
+}
+
+function isDoubleFlyMediaPlaceholder018190(value = '') {
+  const token = normalizeMediaPlaceholderToken018190(value)
+  if (!token) return false
+
+  const commonPlaceholders = new Set([
+    'emoji', 'emojis', 'emoticon', 'emoticons',
+    'sticker', 'stickers', 'icon', 'icons',
+    'sparkle', 'sparkles', 'fire', 'flower',
+    'heart', 'hearts', 'image', 'images',
+    'photo', 'photos', 'gif', 'gifs'
+  ])
+  if (commonPlaceholders.has(token)) return true
+
+  // 老闆／員工自行加入「不想出現文字」的單字，也不能被誤當成雙飛小姐名。
+  return parseCleanupWords(removeWordsText.value).some(word => (
+    normalizeMediaPlaceholderToken018190(word) === token
+  ))
+}
+
 // 第 018-166 批：店家常把可搭配的雙飛對象寫成「雙飛琳琳 / 雙飛 琳琳 / 雙飛/琳琳」。
 // 清理文件1時不能只刪掉「雙飛」而留下孤立姓名；統一保留成「雙飛：琳琳」。
 function normalizeDoubleFlyPartnerName(value = '') {
@@ -7968,6 +8001,7 @@ function normalizeDoubleFlyPartnerName(value = '') {
     .trim()
 
   if (!name) return ''
+  if (isDoubleFlyMediaPlaceholder018190(name)) return ''
   if (name.length > 12) return ''
   if (!/^[\u4e00-\u9fa5A-Za-z0-9]+$/.test(name)) return ''
   if (/^\d+(?:s|S)?$/.test(name)) return ''
@@ -7981,9 +8015,14 @@ function replaceDoubleFlyPartnerPhrases(text = '', replacer = null) {
   const pattern = /(?:可以搭配|可搭配)?雙飛[ \t]*(?:[\/:：\-－][ \t]*)?([\u4e00-\u9fa5A-Za-z0-9]{1,12})/g
 
   return String(text || '').replace(pattern, (matched, rawName) => {
-    const name = normalizeDoubleFlyPartnerName(rawName)
-    if (!name) return matched
-    return typeof replacer === 'function' ? replacer(name, matched) : `雙飛：${name}`
+    const placeholderOnly = isDoubleFlyMediaPlaceholder018190(rawName)
+    const name = placeholderOnly ? '' : normalizeDoubleFlyPartnerName(rawName)
+    if (!name && !placeholderOnly) return matched
+
+    if (typeof replacer === 'function') {
+      return replacer(name, matched, { placeholderOnly })
+    }
+    return name ? `雙飛：${name}` : '雙飛'
   })
 }
 
@@ -7991,7 +8030,7 @@ function protectDoubleFlyPartnerPhrases(text = '') {
   const protectedItems = []
   const protectedText = replaceDoubleFlyPartnerPhrases(text, name => {
     const placeholder = `DOUBLEFLYPAIR${protectedItems.length}TOKEN`
-    protectedItems.push({ placeholder, value: `雙飛：${name}` })
+    protectedItems.push({ placeholder, value: name ? `雙飛：${name}` : '雙飛' })
     return placeholder
   })
 
@@ -8009,8 +8048,8 @@ function restoreDoubleFlyPartnerPhrases(text = '', protectedItems = []) {
 function extractDoubleFlyPartnerServices(text = '') {
   const partners = []
   replaceDoubleFlyPartnerPhrases(text, name => {
-    if (!partners.includes(name)) partners.push(name)
-    return `雙飛：${name}`
+    if (name && !partners.includes(name)) partners.push(name)
+    return name ? `雙飛：${name}` : '雙飛'
   })
   return partners.map(name => `雙飛：${name}`)
 }
