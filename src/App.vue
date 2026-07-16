@@ -1,3 +1,5 @@
+<!-- 第 018-191 批：雙飛對象限縮同機房／同縣市地區／文件3本批名單安全抓取版 -->
+<!-- batch018-191-double-fly-partner-scoped-candidate-match -->
 <!-- 第 018-190 批：雙飛後方 emoji／媒體佔位文字清除且保留雙飛服務修正版 -->
 <!-- batch018-190-double-fly-media-placeholder-cleanup -->
 <!-- 第 018-189 批：文件3中央正式 ID 回填＋媒體上傳免卡 converter 數字 ID 修正版 -->
@@ -1953,6 +1955,9 @@ const CENTRAL_WEBSITE_API_BASE_URL = (
 const apiBaseUrl = ref(DEFAULT_ONLINE_API_BASE_URL)
 const apiStatusText = ref('尚未測試 API。')
 const frontendLadies = ref([])
+// 第 018-191 批：本次文件1轉換時先暫存已辨識小姐，供雙飛對象第三順位「文件3／本批名單」核對。
+// 這份清單只存在目前頁面，不會查詢或載入全部中央網站小姐。
+let currentConversionLadyCandidates018191 = []
 const frontendStatusText = ref('尚未讀取前台資料。')
 const frontendLadiesLoaded = ref(false)
 const databaseIdHintByLadyKey = ref({})
@@ -7901,6 +7906,9 @@ function convertText() {
   sourceText.value = ensureSourceTextBottomBlankLines(cleanedText)
 
   const blocks = splitBlocks(cleanedText)
+  // 第 018-191 批：先建立目前文件1本批小姐名單，再解析每位小姐的雙飛對象。
+  // 抓取順序固定為：同機房 → 同縣市＋同地區 → 文件3／目前本批名單。
+  currentConversionLadyCandidates018191 = buildCurrentConversionLadyCandidates018191(blocks)
   const parsed = blocks.map(block => analyzeRecordForPreview(block))
   const visibleRecords = parsed.filter(item => item.preview)
   const completeRecords = visibleRecords.filter(item => item.complete)
@@ -8045,13 +8053,213 @@ function restoreDoubleFlyPartnerPhrases(text = '', protectedItems = []) {
   return restored
 }
 
-function extractDoubleFlyPartnerServices(text = '') {
-  const partners = []
-  replaceDoubleFlyPartnerPhrases(text, name => {
-    if (name && !partners.includes(name)) partners.push(name)
-    return name ? `雙飛：${name}` : '雙飛'
+// 第 018-191 批：雙飛對象只能從三個安全範圍核對：
+// 1. 目前選定的同機房小姐；2. 同縣市＋同地區小姐；3. 文件3／本次文件1本批名單。
+// 禁止查詢或使用全部中央網站小姐名單，避免跨縣市同名或相似名稱被誤抓。
+function normalizeDoubleFlyCandidateKey018191(value = '') {
+  return normalizeDigits(String(value || ''))
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fa5]/g, '')
+    .trim()
+}
+
+function getDoubleFlyCandidateName018191(lady = {}) {
+  return String(lady?.name || lady?.header?.name || '')
+    .normalize('NFKC')
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function dedupeDoubleFlyCandidates018191(ladies = [], currentLady = {}) {
+  const currentNameKey = normalizeDoubleFlyCandidateKey018191(getDoubleFlyCandidateName018191(currentLady))
+  const seen = new Set()
+  const result = []
+
+  ;(Array.isArray(ladies) ? ladies : []).forEach(lady => {
+    const name = getDoubleFlyCandidateName018191(lady)
+    const key = normalizeDoubleFlyCandidateKey018191(name)
+    if (!name || !key || key === currentNameKey || seen.has(key)) return
+    if (isDoubleFlyMediaPlaceholder018190(name)) return
+    if (isNotHeaderLine(name)) return
+    seen.add(key)
+    result.push({ ...lady, name, doubleFlyNameKey018191: key })
   })
-  return partners.map(name => `雙飛：${name}`)
+
+  return result.sort((a, b) => b.name.length - a.name.length)
+}
+
+function isSameDoubleFlyScopeText018191(left = '', right = '') {
+  const leftKey = normalizeLadySyncCompactText(left)
+  const rightKey = normalizeLadySyncCompactText(right)
+  return Boolean(leftKey && rightKey && leftKey === rightKey)
+}
+
+function buildDoubleFlyPartnerCandidateGroups018191(currentLady = {}) {
+  const location = getCurrentListingLocation()
+  const databaseLadies = Array.isArray(frontendLadies.value) ? frontendLadies.value : []
+
+  const sameRoomLadies = databaseLadies.filter(lady => {
+    const scope = getLadySyncLocation(lady)
+    if (!isSameDoubleFlyScopeText018191(scope.room, location.room)) return false
+    // 機房名稱可能在其他縣市重複，因此同機房仍必須限制在目前縣市／地區。
+    if (!isSameDoubleFlyScopeText018191(scope.city, location.city)) return false
+    if (!isSameDoubleFlyScopeText018191(scope.district, location.district)) return false
+    if (scope.mode && location.mode && !isSameDoubleFlyScopeText018191(scope.mode, location.mode)) return false
+    return true
+  })
+
+  const sameCityDistrictLadies = databaseLadies.filter(lady => {
+    const scope = getLadySyncLocation(lady)
+    return isSameDoubleFlyScopeText018191(scope.city, location.city) &&
+      isSameDoubleFlyScopeText018191(scope.district, location.district)
+  })
+
+  const document3BatchLadies = [
+    ...(Array.isArray(currentDocumentPreviewLadies.value) ? currentDocumentPreviewLadies.value : []),
+    ...(Array.isArray(currentConversionLadyCandidates018191) ? currentConversionLadyCandidates018191 : [])
+  ]
+
+  return [
+    {
+      source: 'same-room',
+      label: '同機房',
+      candidates: dedupeDoubleFlyCandidates018191(sameRoomLadies, currentLady)
+    },
+    {
+      source: 'same-city-district',
+      label: '同縣市＋同地區',
+      candidates: dedupeDoubleFlyCandidates018191(sameCityDistrictLadies, currentLady)
+    },
+    {
+      source: 'document3-current-batch',
+      label: '文件3／本批名單',
+      candidates: dedupeDoubleFlyCandidates018191(document3BatchLadies, currentLady)
+    }
+  ]
+}
+
+function getDoubleFlyPartnerSegments018191(line = '') {
+  const text = String(line || '')
+    .normalize('NFKC')
+    .replace(/[：]/g, ':')
+    .replace(/[／]/g, '/')
+    .replace(/\s+/g, ' ')
+    .trim()
+  const doubleFlyIndex = text.indexOf('雙飛')
+  if (doubleFlyIndex < 0) return []
+
+  let before = text.slice(0, doubleFlyIndex).trim()
+  let after = text.slice(doubleFlyIndex + 2).trim()
+
+  const relationPattern = /可以搭配|可搭配|可與|可跟|可和|可同|搭配|雙飛對象|對象/g
+  const relations = Array.from(before.matchAll(relationPattern))
+  if (relations.length) {
+    const last = relations[relations.length - 1]
+    before = before.slice(Number(last.index || 0) + String(last[0] || '').length).trim()
+  }
+
+  before = before.replace(/(?:可以|可)?\s*$/g, '').trim()
+  after = after
+    .replace(/^[\s\/:\-－]+/g, '')
+    .replace(/^(?:搭配|對象)\s*/g, '')
+    .trim()
+
+  if (isDoubleFlyMediaPlaceholder018190(after)) after = ''
+
+  return [before, after].filter(Boolean)
+}
+
+function makeDoubleFlySegmentTokenKeys018191(segment = '') {
+  const cleaned = String(segment || '')
+    .normalize('NFKC')
+    .replace(/(?:可以搭配|可搭配|可與|可跟|可和|可同|搭配|雙飛對象|對象)/g, ' ')
+    .replace(/(?:以及|還有|或是)/g, ' ')
+    .replace(/[、,，\/／|&＋+;；]+/g, ' ')
+    .replace(/\s+(?:跟|與|和|及)\s+/g, ' ')
+    .replace(/^[\s\/:：\-－]+|[\s\/:：\-－]+$/g, '')
+    .trim()
+
+  if (!cleaned) return []
+
+  const parts = cleaned
+    .split(/\s+/)
+    .map(item => item.replace(/^(?:跟|與|和|及)+|(?:跟|與|和|及|可)+$/g, '').trim())
+    .filter(Boolean)
+
+  const keys = new Set(parts.map(normalizeDoubleFlyCandidateKey018191).filter(Boolean))
+  const fullKey = normalizeDoubleFlyCandidateKey018191(cleaned)
+  if (fullKey) keys.add(fullKey)
+  return Array.from(keys)
+}
+
+function findDoubleFlyCandidatesInLine018191(line = '', candidateGroups = []) {
+  const segments = getDoubleFlyPartnerSegments018191(line)
+  if (!segments.length) return []
+  const segmentKeys = new Set(segments.flatMap(makeDoubleFlySegmentTokenKeys018191))
+  if (!segmentKeys.size) return []
+
+  // 每個來源名稱各自依優先順序核對；同一句有多位小姐時，不會因第一位在同機房
+  // 就漏掉另一位只存在於同縣市地區或文件3本批名單的小姐。
+  const matchedByNameKey = new Map()
+  for (const group of candidateGroups) {
+    ;(Array.isArray(group?.candidates) ? group.candidates : []).forEach(candidate => {
+      const key = candidate.doubleFlyNameKey018191
+      if (!key || matchedByNameKey.has(key) || !segmentKeys.has(key)) return
+      matchedByNameKey.set(key, { ...candidate, matchedScope018191: group.source })
+    })
+  }
+
+  return Array.from(matchedByNameKey.values()).sort((left, right) => {
+    const leftIndex = String(line || '').indexOf(left.name)
+    const rightIndex = String(line || '').indexOf(right.name)
+    if (leftIndex >= 0 && rightIndex >= 0 && leftIndex !== rightIndex) return leftIndex - rightIndex
+    return right.name.length - left.name.length
+  })
+}
+
+function buildCurrentConversionLadyCandidates018191(blocks = []) {
+  const location = getCurrentListingLocation()
+  return (Array.isArray(blocks) ? blocks : [])
+    .map(block => {
+      const header = findHeaderInBlock(block) || parseNameOnlyRecord(block)
+      if (!header?.name) return null
+      const parsedBody = parseBody(block) || {}
+      return {
+        name: header.name,
+        country: header.country || extractCountryFromBlock(block) || '',
+        city: location.city,
+        district: location.district,
+        mode: location.mode,
+        room: location.room,
+        sourceRoom: location.room,
+        body: parsedBody,
+        height: parsedBody.height ?? '',
+        weight: parsedBody.weight ?? '',
+        cup: parsedBody.cup || ''
+      }
+    })
+    .filter(Boolean)
+}
+
+function extractDoubleFlyPartnerServices(text = '', currentLady = {}) {
+  const partners = []
+  const groups = buildDoubleFlyPartnerCandidateGroups018191(currentLady)
+
+  String(text || '')
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(line => line.includes('雙飛'))
+    .forEach(line => {
+      const matched = findDoubleFlyCandidatesInLine018191(line, groups)
+      matched.forEach(candidate => {
+        const name = getDoubleFlyCandidateName018191(candidate)
+        if (name && !partners.includes(name)) partners.push(name)
+      })
+    })
+
+  return partners.length ? [`雙飛：${partners.join('、')}`] : []
 }
 
 function cleanupSourceText(text) {
@@ -8306,7 +8514,11 @@ function analyzeRecordForPreview(block) {
     age: parsedBody.age || headerAge
   } : null
   const prices = parsePrices(block, getAppliedIncrease(finalCountry))
-  const services = extractServices(block)
+  const services = extractServices(block, {
+    name: header?.name || '',
+    country: finalCountry,
+    body: body || {}
+  })
   const missing = []
 
   if (!header) missing.push('小姐姓名／國籍')
@@ -9373,7 +9585,7 @@ function extractExplicitBarebackEjaculationServices(sourceText) {
   return results
 }
 
-function extractServices(block) {
+function extractServices(block, currentLady = {}) {
   const found = new Set()
   const order = parseList(serviceOrderText.value)
   const aliases = parseAliasRules(aliasRulesText.value)
@@ -9488,7 +9700,7 @@ function extractServices(block) {
 
   // 第 018-166 批：雙飛後方若有搭配小姐名，文件2統一顯示「雙飛：小姐名」。
   // 有明確對象時移除泛用的「雙飛」，避免同時出現「雙飛 雙飛：琳琳」。
-  const doubleFlyPartnerServices = extractDoubleFlyPartnerServices(block)
+  const doubleFlyPartnerServices = extractDoubleFlyPartnerServices(block, currentLady)
   if (doubleFlyPartnerServices.length) {
     found.delete('雙飛')
     doubleFlyPartnerServices.forEach(item => found.add(item))
