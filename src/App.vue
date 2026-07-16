@@ -1,3 +1,5 @@
+<!-- 第 018-192 批：Unicode 行／段落分隔符正規化與多小姐切筆恢復版 -->
+<!-- batch018-192-unicode-line-separator-multi-record-split-fix -->
 <!-- 第 018-191 批：雙飛對象限縮同機房／同縣市地區／文件3本批名單安全抓取版 -->
 <!-- batch018-191-double-fly-partner-scoped-candidate-match -->
 <!-- 第 018-190 批：雙飛後方 emoji／媒體佔位文字清除且保留雙飛服務修正版 -->
@@ -8262,8 +8264,21 @@ function extractDoubleFlyPartnerServices(text = '', currentLady = {}) {
   return partners.length ? [`雙飛：${partners.join('、')}`] : []
 }
 
+// 第 018-192 批：LINE／Telegram／網站複製文字可能使用 Unicode LINE SEPARATOR（U+2028）、
+// PARAGRAPH SEPARATOR（U+2029）或 NEXT LINE（U+0085）分隔每位小姐。
+// 這些字元看起來像換行，但 split('\n') 不會切開，舊版會把後續所有小姐併入第一筆。
+// 先統一成標準 LF，並同時處理 CRLF／CR／垂直定位字元，讓所有後續切筆、身材、價格與服務解析共用同一份行結構。
+function normalizeImportedLineBreaks018192(value = '') {
+  return String(value || '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/[\u0085\u2028\u2029]/g, '\n')
+    .replace(/[\u000B\u000C]/g, '\n')
+}
+
 function cleanupSourceText(text) {
-  let cleaned = normalizeCountryCodeGlyphs018184(normalizeDigits(String(text || '')))
+  let cleaned = normalizeCountryCodeGlyphs018184(
+    normalizeDigits(normalizeImportedLineBreaks018192(text))
+  )
 
   cleaned = cleaned
     .replace(/[^\u4e00-\u9fa5A-Za-z0-9\s\n\/／\.\+\-\:\：]/g, ' ')
@@ -8371,7 +8386,9 @@ function parseLooseNameBodyHeaderLine(line) {
 }
 
 function splitBlocks(text) {
-  const lines = String(text || '').split('\n')
+  // 第 018-192 批：即使未先經過 cleanupSourceText，也必須能正確切開 Unicode 換行來源。
+  const normalizedText = normalizeImportedLineBreaks018192(text)
+  const lines = normalizedText.split('\n')
   const startIndexes = []
 
   // 第 018-164 批：同一份文件可能同時包含：
@@ -8414,7 +8431,7 @@ function splitBlocks(text) {
       .filter(block => Boolean(findHeaderInBlock(block) || parseNameOnlyRecord(block)))
   }
 
-  const fallbackBlock = String(text || '').trim()
+  const fallbackBlock = normalizedText.trim()
   return fallbackBlock && (findHeaderInBlock(fallbackBlock) || parseNameOnlyRecord(fallbackBlock))
     ? [fallbackBlock]
     : []
