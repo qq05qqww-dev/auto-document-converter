@@ -1,3 +1,5 @@
+<!-- 第 018-181 批：MY／馬國籍縮寫標題＋小數K價格方案修正版 -->
+<!-- batch018-181-malaysia-short-header-decimal-k-price-fix -->
 <!-- 第 018-180 批：國籍標題優先＋泰國洗服務不覆蓋國籍修正版 -->
 <!-- batch018-180-header-country-priority-thai-wash-country-guard -->
 <!-- 第 018-179 批：外送免選地區新增機房＋無套內外射動態金額修正版 -->
@@ -3097,9 +3099,36 @@ function matchKnownCountryToken(value) {
   return null
 }
 
+// 第 018-181 批：支援店家用 MY／馬 表示馬來西亞國籍。
+// 例：MY 馬 白依、MY 白依、馬 白依，都應統一成【馬來 白依】。
+// 只在整行標題結構明確時套用，避免一般姓名內含「馬」被誤判。
+function parseMalaysiaShortHeaderLine(line) {
+  const cleaned = normalizeHeaderText(line)
+  if (!cleaned || isNotHeaderLine(cleaned)) return null
+
+  let match = cleaned.match(/^(?:MY|MYS|MALAYSIA)\s+(?:(?:馬來西亞|馬來|馬)\s+)?([\u4e00-\u9fa5A-Za-z0-9]{1,18})$/i)
+  if (!match) {
+    match = cleaned.match(/^馬\s+([\u4e00-\u9fa5A-Za-z0-9]{1,18})$/)
+  }
+  if (!match) return null
+
+  const name = cleanName(match[1])
+  if (!isValidName(name)) return null
+
+  return {
+    country: '馬來',
+    name,
+    matchedRule: '馬來縮寫標題'
+  }
+}
+
 function parseStructuredHeaderSameLine(line, rules = getHeaderRulesForCurrentParse()) {
   const cleaned = normalizeHeaderText(line)
   if (!cleaned) return null
+
+  const malaysiaShortHeader = parseMalaysiaShortHeaderLine(cleaned)
+  if (malaysiaShortHeader) return malaysiaShortHeader
+
   const compact = cleaned.replace(/\s+/g, '')
   const countries = getCountryKeys().sort((a, b) => b.length - a.length)
 
@@ -8000,6 +8029,15 @@ function isStrictHeaderNameCandidate(value) {
   const name = cleanName(value)
   if (!name || name.length > 18 || /^\d+$/.test(name)) return false
 
+  // 第 018-181 批：國籍別名本身不能再被當成小姐名稱。
+  // 例：「馬來 馬來 164 49 E罩杯」中的第二個馬來是欄位文字，不是小姐名。
+  const compactName = normalizeHeaderText(name).replace(/\s+/g, '')
+  const isCountryAliasOnly = getCountryKeys().some(country => (
+    normalizeHeaderText(country).replace(/\s+/g, '') === compactName
+  ))
+  if (isCountryAliasOnly) return false
+  if (/^(?:身體密碼|身材密碼|身體資料|身材資料|個人資料|基本資料)$/.test(name)) return false
+
   // 這層保底只排除明確不可能是姓名的結構，不讀取使用者自訂 notNameWordsText，
   // 避免自訂規則誤傷正常小姐名。
   if (/\d{3}\s*[/ .．]?\s*\d{2}/.test(name)) return false
@@ -8190,7 +8228,7 @@ function isNotHeaderLine(line) {
     || /買\d+節\/\d+s/i.test(serviceAliasValue)
   if (buyGiftServiceMatched) return true
 
-  const baseMatched = /\d{2,3}\s*(?:分鐘|分)|\d{3}\s*\/\s*\d{2}|回\s*\d{3,5}|[0-9]{3,5}$|國家|國籍|服務|套餐|超值|升級|共浴|無套吹|品鮑|按摩|舌吻|絲襪|情趣|口爆|吞精|顏射|自慰|短鍾|短鐘|長鍾|長鐘|底|雙飛|深喉|豪邁|吃屌|不嫌|視野|愛愛|需|請自備|禁止|酒客|入珠|吸毒|生客|包夜|不限時段|模式|送一節|次數|攝影|露臉/.test(value)
+  const baseMatched = /\d{2,3}\s*(?:分鐘|分)|\d{3}\s*\/\s*\d{2}|回\s*\d{3,5}|[0-9]{3,5}$|國家|國籍|身體密碼|身材密碼|身體資料|身材資料|個人資料|基本資料|服務|套餐|超值|升級|共浴|無套吹|品鮑|按摩|舌吻|絲襪|情趣|口爆|吞精|顏射|自慰|短鍾|短鐘|長鍾|長鐘|底|雙飛|深喉|豪邁|吃屌|不嫌|視野|愛愛|需|請自備|禁止|酒客|入珠|吸毒|生客|包夜|不限時段|模式|送一節|次數|攝影|露臉/.test(value)
   if (baseMatched) return true
 
   return parseList(notNameWordsText.value).some(word => word && value.includes(word))
@@ -8202,6 +8240,15 @@ function isValidName(name) {
   if (!value) return false
   if (value.length > 18) return false
   if (/^\d+$/.test(value)) return false
+
+  // 第 018-181 批：不可把純國籍詞當成小姐名稱。
+  // 這可避免「馬來 馬來 164 49 E罩杯」被切成假小姐【馬來 馬來】。
+  const compactValue = normalizeHeaderText(value).replace(/\s+/g, '')
+  const isCountryAliasOnly = getCountryKeys().some(country => (
+    normalizeHeaderText(country).replace(/\s+/g, '') === compactValue
+  ))
+  if (isCountryAliasOnly) return false
+  if (/^(?:身體密碼|身材密碼|身體資料|身材資料|個人資料|基本資料)$/.test(value)) return false
   if (/^(分|分鐘|回|歲|奶|杯|國家|國籍|服務|套餐|超值|升級|底單|最低)$/.test(value)) return false
 
   // 第 018-172 批：姓名候選若帶有明確金額尾碼或完整服務名稱，必定不是小姐名。
@@ -8500,6 +8547,26 @@ function parsePrices(text, increase) {
       .replace(/[／]/g, '/')
       .replace(/　/g, ' ')
       .trim()
+
+    // 第 018-181 批：支援沒有寫 K／底、直接以小數表示千元的方案。
+    // 例：20分 1S 1.6、30分 1S 2.2、50分 1S 2.5。
+    // 1.6 代表 1600，之後仍會套用目前國籍／固定加價與分鐘規則。
+    const decimalKlessPriceMatch = normalized.match(
+      /^(?:快餐|短[鐘鍾]|長[鐘鍾])?\s*(\d{2,3})\s*(?:分鐘|分)\s*(?:(NS|N\s*\/?\s*S|\d+\s*S)\s*)?([0-9]+(?:\.[0-9]+)?)\s*(?:K|千)?$/i
+    )
+    if (decimalKlessPriceMatch) {
+      const minutes = Number(decimalKlessPriceMatch[1])
+      const sessionCount = decimalKlessPriceMatch[2] || '1S'
+      const rawAmount = Number(decimalKlessPriceMatch[3])
+      const amount = rawAmount > 0 && rawAmount < 100
+        ? rawAmount * 1000
+        : rawAmount
+
+      if (minutes >= 10 && minutes <= 180 && amount >= 1000 && amount <= 50000) {
+        pushPrice(minutes, sessionCount, amount)
+        return
+      }
+    }
 
     // 第 018-170 批：支援「金額 分鐘 節數」的空格方案格式。
     // 例：1500 20 1S、1900 40 1S、3500 90 2S。
