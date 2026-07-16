@@ -1,3 +1,7 @@
+<!-- 第 018-187 批：同範圍同名身材分流＋調派鎖定同步相容修正版 -->
+<!-- batch018-187-same-scope-body-identity-and-transfer-lock-compatibility -->
+<!-- 第 018-186 批：同姓名跨縣市主檔 ID／媒體隔離修正版 -->
+<!-- batch018-186-cross-city-same-name-listing-media-isolation -->
 <!-- 第 018-185 批：分鐘＋節數＋兩位數底價正式方案通用解析修正版 -->
 <!-- batch018-185-minute-session-short-bottom-price-plan-fix -->
 <!-- 第 018-184 批：姓名尾碼國籍代碼 Unicode 通用正規化＋VN 越妹顯示修正版 -->
@@ -3909,9 +3913,34 @@ function normalizeLadySyncCompactText(value) {
     .replace(/[|｜/\\:_：,，。．、\-–—()（）【】\[\]]/g, '')
 }
 
-function makePreviewLadyKey(lady) {
+function makeLadyNameCountryKey(lady) {
   const country = lady?.country || lady?.nationality || lady?.nation || ''
   return `${normalizeLadySyncCompactText(country)}__${normalizeLadySyncCompactText(lady?.name || '')}`
+}
+
+function getLadyIdentityScopeParts(lady) {
+  const location = getLadySyncLocation(lady)
+  return {
+    city: normalizeLadySyncCompactText(location.city),
+    district: normalizeLadySyncCompactText(location.district),
+    mode: normalizeLadySyncCompactText(location.mode),
+    room: normalizeLadySyncCompactText(location.room)
+  }
+}
+
+function getLadyIdentityCityKey(lady) {
+  return getLadyIdentityScopeParts(lady).city
+}
+
+function makePreviewLadyKey(lady) {
+  const scope = getLadyIdentityScopeParts(lady)
+  return [
+    makeLadyNameCountryKey(lady),
+    `city-${scope.city || 'unknown-city'}`,
+    `district-${scope.district || 'none'}`,
+    `mode-${scope.mode || 'unknown-mode'}`,
+    `room-${scope.room || 'unknown-room'}`
+  ].join('__')
 }
 
 function normalizeLadyIdentityBodyValue(value) {
@@ -3929,12 +3958,41 @@ function getLadyIdentityBodyParts(lady) {
   }
 }
 
+function getLadyCoreBodyIdentityParts(lady) {
+  const parts = getLadyIdentityBodyParts(lady)
+  return {
+    height: parts.height,
+    weight: parts.weight,
+    cup: parts.cup
+  }
+}
+
+function compareLadyCoreBodyIdentity(sourceLady, targetLady) {
+  const source = getLadyCoreBodyIdentityParts(sourceLady)
+  const target = getLadyCoreBodyIdentityParts(targetLady)
+  let availableCount = 0
+  let matchedCount = 0
+  let mismatchedCount = 0
+  ;['height', 'weight', 'cup'].forEach(key => {
+    if (!source[key] || !target[key]) return
+    availableCount += 1
+    if (source[key] === target[key]) matchedCount += 1
+    else mismatchedCount += 1
+  })
+  return {
+    availableCount,
+    matchedCount,
+    mismatchedCount,
+    isReliableMatch: availableCount >= 2 && mismatchedCount === 0,
+    isDefiniteConflict: availableCount >= 2 && mismatchedCount > 0
+  }
+}
+
 function makeLadyStrictIdentityKey(lady) {
   const nameKey = makePreviewLadyKey(lady)
-  const bodyParts = getLadyIdentityBodyParts(lady)
+  const bodyParts = getLadyCoreBodyIdentityParts(lady)
   return [
     nameKey,
-    bodyParts.age,
     bodyParts.height,
     bodyParts.weight,
     bodyParts.cup
@@ -3942,30 +4000,124 @@ function makeLadyStrictIdentityKey(lady) {
 }
 
 function countMatchingIdentityBodyParts(sourceLady, targetLady) {
-  const source = getLadyIdentityBodyParts(sourceLady)
-  const target = getLadyIdentityBodyParts(targetLady)
-  let availableCount = 0
-  let matchedCount = 0
-  ;['height', 'weight', 'cup', 'age'].forEach(key => {
-    if (!source[key] || !target[key]) return
-    availableCount += 1
-    if (source[key] === target[key]) matchedCount += 1
-  })
-  return { availableCount, matchedCount }
+  return compareLadyCoreBodyIdentity(sourceLady, targetLady)
 }
 
 function isSameFormalLadyIdentity(sourceLady, targetLady) {
   if (!sourceLady || !targetLady) return false
   if (makePreviewLadyKey(sourceLady) !== makePreviewLadyKey(targetLady)) return false
-  const { availableCount, matchedCount } = countMatchingIdentityBodyParts(sourceLady, targetLady)
-  if (availableCount >= 3) return matchedCount >= 3
-  if (availableCount === 2) return matchedCount >= 2
-  return false
+  return compareLadyCoreBodyIdentity(sourceLady, targetLady).isReliableMatch
+}
+
+function isLadyLocationTransferLocked(lady) {
+  return lady?.locationTransferLocked === true ||
+    lady?.location_transfer_locked === true ||
+    String(lady?.locationTransferLocked ?? lady?.location_transfer_locked ?? '').toLowerCase() === 'true'
+}
+
+function getLadyCentralSourceIdentity(lady) {
+  return String(
+    lady?.centralSourceId ||
+    lady?.central_source_id ||
+    lady?.sourceIdentity ||
+    lady?.sourceId ||
+    lady?.source_id ||
+    ''
+  ).normalize('NFKC').trim().toLowerCase()
+}
+
+function getLadySourceIdentityScopeKey(value) {
+  const text = String(value || '').normalize('NFKC').trim().toLowerCase()
+  if (!text) return ''
+  const bodyIndex = text.lastIndexOf('-body-')
+  return bodyIndex >= 0 ? text.slice(0, bodyIndex) : text
 }
 
 function findBestExistingLadyMatchForSync(lady) {
-  const key = makePreviewLadyKey(lady)
-  const matches = frontendLadies.value.filter(item => makePreviewLadyKey(item) === key)
+  const nameCountryKey = makeLadyNameCountryKey(lady)
+  const allNameCountryMatches = frontendLadies.value.filter(item => makeLadyNameCountryKey(item) === nameCountryKey)
+  const requestedSourceIdentity = getLadyCentralSourceIdentity(lady) || getLadyCentralSourceIdentity({
+    sourceIdentity: makeStableLadySourceIdentity(lady)
+  })
+  const requestedSourceScopeKey = getLadySourceIdentityScopeKey(requestedSourceIdentity)
+
+  // 第 018-187 批：網站後台調派後，位置會刻意與 02 原來源範圍不同。
+  // 只有 location_transfer_locked=true 且中央來源 ID 完全相同，或來源範圍前綴唯一相同時，
+  // 才允許跨範圍沿用原主檔；一般同名小姐仍不得跨縣市／地區／類型／機房合併。
+  const exactTransferLockedMatches = allNameCountryMatches.filter(item => (
+    isLadyLocationTransferLocked(item) &&
+    requestedSourceIdentity &&
+    getLadyCentralSourceIdentity(item) === requestedSourceIdentity
+  ))
+  if (exactTransferLockedMatches.length === 1) {
+    return {
+      match: exactTransferLockedMatches[0],
+      matches: exactTransferLockedMatches,
+      formalMatches: exactTransferLockedMatches,
+      suspected: false,
+      matchedBy: 'transfer-locked-source-id'
+    }
+  }
+  if (exactTransferLockedMatches.length > 1) {
+    return {
+      match: null,
+      matches: exactTransferLockedMatches,
+      formalMatches: [],
+      suspected: true,
+      matchedBy: 'multiple-transfer-locked-source-id'
+    }
+  }
+
+  const transferLockedScopeMatches = allNameCountryMatches.filter(item => {
+    if (!isLadyLocationTransferLocked(item) || !requestedSourceScopeKey) return false
+    const itemSourceIdentity = getLadyCentralSourceIdentity(item)
+    return itemSourceIdentity && getLadySourceIdentityScopeKey(itemSourceIdentity) === requestedSourceScopeKey
+  })
+  if (transferLockedScopeMatches.length) {
+    const bodyMatches = transferLockedScopeMatches.filter(item => (
+      compareLadyCoreBodyIdentity(lady, item).isReliableMatch
+    ))
+    const bodyConflicts = transferLockedScopeMatches.filter(item => (
+      compareLadyCoreBodyIdentity(lady, item).isDefiniteConflict
+    ))
+    if (bodyMatches.length === 1) {
+      return {
+        match: bodyMatches[0],
+        matches: transferLockedScopeMatches,
+        formalMatches: bodyMatches,
+        suspected: false,
+        matchedBy: 'transfer-locked-source-scope-body'
+      }
+    }
+    if (bodyMatches.length > 1 || bodyConflicts.length < transferLockedScopeMatches.length) {
+      return {
+        match: null,
+        matches: transferLockedScopeMatches,
+        formalMatches: bodyMatches,
+        bodyConflicts,
+        suspected: true,
+        matchedBy: 'multiple-transfer-locked-source-scope'
+      }
+    }
+    // 來源範圍相同但核心身材明顯不同，視為另一位小姐；繼續依目前來源位置建立獨立 ID。
+  }
+
+  const cityKey = getLadyIdentityCityKey(lady)
+
+  // 第 018-186 批：縣市是小姐主檔不可省略的隔離邊界。
+  // 缺少縣市時不可只靠姓名／國籍或身材自動更新，避免舊提示 ID 綁到其他縣市。
+  if (!cityKey) {
+    return {
+      match: null,
+      matches: allNameCountryMatches,
+      formalMatches: [],
+      suspected: allNameCountryMatches.length > 0,
+      matchedBy: allNameCountryMatches.length ? 'missing-city-scope' : ''
+    }
+  }
+
+  const identityScopeKey = makePreviewLadyKey(lady)
+  const matches = allNameCountryMatches.filter(item => makePreviewLadyKey(item) === identityScopeKey)
   if (!matches.length) {
     return { match: null, matches, formalMatches: [], suspected: false, matchedBy: '' }
   }
@@ -3982,7 +4134,7 @@ function findBestExistingLadyMatchForSync(lady) {
       matches,
       formalMatches,
       suspected: false,
-      matchedBy: strictMatches.length ? 'formal-id-full-body' : 'formal-id-body'
+      matchedBy: strictMatches.length ? 'formal-id-full-body-scope' : 'formal-id-body-scope'
     }
   }
 
@@ -3992,7 +4144,19 @@ function findBestExistingLadyMatchForSync(lady) {
       matches,
       formalMatches,
       suspected: true,
-      matchedBy: 'multiple-formal-id-body'
+      matchedBy: 'multiple-formal-id-body-scope'
+    }
+  }
+
+  const bodyConflicts = matches.filter(item => compareLadyCoreBodyIdentity(lady, item).isDefiniteConflict)
+  if (bodyConflicts.length === matches.length) {
+    return {
+      match: null,
+      matches,
+      formalMatches: [],
+      bodyConflicts,
+      suspected: false,
+      matchedBy: 'body-conflict-new-id'
     }
   }
 
@@ -4002,7 +4166,7 @@ function findBestExistingLadyMatchForSync(lady) {
       matches,
       formalMatches: [],
       suspected: false,
-      matchedBy: 'name-country-single'
+      matchedBy: 'name-country-scope-single-body-insufficient'
     }
   }
 
@@ -4010,8 +4174,9 @@ function findBestExistingLadyMatchForSync(lady) {
     match: null,
     matches,
     formalMatches: [],
+    bodyConflicts,
     suspected: true,
-    matchedBy: 'multiple-name-country'
+    matchedBy: 'multiple-name-country-scope'
   }
 }
 
@@ -4059,29 +4224,38 @@ function buildLadySyncComparable(lady) {
   }
 }
 
-function makeStableLadySourceIdentity(lady) {
+function makeLadySourceScopeIdentity(lady) {
   const location = getLadySyncLocation(lady)
   const country = normalizeLadySyncCompactText(lady?.country || lady?.nationality || lady?.nation || '') || 'unknown-country'
   const name = normalizeLadySyncCompactText(lady?.name || '') || 'unknown-name'
-  const body = lady?.body || {}
-  const bodyParts = [
-    normalizeLadySyncText(lady?.height ?? body?.height ?? ''),
-    normalizeLadySyncText(lady?.weight ?? body?.weight ?? ''),
-    normalizeLadySyncCompactText(lady?.cup ?? body?.cup ?? ''),
-    normalizeLadySyncText(lady?.age ?? body?.age ?? '')
-  ].filter(Boolean)
+  const city = normalizeLadySyncCompactText(location.city || ruleScopeCity.value || managerSelectedCity.value) || 'unknown-city'
+  const district = normalizeLadySyncCompactText(location.district || ruleScopeDistrict.value || managerSelectedDistrict.value)
+  const mode = normalizeLadySyncCompactText(location.mode || ruleScopeType.value || managerSelectedType.value)
   const room = normalizeLadySyncCompactText(location.room || ruleScopeRoom.value)
-  const fallbackScope = [
-    normalizeLadySyncCompactText(location.city),
-    normalizeLadySyncCompactText(location.district),
-    normalizeLadySyncCompactText(location.mode)
-  ].filter(Boolean).join('-') || 'unknown-scope'
-  const scope = bodyParts.length >= 3
-    ? `body-${bodyParts.join('-')}`
-    : room
-      ? `room-${room}`
-      : `scope-${fallbackScope}`
-  return `converter-${country}-${name}-${scope}`.slice(0, 220)
+  const locationScope = [
+    `city-${city}`,
+    district ? `district-${district}` : '',
+    mode ? `mode-${mode}` : '',
+    room ? `room-${room}` : 'room-unknown'
+  ].filter(Boolean).join('-')
+  return `converter-${country}-${name}-${locationScope}`
+}
+
+function makeStableLadySourceIdentity(lady) {
+  const bodyParts = getLadyCoreBodyIdentityParts(lady)
+  const coreBodyEntries = [
+    bodyParts.height ? `height-${bodyParts.height}` : '',
+    bodyParts.weight ? `weight-${bodyParts.weight}` : '',
+    bodyParts.cup ? `cup-${bodyParts.cup}` : ''
+  ].filter(Boolean)
+
+  // 第 018-187 批：年齡不再進入永久來源 ID，避免每年年齡變更就誤建新主檔。
+  // 身高／體重／罩杯至少有兩項時才作為同範圍同名小姐的分流識別。
+  const personScope = coreBodyEntries.length >= 2
+    ? `body-${coreBodyEntries.join('-')}`
+    : 'body-unknown'
+
+  return `${makeLadySourceScopeIdentity(lady)}-${personScope}`.slice(0, 220)
 }
 
 function assessLadyDatabaseSync(lady) {
@@ -4103,10 +4277,21 @@ function assessLadyDatabaseSync(lady) {
     return {
       state: 'new',
       label: '可新增',
-      message: '資料庫尚無同國籍、同姓名小姐，可安全新增。',
+      message: '資料庫在目前縣市／地區／類型／機房尚無同國籍、同姓名小姐，可建立獨立主檔。',
       match: null,
       matches,
       matchedBy: ''
+    }
+  }
+
+  if (matchedBy === 'body-conflict-new-id') {
+    return {
+      state: 'new',
+      label: '可新增不同 ID',
+      message: '目前範圍雖有同國籍、同姓名小姐，但身高／體重／罩杯明顯不同；本次會新增獨立主檔與獨立媒體 ID。',
+      match: null,
+      matches,
+      matchedBy
     }
   }
 
@@ -4114,9 +4299,11 @@ function assessLadyDatabaseSync(lady) {
     return {
       state: 'suspected',
       label: `疑似重複 ${matches.length} 筆`,
-      message: matchedBy === 'multiple-formal-id-body'
-        ? '資料庫已有多筆同國籍、同姓名且身材條件相同的資料，已禁止送出，請先到 01 後台整理重複資料。'
-        : '資料庫已有多筆同國籍、同姓名資料，系統無法安全判斷唯一主檔，已禁止新增第二筆。',
+      message: matchedBy === 'multiple-formal-id-body-scope'
+        ? '目前縣市／地區／類型／機房已有多筆同國籍、同姓名且身材條件相同的資料，已禁止送出，請先到 01 後台整理重複資料。'
+        : (matchedBy === 'missing-city-scope'
+          ? '目前資料缺少縣市，為避免綁到其他縣市同名小姐，已禁止自動新增或更新。'
+          : '目前縣市／地區／類型／機房已有多筆同國籍、同姓名資料，系統無法安全判斷唯一主檔，已禁止新增第二筆。'),
       match: null,
       matches,
       matchedBy
@@ -4139,9 +4326,11 @@ function assessLadyDatabaseSync(lady) {
   return {
     state: 'update',
     label: '可更新',
-    message: matchedBy === 'name-country-single'
-      ? '資料庫已有同國籍、同姓名唯一資料；本次會更新原資料，不會建立第二筆。'
-      : '資料庫已比對到同一位小姐正式主檔；本次會更新原資料，不會建立第二筆。',
+    message: matchedBy.startsWith('transfer-locked-')
+      ? '此小姐已由網站後台調派並鎖定位置；本次沿用原 ID 更新資料與媒體，但不會把縣市／地區／類型／機房改回來源位置。'
+      : (matchedBy === 'name-country-scope-single-body-insufficient'
+        ? '目前範圍只有一筆同國籍、同姓名資料，且身材欄位不足以判定為不同人；本次更新原主檔。'
+        : '資料庫已在目前縣市／地區／類型／機房比對到同一位小姐正式主檔；本次不會影響其他範圍同名資料。'),
     match,
     matches,
     matchedBy
@@ -4235,7 +4424,7 @@ function getDatabaseIdHintKeys(lady) {
   pushKey(lady?.centralSourceId)
   pushKey(lady?.source_id)
   pushKey(makeStableLadySourceIdentity(lady || {}))
-  pushKey(`name:${makePreviewLadyKey(lady || {})}`)
+  pushKey(`identity:${makeLadyStrictIdentityKey(lady || {})}`)
 
   return keys
 }
@@ -4307,16 +4496,16 @@ function applyDatabaseIdHintsFromResponse(data, payload = null) {
     if (!numericId) continue
 
     const sourceIdentity = row?.sourceIdentity || row?.sourceId || row?.source_id || row?.centralSourceId || ''
-    const rowKey = makePreviewLadyKey(row)
+    const rowIdentityKey = makeLadyStrictIdentityKey(row)
     const matchedItem = payloadItems.find(item => {
       const itemSource = item?.sourceIdentity || item?.sourceId || makeStableLadySourceIdentity(item)
       if (sourceIdentity && itemSource && String(sourceIdentity) === String(itemSource)) return true
-      return rowKey && makePreviewLadyKey(item) === rowKey
+      return rowIdentityKey && makeLadyStrictIdentityKey(item) === rowIdentityKey
     })
 
     if (matchedItem) {
       if (rememberDatabaseIdHint(matchedItem, numericId)) appliedCount += 1
-    } else if (rowKey) {
+    } else if (rowIdentityKey) {
       if (rememberDatabaseIdHint(row, numericId)) appliedCount += 1
     }
   }
@@ -6546,13 +6735,22 @@ async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 12000, fallba
 
 function getCurrentDocumentPreviewLady(item) {
   const itemId = String(item?.id || '')
-  const itemKey = makePreviewLadyKey(item)
-
-  return currentDocumentPreviewLadies.value.find(lady => (
+  const directIdMatch = currentDocumentPreviewLadies.value.find(lady => (
     itemId && String(lady?.id || '') === itemId
-  )) || currentDocumentPreviewLadies.value.find(lady => (
+  ))
+  if (directIdMatch) return directIdMatch
+
+  const itemKey = makePreviewLadyKey(item)
+  const scopeCandidates = currentDocumentPreviewLadies.value.filter(lady => (
     itemKey && makePreviewLadyKey(lady) === itemKey
-  )) || null
+  ))
+  const strictKey = makeLadyStrictIdentityKey(item)
+  const strictCandidates = scopeCandidates.filter(lady => makeLadyStrictIdentityKey(lady) === strictKey)
+  if (strictCandidates.length === 1) return strictCandidates[0]
+
+  const formalCandidates = scopeCandidates.filter(lady => isSameFormalLadyIdentity(item, lady))
+  if (formalCandidates.length === 1) return formalCandidates[0]
+  return scopeCandidates.length === 1 ? scopeCandidates[0] : null
 }
 
 function buildCentralWebsiteSyncItem(item, previewLady = null) {
