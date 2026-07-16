@@ -1,3 +1,5 @@
+<!-- 第 018-180 批：國籍標題優先＋泰國洗服務不覆蓋國籍修正版 -->
+<!-- batch018-180-header-country-priority-thai-wash-country-guard -->
 <!-- 第 018-179 批：外送免選地區新增機房＋無套內外射動態金額修正版 -->
 <!-- batch018-179-delivery-no-district-room-and-bareback-dynamic-amount-fix -->
 <!-- 第 018-175 批：年齡在罩杯前＋罩杯字母白名單修正版 -->
@@ -7622,15 +7624,19 @@ function normalizeLooseNameBodyCountryLines(text) {
 function extractLooseCountryContext(line) {
   const cleaned = normalizeHeaderText(line)
   if (!cleaned) return ''
-  if (isNotHeaderLine(cleaned) && !/(越南|馬來|馬來西亞|泰國|泰妹|台灣|台妹|港澳|日本|韓國|外籍)/.test(cleaned)) return ''
 
-  const compact = cleaned.replace(/\s+/g, '')
-  const countries = getCountryKeys().sort((a, b) => b.length - a.length)
-  for (const country of countries) {
-    if (compact.includes(country)) return normalizeCountry(country)
-  }
+  // 第 018-180 批：服務文字中的國籍字樣不能改變後續小姐的國籍上下文。
+  // 例：「泰國洗無水床+300」只是服務，不得把目前馬來小姐改成泰妹。
+  if (isNotHeaderLine(cleaned)) return ''
 
-  return ''
+  const explicitMatch = cleaned.match(/(?:國家|國籍)\s*[:：]?\s*(馬來西亞|馬來|越南|港澳|台灣|台妹|泰國|泰妹|日本|韓國|外籍)/)
+  if (explicitMatch) return normalizeCountry(explicitMatch[1])
+
+  const standaloneCountry = extractStandaloneCountryFromLine(cleaned)
+  if (standaloneCountry) return standaloneCountry
+
+  const header = parseHeaderLine(cleaned) || parseStrictNameCountryHeaderLine(cleaned)
+  return header?.country ? normalizeCountry(header.country) : ''
 }
 
 function parseLooseNameBodyHeaderLine(line) {
@@ -7778,7 +7784,10 @@ function analyzeRecordForPreview(block) {
   // 不完整資料只能預覽，不能加入文件3，避免錯誤資料同步到文件4與中央網站。
   const header = findHeaderInBlock(block) || parseNameOnlyRecord(block)
   const explicitCountry = extractCountryFromBlock(block)
-  const finalCountry = explicitCountry || header?.country || (header ? '馬來' : '')
+  // 第 018-180 批：已成功辨識的小姐標題國籍必須優先。
+  // 舊版讓整個區塊內任一服務字樣覆蓋標題，例如「馬來 乳媚妖」區塊含
+  // 「泰國洗無水床+300」時，explicitCountry 會誤成泰妹。
+  const finalCountry = header?.country || explicitCountry || (header ? '馬來' : '')
   const parsedBody = parseBody(block)
   const headerAge = extractAgeFromHeaderLines(block, header, finalCountry)
   const body = parsedBody ? {
@@ -7845,31 +7854,59 @@ function extractStandaloneCountryFromLine(line) {
 
 function extractCountryFromBlock(block) {
   const text = String(block || '')
+  const lines = text
+    .split(/\r?\n/)
+    .slice(0, 12)
+    .map(line => String(line || '').trim())
+    .filter(Boolean)
 
-  // 使用者自訂國籍欄位規則優先。
-  // 例：國家:馬來=馬來、越南新妹=越南
-  const customRules = parseKeyValueLines(countryFieldRulesText.value)
-  for (const [from, to] of customRules) {
-    if (!from || !to) continue
-    if (text.includes(from)) return normalizeCountry(to)
+  // 第 018-180 批：先使用真正的小姐標題國籍。
+  // 國籍欄位規則不能再對整個區塊做 includes，否則「泰國洗」「泰式洗」
+  // 等服務會錯誤命中「泰國=泰妹」。
+  const recognizedHeader = findHeaderInBlock(text)
+  if (recognizedHeader?.country) return normalizeCountry(recognizedHeader.country)
+
+  for (const line of lines) {
+    const labeledMatch = line.match(/(?:國家|國籍)\s*[:：]?\s*(馬來西亞|馬來|越南|港澳|台灣|台妹|泰國|泰妹|日本|韓國|外籍)/)
+    if (labeledMatch) return normalizeCountry(labeledMatch[1])
   }
 
-  const match = text.match(/(?:國家|國籍)\s*[:：]?\s*(馬來西亞|馬來|越南|港澳|台灣|台妹|泰國|泰妹|日本|韓國|外籍)/)
-  if (match) return normalizeCountry(match[1])
+  // 姓名與國籍分行格式，只接受整行完全等於國籍。
+  const standaloneCountry = lines.map(extractStandaloneCountryFromLine).find(Boolean)
+  if (standaloneCountry) return standaloneCountry
 
-  // 第 018-164 批：支援姓名與國籍分成兩行，例如：
-  // 萌喵喵
-  // 越南
-  // 160 44 真D 19y
-  // 只接受整行完全等於國籍，避免從服務內容誤抓國籍。
-  const standaloneCountry = text
-    .split(/\r?\n/)
-    .slice(0, 10)
-    .map(extractStandaloneCountryFromLine)
-    .find(Boolean)
+  // 使用者自訂國籍欄位規則改為逐行、標題安全比對。
+  const customRules = parseKeyValueLines(countryFieldRulesText.value)
+  for (const line of lines) {
+    const cleanedLine = normalizeHeaderText(line)
+    if (!cleanedLine || isNotHeaderLine(cleanedLine)) continue
 
-  return standaloneCountry || ''
+    const compactLine = cleanedLine.replace(/\s+/g, '')
+    for (const [from, to] of customRules) {
+      if (!from || !to) continue
+
+      const cleanedFrom = normalizeHeaderText(from)
+      const compactFrom = cleanedFrom.replace(/\s+/g, '')
+      if (!compactFrom) continue
+
+      const isFieldRule = /(?:國家|國籍)/.test(cleanedFrom)
+      const isExactCountryAlias = getCountryKeys().some(country => (
+        normalizeHeaderText(country).replace(/\s+/g, '') === compactFrom
+      ))
+
+      const matched = isFieldRule
+        ? compactLine.includes(compactFrom)
+        : isExactCountryAlias
+          ? compactLine === compactFrom
+          : compactLine.includes(compactFrom)
+
+      if (matched) return normalizeCountry(to)
+    }
+  }
+
+  return ''
 }
+
 
 
 function parseNameOnlyRecord(block) {
