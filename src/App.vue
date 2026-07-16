@@ -1,3 +1,5 @@
+<!-- 第 018-182 批：TW／SG／VN 姓名尾碼國籍＋底價金額在前方案修正版 -->
+<!-- batch018-182-country-code-suffix-header-and-bottom-amount-first-price-fix -->
 <!-- 第 018-181 批：MY／馬國籍縮寫標題＋小數K價格方案修正版 -->
 <!-- batch018-181-malaysia-short-header-decimal-k-price-fix -->
 <!-- 第 018-180 批：國籍標題優先＋泰國洗服務不覆蓋國籍修正版 -->
@@ -3092,6 +3094,8 @@ function matchKnownCountryToken(value) {
   const cleaned = normalizeHeaderText(value)
   if (!cleaned) return null
   const compact = cleaned.replace(/\s+/g, '')
+  const countryCode = COUNTRY_CODE_SUFFIX_MAP_018182.get(compact.toUpperCase())
+  if (countryCode) return { raw: compact.toUpperCase(), country: countryCode }
   const countries = getCountryKeys().sort((a, b) => b.length - a.length)
   for (const country of countries) {
     if (compact === country) return { raw: country, country: normalizeCountry(country) }
@@ -3122,9 +3126,49 @@ function parseMalaysiaShortHeaderLine(line) {
   }
 }
 
+
+const COUNTRY_CODE_SUFFIX_MAP_018182 = new Map([
+  ['TW', '台妹'],
+  ['SG', '新加坡'],
+  ['VN', '越南'],
+  ['MY', '馬來']
+])
+
+// 第 018-182 批：支援小姐名稱尾端直接接國籍代碼，且同一行後面緊接身材。
+// 例：饅頭TW❤️155 45 C 19Y、凱莉SG❤️156 46 E 22Y、樂樂VN❤️165 49 C。
+// 只有代碼位於姓名尾端，且後方是明確 3 位身高或整行結束時才命中，
+// 避免一般英文姓名內含 TW / SG / VN 時被誤拆。
+function parseCountryCodeSuffixHeaderLine(line) {
+  const cleaned = normalizeHeaderText(normalizeDigits(String(line || '')).normalize('NFKC'))
+  if (!cleaned) return null
+
+  const bodyAttachedMatch = cleaned.match(
+    /^([\u4e00-\u9fa5A-Za-z0-9]{1,18}?)\s*(TW|SG|VN|MY)\s+(?=\d{3}(?:\s|$))/i
+  )
+  const codeOnlyMatch = bodyAttachedMatch
+    ? null
+    : cleaned.match(/^([\u4e00-\u9fa5A-Za-z0-9]{1,18}?)\s*(TW|SG|VN|MY)$/i)
+  const match = bodyAttachedMatch || codeOnlyMatch
+  if (!match) return null
+
+  const name = cleanName(match[1])
+  const code = String(match[2] || '').toUpperCase()
+  const country = COUNTRY_CODE_SUFFIX_MAP_018182.get(code) || ''
+  if (!country || !isValidName(name)) return null
+
+  return {
+    country,
+    name,
+    matchedRule: `國籍代碼 ${code}`
+  }
+}
+
 function parseStructuredHeaderSameLine(line, rules = getHeaderRulesForCurrentParse()) {
   const cleaned = normalizeHeaderText(line)
   if (!cleaned) return null
+
+  const countryCodeSuffixHeader = parseCountryCodeSuffixHeaderLine(line)
+  if (countryCodeSuffixHeader) return countryCodeSuffixHeader
 
   const malaysiaShortHeader = parseMalaysiaShortHeaderLine(cleaned)
   if (malaysiaShortHeader) return malaysiaShortHeader
@@ -8548,6 +8592,23 @@ function parsePrices(text, increase) {
       .replace(/　/g, ' ')
       .trim()
 
+    // 第 018-182 批：支援「底價金額在前＋分鐘＋裸節數」。
+    // 例：底2700 30 1、底3200 50 1。最後一欄 1 會正規化為 1S。
+    // 整行必須完全符合，避免把「外送底4200限高2000」或其他備註誤判成方案。
+    const bottomAmountFirstMatch = normalized.match(
+      /^底(?:價)?\s*([0-9]{3,5})\s+(\d{2,3})(?:\s+(NS|N\s*\/?\s*S|\d+\s*S?))?$/i
+    )
+    if (bottomAmountFirstMatch) {
+      const amount = Number(bottomAmountFirstMatch[1])
+      const minutes = Number(bottomAmountFirstMatch[2])
+      const sessionCount = bottomAmountFirstMatch[3] || '1S'
+
+      if (amount >= 1000 && amount <= 50000 && minutes >= 10 && minutes <= 180) {
+        pushPrice(minutes, sessionCount, amount)
+        return
+      }
+    }
+
     // 第 018-181 批：支援沒有寫 K／底、直接以小數表示千元的方案。
     // 例：20分 1S 1.6、30分 1S 2.2、50分 1S 2.5。
     // 1.6 代表 1600，之後仍會套用目前國籍／固定加價與分鐘規則。
@@ -9520,6 +9581,8 @@ function getCountryKeys() {
 
 function normalizeCountry(country) {
   const value = String(country || '').trim()
+  const countryCode = COUNTRY_CODE_SUFFIX_MAP_018182.get(value.toUpperCase())
+  if (countryCode) return countryCode
   return getCountryAliasMap().get(value) || value
 }
 
