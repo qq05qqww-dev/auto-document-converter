@@ -1,3 +1,5 @@
+<!-- 第 018-189 批：文件3中央正式 ID 回填＋媒體上傳免卡 converter 數字 ID 修正版 -->
+<!-- batch018-189-central-listing-id-hint-and-media-upload-fallback -->
 <!-- 第 018-188 批：分鐘＋無節數＋完整金額底價正式方案通用解析修正版 -->
 <!-- batch018-188-minute-no-session-full-bottom-amount-price-plan-fix -->
 <!-- 第 018-187 批：同範圍同名身材分流＋調派鎖定同步相容修正版 -->
@@ -1679,7 +1681,7 @@
             <button
               class="ghost-btn central-lady-sync-btn"
               type="button"
-              :disabled="isSingleLadyCentralSyncing || !mediaUploadLadyId || isCurrentDocumentPreviewLadyId(mediaUploadLadyId)"
+              :disabled="isSingleLadyCentralSyncing || !mediaUploadLadyId"
               @click="syncSelectedLadyToCentralWebsite"
             >
               {{ isSingleLadyCentralSyncing ? '同步中央網站中...' : '重新同步目前小姐到中央網站' }}
@@ -1952,6 +1954,7 @@ const frontendLadies = ref([])
 const frontendStatusText = ref('尚未讀取前台資料。')
 const frontendLadiesLoaded = ref(false)
 const databaseIdHintByLadyKey = ref({})
+const centralListingIdHintByLadyKey = ref({})
 const localUploadedMediaByLadyId = ref({})
 const centralWebsiteMediaByLadyKey = ref({})
 // 第 018-126 批：媒體顯示以 01 中央網站 listing_media 為權威來源；converter 本機來源只當未查到中央媒體前的 fallback。
@@ -4462,6 +4465,53 @@ function getDatabaseIdHint(lady) {
   return 0
 }
 
+
+function normalizeCentralListingId(value) {
+  const text = String(value || '').normalize('NFKC').trim()
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(text)
+    ? text
+    : ''
+}
+
+function rememberCentralListingIdHint(lady, id) {
+  const centralId = normalizeCentralListingId(id)
+  if (!centralId) return false
+
+  const keys = getDatabaseIdHintKeys(lady)
+  if (!keys.length) return false
+
+  const nextMap = { ...centralListingIdHintByLadyKey.value }
+  keys.forEach(key => {
+    nextMap[key] = centralId
+  })
+  centralListingIdHintByLadyKey.value = nextMap
+  return true
+}
+
+function getCentralListingIdHint(lady) {
+  const directCandidates = [
+    lady?.centralListingId,
+    lady?.central_listing_id,
+    lady?.listingId,
+    lady?.listing_id,
+    lady?.targetListingId,
+    lady?.target_listing_id,
+    lady?.existingListingId,
+    lady?.existing_listing_id
+  ]
+  for (const value of directCandidates) {
+    const centralId = normalizeCentralListingId(value)
+    if (centralId) return centralId
+  }
+
+  const map = centralListingIdHintByLadyKey.value || {}
+  for (const key of getDatabaseIdHintKeys(lady)) {
+    const centralId = normalizeCentralListingId(map[key])
+    if (centralId) return centralId
+  }
+  return ''
+}
+
 function collectObjectsDeep(value, rows = [], depth = 0) {
   if (depth > 5 || value == null) return rows
   if (Array.isArray(value)) {
@@ -4516,6 +4566,55 @@ function applyDatabaseIdHintsFromResponse(data, payload = null) {
       if (rememberDatabaseIdHint(matchedItem, numericId)) appliedCount += 1
     } else if (rowIdentityKey) {
       if (rememberDatabaseIdHint(row, numericId)) appliedCount += 1
+    }
+  }
+
+  return appliedCount
+}
+
+
+function extractCentralListingId(row) {
+  const candidates = [
+    row?.centralListingId,
+    row?.central_listing_id,
+    row?.listingId,
+    row?.listing_id,
+    row?.targetListingId,
+    row?.target_listing_id,
+    row?.existingListingId,
+    row?.existing_listing_id,
+    row?.id,
+    row?.databaseId,
+    row?.database_id
+  ]
+  for (const value of candidates) {
+    const centralId = normalizeCentralListingId(value)
+    if (centralId) return centralId
+  }
+  return ''
+}
+
+function applyCentralListingIdHintsFromResponse(data, payload = null) {
+  const payloadItems = Array.isArray(payload?.items) ? payload.items : []
+  const rows = collectObjectsDeep(data)
+  let appliedCount = 0
+
+  for (const row of rows) {
+    const centralId = extractCentralListingId(row)
+    if (!centralId) continue
+
+    const sourceIdentity = row?.sourceIdentity || row?.sourceId || row?.source_id || row?.centralSourceId || ''
+    const rowIdentityKey = makeLadyStrictIdentityKey(row)
+    const matchedItem = payloadItems.find(item => {
+      const itemSource = item?.sourceIdentity || item?.sourceId || makeStableLadySourceIdentity(item)
+      if (sourceIdentity && itemSource && String(sourceIdentity) === String(itemSource)) return true
+      return rowIdentityKey && makeLadyStrictIdentityKey(item) === rowIdentityKey
+    })
+
+    if (matchedItem) {
+      if (rememberCentralListingIdHint(matchedItem, centralId)) appliedCount += 1
+    } else if (rowIdentityKey) {
+      if (rememberCentralListingIdHint(row, centralId)) appliedCount += 1
     }
   }
 
@@ -5310,6 +5409,12 @@ async function fetchCentralWebsiteMediaForLady(lady, options = {}) {
     throw new Error(data.message || data.error || `讀取中央網站媒體清單失敗：HTTP ${response.status}`)
   }
 
+  const centralListingId = extractCentralListingId(data?.data || data)
+  if (centralListingId) {
+    rememberCentralListingIdHint(previewLady || lady, centralListingId)
+    rememberCentralListingIdHint(lady, centralListingId)
+  }
+
   const serverMedia = mergeMediaRecords([], data?.data?.media || data?.media || [])
   setCentralWebsiteMediaForLady(lady, serverMedia, previewLady)
   return serverMedia
@@ -5350,10 +5455,13 @@ const currentDocumentPreviewLadies = computed(() => {
       const assessment = assessLadyDatabaseSync(item)
       const dbLady = assessment.match
       const hintedDatabaseId = getDatabaseIdHint(item)
+      const hintedCentralListingId = getCentralListingIdHint(item)
       const centralMediaSnapshot = getCentralWebsiteMediaSnapshotForLady(item, hintedDatabaseId)
 
       return {
         id: dbLady?.id || hintedDatabaseId || `current-document-${index + 1}`,
+        centralListingId: hintedCentralListingId,
+        listingId: hintedCentralListingId,
         isCurrentDocumentPreview: true,
         country: item.country || '',
         name: item.name || '',
@@ -6089,16 +6197,25 @@ function uploadMediaFileWithProgress(formData, onProgress, options = {}) {
 }
 
 async function prepareCentralMediaUploadContext(ladyId, previewLady = null) {
-  const id = Number(ladyId || 0)
-  if (!id) throw new Error('找不到可綁定媒體的正式小姐 ID。')
+  const idText = String(ladyId || '').trim()
+  const numericId = /^\d+$/.test(idText) ? Number(idText) : 0
+  const detail = numericId
+    ? await fetchPublicLadyDetail(numericId, { refresh: true })
+    : previewLady
 
-  const detail = await fetchPublicLadyDetail(id, { refresh: true })
   if (!detail) throw new Error('中央網站媒體上傳失敗：讀不到目前小姐完整資料。')
 
-  const syncItem = buildCentralWebsiteSyncItem(detail, previewLady)
+  const syncItem = buildCentralWebsiteSyncItem(detail, previewLady || detail)
+  const centralListingId = getCentralListingIdHint(previewLady || detail) || getCentralListingIdHint(syncItem)
+  if (centralListingId) {
+    syncItem.centralListingId = centralListingId
+    syncItem.listingId = centralListingId
+  }
+
   const accessToken = await getCentralWebsiteAccessToken()
   return {
-    ladyId: id,
+    ladyId: numericId || idText,
+    centralListingId,
     previewLady,
     detail,
     syncItem,
@@ -6116,7 +6233,7 @@ function uploadMediaFileToCentralWebsiteWithProgress(file, context, onProgress, 
   formData.append('file', file)
   formData.append('item', JSON.stringify(context.syncItem || {}))
   formData.append('sourceIdentity', context.sourceIdentity || '')
-  formData.append('listingId', String(context.syncItem.centralListingId || context.syncItem.listingId || context.ladyId || ''))
+  formData.append('listingId', String(context.centralListingId || context.syncItem.centralListingId || context.syncItem.listingId || ''))
   formData.append('mediaType', mediaType)
   formData.append('note', file.name || '')
   formData.append('sortOrder', String(index + 1))
@@ -6180,15 +6297,43 @@ async function uploadLadyMedia() {
     return
   }
 
+  let selectedPreviewLady = mediaUploadSelectedLady.value || null
   if (isCurrentDocumentPreviewLadyId(mediaUploadLadyId.value)) {
-    mediaUploadStatusText.value = '正在補抓這位小姐的資料庫 ID，請稍候...'
-    const resolvedLadyId = await resolvePreviewLadyToDatabaseId(mediaUploadLadyId.value)
+    mediaUploadStatusText.value = '正在補抓 converter 資料庫 ID 與中央網站正式 ID，請稍候...'
+    const previewId = String(mediaUploadLadyId.value || '')
+    selectedPreviewLady = selectedPreviewLady || currentDocumentPreviewLadies.value.find(lady => String(lady?.id || '') === previewId) || null
+    const resolvedLadyId = await resolvePreviewLadyToDatabaseId(previewId)
     if (resolvedLadyId) {
       mediaUploadLadyId.value = String(resolvedLadyId)
       await nextTick()
-      mediaUploadStatusText.value = '已補抓到資料庫 ID，可以繼續上傳媒體。'
+      mediaUploadStatusText.value = '已補抓到 converter 資料庫 ID，可以繼續上傳媒體。'
+    } else if (selectedPreviewLady) {
+      await fetchCentralWebsiteMediaForLady(selectedPreviewLady, {
+        previewLady: selectedPreviewLady,
+        allowMissing: true,
+        timeoutMs: 12000
+      }).catch(() => null)
+
+      let centralListingId = getCentralListingIdHint(selectedPreviewLady)
+      if (!centralListingId) {
+        mediaUploadStatusText.value = 'converter 索引尚未回填，正在以本次文件資料重新確認中央網站正式主檔...'
+        const syncItem = buildCentralWebsiteSyncItem(selectedPreviewLady, selectedPreviewLady)
+        const centralSync = await postCentralWebsiteSyncItems([syncItem], {
+          maxAttempts: 2,
+          timeoutMs: CENTRAL_WEBSITE_SYNC_TIMEOUT_MS
+        })
+        applyCentralListingIdHintsFromResponse(centralSync, { items: [syncItem] })
+        centralListingId = getCentralListingIdHint(selectedPreviewLady) || extractCentralListingId(centralSync)
+      }
+
+      if (!centralListingId) {
+        mediaUploadStatusText.value = '文件3已保存，但仍無法取得中央網站正式 ID。已停止上傳，避免圖片綁到錯誤的同名小姐。請按「重新同步目前小姐到中央網站」後再試。'
+        return
+      }
+
+      mediaUploadStatusText.value = '已取得中央網站正式 ID；即使 converter 數字 ID 尚未更新，也可以安全上傳媒體。'
     } else {
-      mediaUploadStatusText.value = '這位小姐尚未取得資料庫 ID。系統已重新讀取清單並用姓名關鍵字補抓，但仍找不到同名小姐；請確認文件3送出成功、姓名/國籍沒有被改名，或稍後重新整理再試。'
+      mediaUploadStatusText.value = '找不到本次文件小姐完整資料，已停止上傳。請重新產生文件3後再試。'
       return
     }
   }
@@ -6204,7 +6349,7 @@ async function uploadLadyMedia() {
   let currentFile = null
   const uploadedCentralMediaItems = []
   const uploadTargetLadyId = String(mediaUploadLadyId.value || '').trim()
-  const uploadTargetPreviewLady = currentDocumentPreviewLadies.value.find(lady => String(lady.id || '') === uploadTargetLadyId) || null
+  const uploadTargetPreviewLady = currentDocumentPreviewLadies.value.find(lady => String(lady.id || '') === uploadTargetLadyId) || selectedPreviewLady || null
   const uploadDuplicateCheckLady = uploadTargetPreviewLady || frontendLadies.value.find(lady => String(lady?.id || '') === uploadTargetLadyId) || null
   let centralUploadContext = null
   let centralDirectUploadUsed = false
@@ -6313,8 +6458,8 @@ async function uploadLadyMedia() {
 
 async function syncSelectedLadyToCentralWebsite() {
   const targetLadyId = String(mediaUploadLadyId.value || '').trim()
-  if (!targetLadyId || isCurrentDocumentPreviewLadyId(mediaUploadLadyId.value)) {
-    mediaUploadStatusText.value = '請先選擇已送出到資料庫、具有真實 ID 的小姐。'
+  if (!targetLadyId) {
+    mediaUploadStatusText.value = '請先選擇要同步的小姐。'
     return
   }
 
@@ -6782,6 +6927,7 @@ function buildCentralWebsiteSyncItem(item, previewLady = null) {
   }
   const assessment = frontendLadiesLoaded.value ? assessLadyDatabaseSync({ ...flattenedItem, ...(currentPreview || {}) }) : null
   const matchedId = Number(assessment?.match?.id || item?.existingListingId || item?.existingDatabaseId || item?.databaseId || 0)
+  const centralListingId = getCentralListingIdHint(currentPreview || item) || getCentralListingIdHint(item)
   const duplicateGuardFields = {
     duplicateGuardMode: assessment?.state === 'update' || assessment?.state === 'synced' ? 'update-existing' : 'create-or-update',
     duplicateGuardMatchedBy: assessment?.matchedBy || item?.duplicateGuardMatchedBy || '',
@@ -6793,6 +6939,7 @@ function buildCentralWebsiteSyncItem(item, previewLady = null) {
     return {
       ...flattenedItem,
       ...duplicateGuardFields,
+      ...(centralListingId ? { centralListingId, listingId: centralListingId } : {}),
       ...(matchedId > 0 ? { existingListingId: matchedId, targetListingId: matchedId, databaseId: matchedId } : {})
     }
   }
@@ -6817,6 +6964,7 @@ function buildCentralWebsiteSyncItem(item, previewLady = null) {
   return {
     ...flattenedItem,
     ...duplicateGuardFields,
+    ...(centralListingId ? { centralListingId, listingId: centralListingId } : {}),
     ...(matchedId > 0 ? { existingListingId: matchedId, targetListingId: matchedId, databaseId: matchedId } : {}),
     sourceId: sourceIdentity,
     sourceIdentity,
@@ -6877,6 +7025,7 @@ async function postCentralWebsiteSyncItems(items, options = {}) {
         throw error
       }
 
+      applyCentralListingIdHintsFromResponse(data, { items: syncItems })
       return data
     } catch (error) {
       lastError = error
@@ -7041,12 +7190,12 @@ async function resolveDuplicateRow(row) {
 
 async function syncSingleLadyToCentralWebsite(ladyId, options = {}) {
   const idText = String(ladyId || '').trim()
-  if (!idText) throw new Error('找不到要同步的小姐資料庫 ID。')
+  if (!idText) throw new Error('找不到要同步的小姐資料。')
 
   const numericId = /^\d+$/.test(idText) ? Number(idText) : 0
   const item = numericId
     ? await fetchPublicLadyDetail(numericId, { refresh: true })
-    : frontendLadies.value.find(lady => String(lady?.id || '') === idText)
+    : options.previewLady || frontendLadies.value.find(lady => String(lady?.id || '') === idText)
   if (!item) throw new Error('讀不到目前小姐的完整資料。')
 
   const syncItem = buildCentralWebsiteSyncItem(item, options.previewLady || null)
@@ -7220,6 +7369,7 @@ async function submitDocument4ToDatabase(options = {}) {
     centralWebsiteSyncNeedsRetry.value = false
     const centralSync = await syncSavedLadiesToCentralWebsite(payload)
     applyDatabaseIdHintsFromResponse(centralSync, payload)
+    applyCentralListingIdHintsFromResponse(centralSync, payload)
     await refreshCentralWebsiteMediaForCurrentDocument({ silent: true }).catch(() => null)
     const suspectedDuplicateCount = Number(centralSync?.data?.suspectedDuplicateCount || 0)
     const successMessage = buildDetailedDatabaseSyncMessage(plan, centralSync)
