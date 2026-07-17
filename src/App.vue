@@ -1,3 +1,5 @@
+<!-- 第 018-198 批：媒體下拉「本次已上傳」改用實際本頁上傳紀錄，排除文件3新增狀態與暫時 ID 誤判 -->
+<!-- batch018-198-media-session-upload-status-actual-record-fix -->
 <!-- 第 018-197 批：馬妹冒號小姐標題與馬來縮寫國籍通用辨識修正版 -->
 <!-- batch018-197-malaysia-ma-girl-colon-header-recognition-fix -->
 <!-- 第 018-196 批：分鐘＋底價後置 NS／節數正式方案解析修正版 -->
@@ -1976,6 +1978,8 @@ const frontendLadiesLoaded = ref(false)
 const databaseIdHintByLadyKey = ref({})
 const centralListingIdHintByLadyKey = ref({})
 const localUploadedMediaByLadyId = ref({})
+// 第 018-198 批：獨立保存『本頁實際完成上傳』的媒體，不再拿文件3同步或共用本機媒體快取判定。
+const mediaUploadedThisSessionByLadyKey = ref({})
 const centralWebsiteMediaByLadyKey = ref({})
 // 第 018-126 批：媒體顯示以 01 中央網站 listing_media 為權威來源；converter 本機來源只當未查到中央媒體前的 fallback。
 // 第 018-125 批：媒體刪除來源統一。中央網站刪除後，不再呼叫不存在的 02 converter 刪除端點，改用本機抑制避免 404 與回彈。
@@ -5161,6 +5165,7 @@ function removeMediaFromLocalPreview(ladyOrId, mediaToRemove, previewLady = null
         null
       )
 
+
   const keys = targetLady
     ? getLocalUploadedMediaKeysForLady(targetLady, ladyOrId || targetLady?.id || '')
     : [`id:${ladyOrId}`]
@@ -5298,6 +5303,10 @@ function mergeUploadedMediaIntoLocalPreview(ladyOrId, mediaItems = [], previewLa
         currentDocumentPreviewLadies.value.find(item => String(item?.id || '') === String(ladyOrId || '')) ||
         null
       )
+
+  // 只有實際走到媒體上傳成功後才會進入這個函式，因此在獨立 session map 留下紀錄。
+  // 文件3新增／更新、中央媒體查詢與 current-document 暫時 ID 都不會再誤亮「本次已上傳」。
+  rememberMediaUploadedThisSessionForLady(ladyOrId, normalizedItems, targetLady || previewLady)
 
   const keys = targetLady
     ? getLocalUploadedMediaKeysForLady(targetLady, ladyOrId || targetLady?.id || '')
@@ -5535,9 +5544,58 @@ const currentDocumentPreviewLadies = computed(() => {
 
 const previewLadies = computed(() => currentDocumentPreviewLadies.value)
 
+// 第 018-198 批：本次上傳狀態必須綁定穩定小姐身分，不可使用 current-document-1 這類每批重複的暫時 ID。
+function getMediaUploadSessionLadyKey(ladyOrId, previewLady = null) {
+  const targetLady = getTargetLadyForMediaKey(ladyOrId, previewLady)
+  if (!targetLady) return ''
+
+  const sourceIdentity = String(
+    targetLady?.sourceIdentity ||
+    targetLady?.sourceId ||
+    makeStableLadySourceIdentity(targetLady) ||
+    ''
+  ).trim()
+  if (sourceIdentity) return `source:${sourceIdentity}`
+
+  const previewKey = String(makePreviewLadyKey(targetLady) || '').trim()
+  if (previewKey) return `key:${previewKey}`
+
+  const centralId = String(getCentralListingIdHint(targetLady) || '').trim()
+  if (centralId) return `central:${centralId}`
+
+  const rawId = String(targetLady?.databaseId || targetLady?.existingListingId || targetLady?.id || ladyOrId || '').trim()
+  if (rawId && !/^current-document-\d+$/i.test(rawId)) return `id:${rawId}`
+  return ''
+}
+
+function rememberMediaUploadedThisSessionForLady(ladyOrId, mediaItems = [], previewLady = null) {
+  const sessionKey = getMediaUploadSessionLadyKey(ladyOrId, previewLady)
+  const normalizedItems = mergeMediaRecords([], mediaItems)
+  if (!sessionKey || !normalizedItems.length) return 0
+
+  const next = { ...mediaUploadedThisSessionByLadyKey.value }
+  next[sessionKey] = mergeMediaRecords(next[sessionKey] || [], normalizedItems)
+  mediaUploadedThisSessionByLadyKey.value = next
+  return next[sessionKey].length
+}
+
+function forgetMediaUploadedThisSessionForLady(ladyOrId, mediaToRemove = null, previewLady = null) {
+  const sessionKey = getMediaUploadSessionLadyKey(ladyOrId, previewLady)
+  if (!sessionKey || !Object.prototype.hasOwnProperty.call(mediaUploadedThisSessionByLadyKey.value, sessionKey)) return 0
+
+  const next = { ...mediaUploadedThisSessionByLadyKey.value }
+  next[sessionKey] = mergeMediaRecords([], next[sessionKey] || [])
+    .filter(item => !isSameMediaRecordForDelete(item, mediaToRemove))
+  if (!next[sessionKey].length) delete next[sessionKey]
+  mediaUploadedThisSessionByLadyKey.value = next
+  return Array.isArray(next[sessionKey]) ? next[sessionKey].length : 0
+}
+
 function getMediaUploadLadySessionMedia(lady) {
   if (!lady) return []
-  return getLocalUploadedMediaForLady(lady, lady?.id || '')
+  const sessionKey = getMediaUploadSessionLadyKey(lady, lady)
+  if (!sessionKey) return []
+  return mergeMediaRecords([], mediaUploadedThisSessionByLadyKey.value[sessionKey] || [])
 }
 
 function getMediaUploadLadyAllMedia(lady) {
@@ -5972,6 +6030,7 @@ async function deleteLadyMedia(media, lady) {
     }
 
     rememberDeletedMediaForLady(targetLadyRef, media, previewLady)
+    forgetMediaUploadedThisSessionForLady(targetLadyRef, media, previewLady)
     const serverMedia = mergeMediaRecords([], data?.data?.media || data?.media || [])
     const nextMedia = (serverMedia.length || Array.isArray(data?.data?.media) || Array.isArray(data?.media))
       ? serverMedia
@@ -5999,6 +6058,7 @@ async function deleteLadyMedia(media, lady) {
     const message = String(error?.message || error || '')
     if (/404|not\s*found|找不到/i.test(message)) {
       rememberDeletedMediaForLady(targetLadyRef, media, previewLady)
+      forgetMediaUploadedThisSessionForLady(targetLadyRef, media, previewLady)
       removeMediaFromLocalPreview(targetLadyRef, media, previewLady)
       if (
         (mediaViewerItem.value?.id && mediaViewerItem.value.id === media?.id) ||
