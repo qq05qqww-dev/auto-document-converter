@@ -1,3 +1,5 @@
+<!-- 第 018-195 批：機房今日資料更新與媒體完成進度分離顯示修正版 -->
+<!-- batch018-195-room-document-updated-media-progress-separated-status -->
 <!-- 第 018-194 批：同一行多組「分鐘＋底價」正式方案逐組解析修正版 -->
 <!-- batch018-194-multiple-minute-bottom-price-pairs-per-line-fix -->
 <!-- 第 018-193 批：雙飛對象固定置於一般服務末端／加值服務前方版 -->
@@ -1862,6 +1864,7 @@
 // batch018-178-separated-digit-body-name-only-boundary-fix
 // batch018-174-dot-delimited-bra-size-body-age-fix
 // batch018-173-full-half-width-spaced-amount-bra-size-body-fix
+// batch018-195-room-document-updated-media-progress-separated-status
 // batch018-171-room-daily-document-media-status
 // batch018-148-explicit-addon-amount-cleanup-alias-fix
 // batch018-140-individual-setting-save-buttons
@@ -7682,43 +7685,43 @@ function getRoomDailyStatus(room, scope = {}) {
   const businessDayKey = getBusinessDayKey()
   const emptyStatus = {
     state: 'idle',
-    shortLabel: '⚪ 今日尚未更新',
-    detail: '今日尚未更新文件3與媒體。',
+    shortLabel: '⚪ 今日尚未更新｜媒體 0/0',
+    detail: '今日尚未儲存文件3｜媒體 0/0。',
     complete: false,
-    documentSaved: false
+    documentSaved: false,
+    mediaComplete: false
   }
 
   if (!record || record.businessDayKey !== businessDayKey) return emptyStatus
 
   const documentSaved = Boolean(record.documentSavedAt && getBusinessDayKey(record.documentSavedAt) === businessDayKey)
-  const mediaUploaded = Boolean(record.mediaUploadedAt && getBusinessDayKey(record.mediaUploadedAt) === businessDayKey)
   const totalCount = Math.max(Number(record.documentItemCount || 0), Number(record.mediaTotalCount || 0))
   const readyCount = Math.min(totalCount || Number(record.mediaReadyCount || 0), Number(record.mediaReadyCount || 0))
-  const complete = documentSaved && mediaUploaded && totalCount > 0 && readyCount >= totalCount
-  const timeText = formatRoomDailyStatusTime(record.mediaUploadedAt || record.documentSavedAt)
+  const mediaProgress = totalCount > 0 ? `${readyCount}/${totalCount}` : '0/0'
+  const mediaComplete = totalCount > 0 && readyCount >= totalCount
 
-  if (complete) {
+  // 第 018-195 批：今日資料是否已更新，只以文件3成功儲存／同步資料庫為準。
+  // 圖片與影片完成度獨立顯示，不再阻擋機房被計入「今日資料已更新」。
+  if (documentSaved) {
+    const savedTime = formatRoomDailyStatusTime(record.documentSavedAt) || '今日'
     return {
       state: 'complete',
-      shortLabel: `✅ 本日已更新${timeText ? ` ${timeText}` : ''}`,
-      detail: `文件3與媒體均已完成｜小姐 ${readyCount}/${totalCount}｜圖 ${record.imageCount || 0}／影 ${record.videoCount || 0}`,
+      shortLabel: `✅ 今日資料已更新｜媒體 ${mediaProgress}`,
+      detail: `文件3已於 ${savedTime} 儲存並同步資料庫｜媒體 ${mediaProgress}｜圖 ${record.imageCount || 0}／影 ${record.videoCount || 0}`,
       complete: true,
-      documentSaved: true
+      documentSaved: true,
+      mediaComplete
     }
   }
 
-  if (documentSaved) {
-    const mediaProgress = totalCount > 0 ? `${readyCount}/${totalCount}` : '未完成'
-    return {
-      state: 'partial',
-      shortLabel: `🟡 文件3已更新・媒體 ${mediaProgress}`,
-      detail: `文件3已於 ${formatRoomDailyStatusTime(record.documentSavedAt) || '今日'} 儲存；媒體完成 ${mediaProgress}，全部小姐有媒體後才會顯示本日已更新。`,
-      complete: false,
-      documentSaved: true
-    }
+  return {
+    state: 'idle',
+    shortLabel: `⚪ 今日尚未更新｜媒體 ${mediaProgress}`,
+    detail: `今日尚未儲存文件3｜媒體 ${mediaProgress}｜圖 ${record.imageCount || 0}／影 ${record.videoCount || 0}`,
+    complete: false,
+    documentSaved: false,
+    mediaComplete
   }
-
-  return emptyStatus
 }
 
 function getRoomOptionDisplayLabel(room) {
@@ -7726,8 +7729,8 @@ function getRoomOptionDisplayLabel(room) {
   return `${room}｜${status.shortLabel}`
 }
 
-const managerRoomDailyUpdatedCount = computed(() => managerRooms.value.filter(room => getRoomDailyStatus(room).complete).length)
-const managerRoomDailyUpdatedSummary = computed(() => `今日已更新 ${managerRoomDailyUpdatedCount.value}/${managerRooms.value.length}`)
+const managerRoomDailyUpdatedCount = computed(() => managerRooms.value.filter(room => getRoomDailyStatus(room).documentSaved).length)
+const managerRoomDailyUpdatedSummary = computed(() => `今日資料已更新 ${managerRoomDailyUpdatedCount.value}/${managerRooms.value.length}`)
 const currentRoomDailyStatus = computed(() => ruleScopeRoom.value ? getRoomDailyStatus(ruleScopeRoom.value) : getRoomDailyStatus(''))
 
 function validateCurrentListingLocation() {
