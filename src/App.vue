@@ -1,3 +1,5 @@
+<!-- 第 018-196 批：分鐘＋底價後置 NS／節數正式方案解析修正版 -->
+<!-- batch018-196-minute-bottom-price-trailing-session-label-fix -->
 <!-- 第 018-195 批：機房今日資料更新與媒體完成進度分離顯示修正版 -->
 <!-- batch018-195-room-document-updated-media-progress-separated-status -->
 <!-- 第 018-194 批：同一行多組「分鐘＋底價」正式方案逐組解析修正版 -->
@@ -3912,6 +3914,10 @@ function isPriceLine(line) {
   // 第 018-188 批：支援未寫「分／分鐘」與節數、但明確帶「底」的正式價格列。
   // 例：40 2000底、60 2300底、40 21底；「底」是必要標記，避免身材數字被誤判。
   if (/^(?:快餐|短[鐘鍾]|長[鐘鍾])?\s*\d{2,3}\s+[0-9]+(?:\.[0-9]+)?\s*底(?:價)?$/i.test(value)) return true
+
+  // 第 018-196 批：支援節數寫在底價後方，且可直接黏在「底」後面。
+  // 例：90 56底ns、90分 5600底 NS、60 30底2S。
+  if (/^(?:快餐|短[鐘鍾]|長[鐘鍾])?\s*\d{2,3}\s*(?:分鐘|分)?\s+[0-9]+(?:\.[0-9]+)?\s*底(?:價)?\s*(?:NS|N\s*\/?\s*S|\d+\s*S)$/i.test(value)) return true
 
   // 同時保留有節數的無分鐘單位格式：40 1S 21底、60 2S 3000底。
   if (/^(?:快餐|短[鐘鍾]|長[鐘鍾])?\s*\d{2,3}\s+(?:NS|N\s*\/?\s*S|\d+\s*S?)\s+[0-9]+(?:\.[0-9]+)?\s*底(?:價)?$/i.test(value)) return true
@@ -9305,7 +9311,7 @@ function parsePrices(text, increase) {
     // 舊流程每行只做一次完整匹配，這類多方案同行格式無法進入正式價格陣列。
     // 現在先逐組擷取，且要求整行扣除方案與允許分隔符後不得殘留其他文字，
     // 避免把一般備註中的分鐘或金額片段誤判為價格。
-    const multiMinuteBottomPairPattern = /(\d{2,3})\s*(?:分鐘|分)?\s*(?:(NS|N\s*\/?\s*S|\d+\s*S)\s*)?([0-9]+(?:\.[0-9]+)?)\s*底(?:價)?/gi
+    const multiMinuteBottomPairPattern = /(\d{2,3})\s*(?:分鐘|分)?\s*(?:(NS|N\s*\/?\s*S|\d+\s*S)\s*)?([0-9]+(?:\.[0-9]+)?)\s*底(?:價)?\s*(?:(NS|N\s*\/?\s*S|\d+\s*S))?/gi
     const multiMinuteBottomPairs = []
     let multiMinuteBottomPairMatch
 
@@ -9313,7 +9319,7 @@ function parsePrices(text, increase) {
       multiMinuteBottomPairs.push({
         fullText: multiMinuteBottomPairMatch[0],
         minutes: Number(multiMinuteBottomPairMatch[1]),
-        sessionCount: multiMinuteBottomPairMatch[2] || '1S',
+        sessionCount: multiMinuteBottomPairMatch[2] || multiMinuteBottomPairMatch[4] || '1S',
         amount: parseBottomPriceAmount(multiMinuteBottomPairMatch[3])
       })
 
@@ -9340,6 +9346,24 @@ function parsePrices(text, increase) {
         multiMinuteBottomPairs.forEach(pair => {
           pushPrice(pair.minutes, pair.sessionCount, pair.amount)
         })
+        return
+      }
+    }
+
+    // 第 018-196 批：支援節數標記寫在底價後方。
+    // 例：90 56底ns、90分 5600底 NS、60 30底2S。
+    // NS／2S 是正式節數，不是雜訊；底價仍依原規則換算並套用國籍、固定與分鐘加價。
+    // 整行必須完整符合，避免把一般備註尾端英文字誤認為價格。
+    const minuteBottomTrailingSessionMatch = normalized.match(
+      /^(?:快餐|短[鐘鍾]|長[鐘鍾])?\s*(\d{2,3})\s*(?:分鐘|分)?\s*([0-9]+(?:\.[0-9]+)?)\s*底(?:價)?\s*(NS|N\s*\/?\s*S|\d+\s*S)$/i
+    )
+    if (minuteBottomTrailingSessionMatch) {
+      const minutes = Number(minuteBottomTrailingSessionMatch[1])
+      const amount = parseBottomPriceAmount(minuteBottomTrailingSessionMatch[2])
+      const sessionCount = minuteBottomTrailingSessionMatch[3] || '1S'
+
+      if (minutes >= 10 && minutes <= 180 && amount >= 1000 && amount <= 50000) {
+        pushPrice(minutes, sessionCount, amount)
         return
       }
     }
