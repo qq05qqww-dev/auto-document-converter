@@ -1,3 +1,5 @@
+<!-- 第 018-204 批：定點／外送＋國籍＋精準價格對照表／機房範圍套用版 -->
+<!-- batch018-204-mode-country-exact-price-mapping-by-scope -->
 <!-- 第 018-203 批：今日班表進度同機房集中／據點展開／未更新優先版 -->
 <!-- batch018-203-schedule-progress-room-group-expand-sites -->
 <!-- 第 018-201 批：登入帳號工作區縣市／地區只顯示已建立機房範圍版 -->
@@ -730,9 +732,94 @@
           </div>
           <button class="top-settings-modal-close" type="button" @click="closeTopSettingModal">關閉</button>
         </div>
+        <section class="price-mapping-panel018204">
+          <div class="price-mapping-scope-grid018204">
+            <label>
+              適用類型
+              <select v-model="priceProfileMode018204">
+                <option value="*">全部類型</option>
+                <option value="定點">定點</option>
+                <option value="外送">外送</option>
+              </select>
+            </label>
+            <label>
+              適用國籍
+              <select v-model="priceProfileCountry018204">
+                <option
+                  v-for="option in priceProfileCountryOptions018204"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+            </label>
+          </div>
+
+          <div class="price-mapping-current-scope018204">
+            <strong>目前儲存範圍：</strong>{{ currentRuleScopeLabel }}
+            <span>同一組設定可依「類型＋國籍」分開保存；目前機房／縣市層級仍沿用既有個人規則範圍。</span>
+          </div>
+
+          <label class="price-mapping-editor018204">
+            指定價格對照表，一行一組，格式：原價=新價
+            <textarea
+              v-model="priceMappingRulesText018204"
+              class="rule-textarea small"
+              placeholder="例如：&#10;5000=7500&#10;6000=9000&#10;10000=15000"
+            ></textarea>
+            <small>命中時直接使用右側最終價格，不再重複疊加國籍、固定或分鐘加價；分鐘與節數維持原方案。</small>
+          </label>
+
+          <div class="price-mapping-fallback-row018204">
+            <label>
+              未命中對照表
+              <select v-model="priceMappingFallback018204">
+                <option value="legacy">套用原本金額／國籍／分鐘加價規則</option>
+                <option value="raw">維持文件1原價</option>
+              </select>
+            </label>
+            <button
+              class="secondary-btn price-mapping-clear-editor018204"
+              type="button"
+              @click="clearPriceMappingEditor018204"
+            >
+              清空目前輸入
+            </button>
+          </div>
+
+          <div v-if="priceMappingProfiles018204.length" class="price-mapping-saved-list018204">
+            <div class="price-mapping-saved-title018204">已儲存的精準價格組合</div>
+            <div
+              v-for="profile in priceMappingProfiles018204"
+              :key="getPriceMappingProfileKey018204(profile.mode, profile.country)"
+              class="price-mapping-saved-item018204"
+              :class="{ active: isSelectedPriceMappingProfile018204(profile) }"
+            >
+              <button
+                type="button"
+                class="price-mapping-saved-main018204"
+                @click="editPriceMappingProfile018204(profile)"
+              >
+                <span>
+                  <strong>{{ getPriceProfileModeLabel018204(profile.mode) }}</strong>
+                  ／{{ getPriceProfileCountryLabel018204(profile.country) }}
+                </span>
+                <span>{{ profile.mappings.length }} 組價格</span>
+              </button>
+              <button
+                class="price-mapping-delete018204"
+                type="button"
+                title="刪除這組價格對照"
+                @click="removePriceMappingProfile018204(profile)"
+              >×</button>
+            </div>
+          </div>
+        </section>
+
         <div class="setting-save-item">
           <label>
-            加價模式
+            加價模式（未命中精準價格時使用）
             <select v-model="priceMode">
               <option value="country">依國籍自動加價</option>
               <option value="global">全部固定加價</option>
@@ -784,8 +871,8 @@
         </div>
 
         <div class="modal-bottom-save-row">
-          <button class="ghost-btn" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('金額設定', ['priceMode', 'globalIncrease', 'customIncrease', 'amountPriorityMode', 'minutePriceAddRulesText'])">
-            {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
+          <button class="ghost-btn" type="button" :disabled="isSavingScopeRules" @click="savePriceSettings018204">
+            {{ isSavingScopeRules ? '儲存中...' : '儲存金額設定' }}
           </button>
         </div>
         </div>
@@ -2954,6 +3041,13 @@ const priceMode = ref('country')
 const globalIncrease = ref(500)
 const customIncrease = ref(700)
 const amountPriorityMode = ref('higher-price')
+// 第 018-204 批：精準價格對照以「目前規則範圍＋定點/外送＋國籍」保存。
+// 例：外送＋台妹 5000=7500；命中後直接使用 7500，不再重複加價。
+const priceMappingProfiles018204 = ref([])
+const priceProfileMode018204 = ref('外送')
+const priceProfileCountry018204 = ref('*')
+const priceMappingRulesText018204 = ref('')
+const priceMappingFallback018204 = ref('legacy')
 const titleMode = ref('country-name')
 const formatHint = ref('【國籍 名稱】身高 體重 Cup 年齡　短鐘K/30/1S　長鐘K/50/1S')
 const bodyOutputOrder = ref('height-weight-cup-age')
@@ -3730,7 +3824,11 @@ const defaultCountryAliases = [
   '越妹=越妹',
   '新加坡=新加坡',
   '日本=日本',
+  '日妹=日本',
   '韓國=韓國',
+  '韓妹=韓國',
+  '俄羅斯=俄羅斯',
+  '俄妹=俄羅斯',
   '外籍=外籍'
 ]
 
@@ -9281,7 +9379,10 @@ function analyzeRecordForPreview(block) {
     ...parsedBody,
     age: parsedBody.age || headerAge
   } : null
-  const prices = parsePrices(block, getAppliedIncrease(finalCountry))
+  const prices = parsePrices(block, getAppliedIncrease(finalCountry), {
+    country: finalCountry,
+    mode: ruleScopeType.value
+  })
   const services = extractServices(block, {
     name: header?.name || '',
     country: finalCountry,
@@ -9992,7 +10093,7 @@ function extractPriceSessionLabel(line) {
   return '1S'
 }
 
-function parsePrices(text, increase) {
+function parsePrices(text, increase, priceContext = {}) {
   const results = []
   const seen = new Set()
   const lines = normalizeDigits(String(text || '')).split('\n')
@@ -10013,7 +10114,7 @@ function parsePrices(text, increase) {
 
     const finalAmount = options.keepRawAmount
       ? rawAmount
-      : resolveFinalAmountWithMinuteRule(rawAmount, increase, min)
+      : resolveFinalAmountWithMinuteRule(rawAmount, increase, min, priceContext)
 
     results.push({
       minutes: min,
@@ -11090,6 +11191,229 @@ function buildTitle({ name, country, height, weight, cup, age }) {
   return `【${country} ${name}】${bodyText}`
 }
 
+function normalizePriceProfileMode018204(value) {
+  const mode = cleanScopeText(value)
+  if (mode === '定點' || mode === '外送') return mode
+  return '*'
+}
+
+function normalizePriceProfileCountry018204(value) {
+  const country = cleanScopeText(value)
+  if (!country || country === '*' || country === '全部國籍') return '*'
+  return normalizeCountry(country)
+}
+
+function getPriceMappingProfileKey018204(mode, country) {
+  return `${normalizePriceProfileMode018204(mode)}__${normalizePriceProfileCountry018204(country)}`
+}
+
+function normalizeExactPriceMappings018204(value) {
+  const rows = Array.isArray(value)
+    ? value
+    : parseKeyValueLines(String(value || '')).map(([from, to]) => ({ from, to }))
+  const map = new Map()
+
+  rows.forEach(row => {
+    const from = Number(String(row?.from ?? '').replace(/[^\d]/g, ''))
+    const to = Number(String(row?.to ?? '').replace(/[^\d]/g, ''))
+    if (!from || !to || from > 1000000 || to > 1000000) return
+    map.set(from, { from, to })
+  })
+
+  return Array.from(map.values()).sort((a, b) => a.from - b.from)
+}
+
+function normalizePriceMappingProfiles018204(value) {
+  const rows = Array.isArray(value) ? value : []
+  const map = new Map()
+
+  rows.forEach(row => {
+    const mode = normalizePriceProfileMode018204(row?.mode)
+    const country = normalizePriceProfileCountry018204(row?.country)
+    const mappings = normalizeExactPriceMappings018204(row?.mappings ?? row?.rulesText ?? row?.rules)
+    if (!mappings.length) return
+    const fallback = row?.fallback === 'raw' ? 'raw' : 'legacy'
+    map.set(getPriceMappingProfileKey018204(mode, country), {
+      mode,
+      country,
+      fallback,
+      mappings
+    })
+  })
+
+  return Array.from(map.values()).sort((a, b) => {
+    const modeWeight = value => value === '外送' ? 0 : value === '定點' ? 1 : 2
+    const modeDiff = modeWeight(a.mode) - modeWeight(b.mode)
+    if (modeDiff) return modeDiff
+    if (a.country === '*' && b.country !== '*') return 1
+    if (a.country !== '*' && b.country === '*') return -1
+    return a.country.localeCompare(b.country, 'zh-Hant')
+  })
+}
+
+function priceMappingsToText018204(mappings) {
+  return normalizeExactPriceMappings018204(mappings)
+    .map(row => `${row.from}=${row.to}`)
+    .join('\n')
+}
+
+const priceProfileCountryOptions018204 = computed(() => {
+  const preferred = [
+    '*', '台妹', '港澳', '日本', '韓國', '俄羅斯',
+    '越妹', '越南', '泰妹', '馬來', '新加坡', '外籍'
+  ]
+  const values = new Set(preferred)
+
+  parseKeyValueLines(countryPriceRulesText.value).forEach(([country]) => {
+    const normalized = normalizePriceProfileCountry018204(country)
+    if (normalized) values.add(normalized)
+  })
+  priceMappingProfiles018204.value.forEach(profile => {
+    const normalized = normalizePriceProfileCountry018204(profile.country)
+    if (normalized) values.add(normalized)
+  })
+
+  return Array.from(values).map(value => ({
+    value,
+    label: value === '*' ? '全部國籍' : value
+  }))
+})
+
+function getPriceProfileModeLabel018204(mode) {
+  const normalized = normalizePriceProfileMode018204(mode)
+  return normalized === '*' ? '全部類型' : normalized
+}
+
+function getPriceProfileCountryLabel018204(country) {
+  const normalized = normalizePriceProfileCountry018204(country)
+  return normalized === '*' ? '全部國籍' : normalized
+}
+
+function getSelectedPriceMappingProfile018204() {
+  const key = getPriceMappingProfileKey018204(priceProfileMode018204.value, priceProfileCountry018204.value)
+  return priceMappingProfiles018204.value.find(profile => (
+    getPriceMappingProfileKey018204(profile.mode, profile.country) === key
+  )) || null
+}
+
+function isSelectedPriceMappingProfile018204(profile) {
+  return getPriceMappingProfileKey018204(profile?.mode, profile?.country)
+    === getPriceMappingProfileKey018204(priceProfileMode018204.value, priceProfileCountry018204.value)
+}
+
+function loadPriceMappingEditor018204() {
+  const profile = getSelectedPriceMappingProfile018204()
+  priceMappingRulesText018204.value = profile ? priceMappingsToText018204(profile.mappings) : ''
+  priceMappingFallback018204.value = profile?.fallback === 'raw' ? 'raw' : 'legacy'
+}
+
+function clearPriceMappingEditor018204() {
+  priceMappingRulesText018204.value = ''
+  priceMappingFallback018204.value = 'legacy'
+}
+
+function editPriceMappingProfile018204(profile) {
+  if (!profile) return
+  priceProfileMode018204.value = normalizePriceProfileMode018204(profile.mode)
+  priceProfileCountry018204.value = normalizePriceProfileCountry018204(profile.country)
+  loadPriceMappingEditor018204()
+}
+
+function removePriceMappingProfile018204(profile) {
+  const key = getPriceMappingProfileKey018204(profile?.mode, profile?.country)
+  priceMappingProfiles018204.value = priceMappingProfiles018204.value.filter(item => (
+    getPriceMappingProfileKey018204(item.mode, item.country) !== key
+  ))
+  if (isSelectedPriceMappingProfile018204(profile)) clearPriceMappingEditor018204()
+  statusMessage.value = `已移除「${getPriceProfileModeLabel018204(profile?.mode)}／${getPriceProfileCountryLabel018204(profile?.country)}」精準價格對照；請按儲存才會正式寫入。`
+}
+
+function upsertPriceMappingProfileFromEditor018204() {
+  const mappings = normalizeExactPriceMappings018204(priceMappingRulesText018204.value)
+  if (!mappings.length) return false
+
+  const mode = normalizePriceProfileMode018204(priceProfileMode018204.value)
+  const country = normalizePriceProfileCountry018204(priceProfileCountry018204.value)
+  const key = getPriceMappingProfileKey018204(mode, country)
+  const profile = {
+    mode,
+    country,
+    fallback: priceMappingFallback018204.value === 'raw' ? 'raw' : 'legacy',
+    mappings
+  }
+  const remaining = priceMappingProfiles018204.value.filter(item => (
+    getPriceMappingProfileKey018204(item.mode, item.country) !== key
+  ))
+  priceMappingProfiles018204.value = normalizePriceMappingProfiles018204([...remaining, profile])
+  priceMappingRulesText018204.value = priceMappingsToText018204(mappings)
+  return true
+}
+
+async function savePriceSettings018204() {
+  const hasEditorText = String(priceMappingRulesText018204.value || '').trim().length > 0
+  if (hasEditorText && !normalizeExactPriceMappings018204(priceMappingRulesText018204.value).length) {
+    const message = '價格對照表格式不正確；請使用「原價=新價」，例如 5000=7500。'
+    setRoomRuleFeedback(message, 'warning', { toast: true })
+    return false
+  }
+
+  if (hasEditorText) upsertPriceMappingProfileFromEditor018204()
+
+  return saveRuleFields('金額設定', [
+    'priceMode',
+    'globalIncrease',
+    'customIncrease',
+    'amountPriorityMode',
+    'minutePriceAddRulesText',
+    'priceMappingProfiles018204'
+  ])
+}
+
+function findApplicablePriceMappingProfile018204(country, mode) {
+  const profiles = normalizePriceMappingProfiles018204(priceMappingProfiles018204.value)
+  if (!profiles.length) return null
+
+  const normalizedCountry = normalizePriceProfileCountry018204(country)
+  const normalizedMode = normalizePriceProfileMode018204(mode)
+  const candidateKeys = [
+    getPriceMappingProfileKey018204(normalizedMode, normalizedCountry),
+    getPriceMappingProfileKey018204(normalizedMode, '*'),
+    getPriceMappingProfileKey018204('*', normalizedCountry),
+    getPriceMappingProfileKey018204('*', '*')
+  ]
+
+  for (const key of candidateKeys) {
+    const profile = profiles.find(item => getPriceMappingProfileKey018204(item.mode, item.country) === key)
+    if (profile) return profile
+  }
+  return null
+}
+
+function resolveExactPriceMapping018204(rawAmount, context = {}) {
+  const hasContext = cleanScopeText(context?.country) || cleanScopeText(context?.mode)
+  if (!hasContext) return { profile: null, matched: false, amount: Number(rawAmount || 0), useRaw: false }
+
+  const profile = findApplicablePriceMappingProfile018204(context.country, context.mode)
+  if (!profile) return { profile: null, matched: false, amount: Number(rawAmount || 0), useRaw: false }
+
+  const raw = Number(rawAmount || 0)
+  const row = profile.mappings.find(item => Number(item.from) === raw)
+  if (row) {
+    return { profile, matched: true, amount: Number(row.to), useRaw: false }
+  }
+
+  return {
+    profile,
+    matched: false,
+    amount: raw,
+    useRaw: profile.fallback === 'raw'
+  }
+}
+
+watch([priceProfileMode018204, priceProfileCountry018204], () => {
+  loadPriceMappingEditor018204()
+})
+
 function getAppliedIncrease(country) {
   if (priceMode.value === 'custom') return Number(customIncrease.value) || 0
   if (priceMode.value === 'global') return Number(globalIncrease.value) || 0
@@ -11299,8 +11623,15 @@ function applyMinutePriceAdd(amount, minutes) {
   return Number(amount || 0) + add
 }
 
-function resolveFinalAmountWithMinuteRule(rawAmount, increase, minutes) {
+function resolveFinalAmountWithMinuteRule(rawAmount, increase, minutes, priceContext = {}) {
   const raw = Number(rawAmount || 0)
+  const exactMapping = resolveExactPriceMapping018204(raw, priceContext)
+
+  // 第 018-204 批：精準價格對照命中時，右側金額就是最後方案價格。
+  // 例：外送台妹 5000=7500，直接輸出 7500，不再疊加國籍／固定／分鐘加價。
+  if (exactMapping.matched) return exactMapping.amount
+  if (exactMapping.useRaw) return raw
+
   const normalFinal = resolveFinalAmount(raw, increase)
   const minuteAdd = parseMinutePriceAddRules().get(Number(minutes)) || 0
 
@@ -12618,6 +12949,7 @@ function buildDefaultRuleData() {
     globalIncrease: 500,
     customIncrease: 700,
     amountPriorityMode: 'higher-price',
+    priceMappingProfiles018204: [],
     titleMode: 'country-name',
     bodyOutputOrder: 'height-weight-cup-age',
     formatHint: '【國籍 名稱】身高 體重 Cup 年齡　短鐘K/30/1S　長鐘K/50/1S',
@@ -12804,6 +13136,7 @@ function buildEmptyEmployeeSupplementData() {
     globalIncrease: null,
     customIncrease: null,
     amountPriorityMode: '',
+    priceMappingProfiles018204: [],
     titleMode: '',
     bodyOutputOrder: '',
     formatHint: '',
@@ -12835,7 +13168,8 @@ function normalizeSupplementRuleData(data = {}) {
     headerRecognitionRules: normalizeHeaderRecognitionRules(data.headerRecognitionRules, { useDefaults: false }),
     bodyRecognitionRules: normalizeBodyRecognitionRules(data.bodyRecognitionRules, { useDefaults: false }),
     advancedRegexRules: [],
-    amountTransformRules: normalizeAmountRules(data.amountTransformRules ?? data.amountTransformRulesText ?? [])
+    amountTransformRules: normalizeAmountRules(data.amountTransformRules ?? data.amountTransformRulesText ?? []),
+    priceMappingProfiles018204: normalizePriceMappingProfiles018204(data.priceMappingProfiles018204 ?? data.priceMappingProfiles ?? [])
   }
 }
 
@@ -12898,12 +13232,19 @@ function mergeOwnerAndEmployeeRules(ownerData = {}, supplementData = {}) {
     .forEach(rule => amountRuleMap.set(Number(rule.from), rule))
   const dedupAmount = Array.from(amountRuleMap.values())
     .sort((a, b) => Number(a.from) - Number(b.from))
+  const priceProfileMap018204 = new Map()
+  normalizePriceMappingProfiles018204(owner.priceMappingProfiles018204 ?? owner.priceMappingProfiles ?? [])
+    .forEach(profile => priceProfileMap018204.set(getPriceMappingProfileKey018204(profile.mode, profile.country), profile))
+  normalizePriceMappingProfiles018204(extra.priceMappingProfiles018204 ?? [])
+    .forEach(profile => priceProfileMap018204.set(getPriceMappingProfileKey018204(profile.mode, profile.country), profile))
+  const mergedPriceProfiles018204 = normalizePriceMappingProfiles018204(Array.from(priceProfileMap018204.values()))
   return {
     ...owner,
     priceMode: choose('priceMode', 'country'),
     globalIncrease: Number(choose('globalIncrease', 500)),
     customIncrease: Number(choose('customIncrease', 700)),
     amountPriorityMode: choose('amountPriorityMode', 'higher-price'),
+    priceMappingProfiles018204: mergedPriceProfiles018204,
     titleMode: choose('titleMode', 'country-name'),
     bodyOutputOrder: owner.bodyOutputOrder || 'height-weight-cup-age',
     formatHint: choose('formatHint', owner.formatHint || ''),
@@ -13016,6 +13357,8 @@ function applyEmployeeSupplementData(data, options = {}) {
   globalIncrease.value = extra.globalIncrease ?? ''
   customIncrease.value = extra.customIncrease ?? ''
   amountPriorityMode.value = extra.amountPriorityMode
+  priceMappingProfiles018204.value = normalizePriceMappingProfiles018204(extra.priceMappingProfiles018204)
+  loadPriceMappingEditor018204()
   titleMode.value = extra.titleMode
   bodyOutputOrder.value = extra.bodyOutputOrder || ownerBaseRuleData.value?.bodyOutputOrder || 'height-weight-cup-age'
   formatHint.value = extra.formatHint
@@ -13077,6 +13420,7 @@ function normalizeRuleDataForCompare(data = {}) {
     globalIncrease: Number(data.globalIncrease ?? 500),
     customIncrease: Number(data.customIncrease ?? 700),
     amountPriorityMode: String(data.amountPriorityMode ?? 'higher-price'),
+    priceMappingProfiles018204: normalizePriceMappingProfiles018204(data.priceMappingProfiles018204 ?? data.priceMappingProfiles ?? []),
     titleMode: String(data.titleMode ?? 'country-name'),
     bodyOutputOrder: String(data.bodyOutputOrder ?? 'height-weight-cup-age'),
     formatHint: normalizeRuleTextForCompare(data.formatHint),
@@ -13464,6 +13808,7 @@ function collectRuleData() {
     globalIncrease: globalIncrease.value,
     customIncrease: customIncrease.value,
     amountPriorityMode: amountPriorityMode.value,
+    priceMappingProfiles018204: normalizePriceMappingProfiles018204(priceMappingProfiles018204.value),
     titleMode: titleMode.value,
     bodyOutputOrder: bodyOutputOrder.value,
     formatHint: formatHint.value,
@@ -13490,6 +13835,8 @@ function applyRuleData(data, options = {}) {
   globalIncrease.value = Number(data.globalIncrease ?? 500)
   customIncrease.value = Number(data.customIncrease ?? 700)
   amountPriorityMode.value = data.amountPriorityMode ?? 'higher-price'
+  priceMappingProfiles018204.value = normalizePriceMappingProfiles018204(data.priceMappingProfiles018204 ?? data.priceMappingProfiles ?? [])
+  loadPriceMappingEditor018204()
   titleMode.value = data.titleMode ?? 'country-name'
   bodyOutputOrder.value = data.bodyOutputOrder || 'height-weight-cup-age'
   formatHint.value = data.formatHint ?? formatHint.value
@@ -13695,6 +14042,10 @@ function resetRules() {
   globalIncrease.value = defaults.globalIncrease
   customIncrease.value = defaults.customIncrease
   amountPriorityMode.value = defaults.amountPriorityMode
+  priceMappingProfiles018204.value = normalizePriceMappingProfiles018204(defaults.priceMappingProfiles018204)
+  priceProfileMode018204.value = '外送'
+  priceProfileCountry018204.value = '*'
+  clearPriceMappingEditor018204()
   titleMode.value = defaults.titleMode
   bodyOutputOrder.value = defaults.bodyOutputOrder
   formatHint.value = defaults.formatHint
@@ -21500,6 +21851,135 @@ button:disabled {
 
   .schedule-progress-room-sites018203 {
     padding: 0 8px 8px 20px;
+  }
+}
+
+
+/* 第 018-204 批：定點／外送＋國籍精準價格對照表 */
+.price-mapping-panel018204 {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid rgba(67, 107, 170, 0.2);
+  border-radius: 18px;
+  background: linear-gradient(145deg, rgba(245, 249, 255, 0.96), rgba(250, 252, 255, 0.84));
+}
+
+.price-mapping-scope-grid018204 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.price-mapping-scope-grid018204 label,
+.price-mapping-fallback-row018204 label,
+.price-mapping-editor018204 {
+  display: grid;
+  gap: 7px;
+  font-weight: 700;
+  color: #27364f;
+}
+
+.price-mapping-scope-grid018204 select,
+.price-mapping-fallback-row018204 select {
+  width: 100%;
+}
+
+.price-mapping-current-scope018204 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(62, 128, 224, 0.08);
+  color: #41536d;
+  font-size: 13px;
+}
+
+.price-mapping-current-scope018204 span {
+  color: #697990;
+}
+
+.price-mapping-editor018204 textarea {
+  min-height: 130px;
+}
+
+.price-mapping-fallback-row018204 {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.price-mapping-clear-editor018204 {
+  min-height: 46px;
+  white-space: nowrap;
+}
+
+.price-mapping-saved-list018204 {
+  display: grid;
+  gap: 8px;
+}
+
+.price-mapping-saved-title018204 {
+  font-size: 13px;
+  font-weight: 800;
+  color: #344762;
+}
+
+.price-mapping-saved-item018204 {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 30px;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 8px 9px 8px 12px;
+  border: 1px solid rgba(69, 112, 178, 0.17);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.88);
+  color: #35455e;
+}
+
+.price-mapping-saved-main018204 {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+  padding: 3px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.price-mapping-saved-item018204.active {
+  border-color: rgba(53, 129, 224, 0.62);
+  box-shadow: 0 0 0 3px rgba(53, 129, 224, 0.1);
+}
+
+.price-mapping-delete018204 {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: rgba(220, 63, 90, 0.1);
+  color: #c33b55;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+@media (max-width: 720px) {
+  .price-mapping-scope-grid018204,
+  .price-mapping-fallback-row018204 {
+    grid-template-columns: 1fr;
+  }
+
+  .price-mapping-clear-editor018204 {
+    width: 100%;
   }
 }
 
