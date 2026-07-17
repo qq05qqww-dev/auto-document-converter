@@ -1,3 +1,5 @@
+<!-- 第 018-202 批：今日班表進度中央彈窗／縣市分組／機房直達版 -->
+<!-- batch018-202-daily-schedule-progress-center-modal -->
 <!-- 第 018-201 批：登入帳號工作區縣市／地區只顯示已建立機房範圍版 -->
 <!-- batch018-201-account-configured-city-district-dropdown-filter -->
 <!-- 第 018-200 批：網站後台調派後重新整理中央位置、地區與機房媒體進度同步版 -->
@@ -162,6 +164,14 @@
         </section>
 
         <div class="top-setting-buttons compact-main-buttons">
+          <button
+            class="summary-pill schedule-progress-toggle-pill018202"
+            :class="{ active: showScheduleProgressModal018202 }"
+            type="button"
+            @click="openScheduleProgressModal018202"
+          >
+            今日班表進度
+          </button>
           <button class="summary-pill" :class="{ active: activeTopPanel === 'price' }" type="button" @click="toggleTopPanel('price')">
             金額設定
           </button>
@@ -191,6 +201,137 @@
         class="top-settings-modal-backdrop"
         @click.self="closeTopSettingModal"
       ></div>
+
+      <teleport to="body">
+        <div
+          v-if="showScheduleProgressModal018202"
+          class="schedule-progress-backdrop018202"
+          @click.self="closeScheduleProgressModal018202"
+        >
+          <section
+            class="schedule-progress-modal018202"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="schedule-progress-title018202"
+          >
+            <header class="schedule-progress-header018202">
+              <div>
+                <span class="schedule-progress-eyebrow018202">目前登入帳號的工作範圍</span>
+                <h2 id="schedule-progress-title018202">今日班表進度</h2>
+                <p>統計日以 06:00 ～ 次日 05:59 計算；文件3成功儲存並同步後即列為已更新。</p>
+              </div>
+              <div class="schedule-progress-head-actions018202">
+                <button
+                  class="ghost-btn"
+                  type="button"
+                  :disabled="isScheduleProgressRefreshing018202 || isCentralRoomLocationRefreshing"
+                  @click="refreshScheduleProgress018202"
+                >
+                  {{ isScheduleProgressRefreshing018202 || isCentralRoomLocationRefreshing ? '重新整理中...' : '重新整理進度' }}
+                </button>
+                <button class="top-settings-modal-close" type="button" @click="closeScheduleProgressModal018202">關閉</button>
+              </div>
+            </header>
+
+            <div class="schedule-progress-summary018202">
+              <div class="schedule-progress-summary-card018202">
+                <span>全部機房</span>
+                <strong>{{ scheduleProgressSummary018202.total }}</strong>
+              </div>
+              <div class="schedule-progress-summary-card018202 is-complete">
+                <span>已更新</span>
+                <strong>{{ scheduleProgressSummary018202.updated }}</strong>
+              </div>
+              <div class="schedule-progress-summary-card018202 is-idle">
+                <span>未更新</span>
+                <strong>{{ scheduleProgressSummary018202.pending }}</strong>
+              </div>
+              <div class="schedule-progress-summary-card018202 is-rate">
+                <span>完成率</span>
+                <strong>{{ scheduleProgressSummary018202.rate }}%</strong>
+              </div>
+            </div>
+
+            <div class="schedule-progress-toolbar018202">
+              <div class="schedule-progress-filter-buttons018202" role="group" aria-label="班表更新狀態篩選">
+                <button
+                  v-for="option in scheduleProgressFilterOptions018202"
+                  :key="option.value"
+                  type="button"
+                  :class="{ active: scheduleProgressFilter018202 === option.value }"
+                  @click="scheduleProgressFilter018202 = option.value"
+                >
+                  {{ option.label }}
+                </button>
+              </div>
+              <label class="schedule-progress-city-filter018202">
+                <span>縣市</span>
+                <select v-model="scheduleProgressCity018202">
+                  <option value="">全部縣市</option>
+                  <option v-for="city in scheduleProgressCityOptions018202" :key="city" :value="city">{{ city }}</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="schedule-progress-overall-bar018202" aria-hidden="true">
+              <span :style="{ width: `${scheduleProgressSummary018202.rate}%` }"></span>
+            </div>
+
+            <div class="schedule-progress-scroll018202">
+              <div v-if="!scheduleProgressGroupedRows018202.length" class="schedule-progress-empty018202">
+                <strong>目前沒有符合條件的機房</strong>
+                <span>可切換「全部」或其他縣市查看；新增機房請到下方「地區機房管理」。</span>
+              </div>
+
+              <section
+                v-for="group in scheduleProgressGroupedRows018202"
+                :key="group.city"
+                class="schedule-progress-city-group018202"
+              >
+                <div class="schedule-progress-city-head018202">
+                  <div>
+                    <strong>{{ group.city }}</strong>
+                    <span>{{ group.updated }}/{{ group.total }} 已更新</span>
+                  </div>
+                  <div class="schedule-progress-city-rate018202">
+                    <span :style="{ width: `${group.rate}%` }"></span>
+                  </div>
+                </div>
+
+                <div class="schedule-progress-room-list018202">
+                  <button
+                    v-for="row in group.rows"
+                    :key="row.key"
+                    class="schedule-progress-room-row018202"
+                    :class="{ 'is-complete': row.updated, 'is-idle': !row.updated }"
+                    type="button"
+                    @click="selectScheduleProgressRoom018202(row)"
+                  >
+                    <span class="schedule-progress-room-state018202">{{ row.updated ? '✅' : '⚪' }}</span>
+                    <span class="schedule-progress-room-main018202">
+                      <strong>{{ row.room }}</strong>
+                      <small>{{ row.districtDisplay }}／{{ row.type }}</small>
+                    </span>
+                    <span class="schedule-progress-room-update018202">
+                      <strong>{{ row.updated ? '今日資料已更新' : '今日尚未更新' }}</strong>
+                      <small>{{ row.updated ? `今日 ${row.updatedTime || '已完成'}` : '尚未儲存文件3' }}</small>
+                    </span>
+                    <span class="schedule-progress-room-media018202">
+                      媒體 {{ row.mediaReadyCount }}/{{ row.mediaTotalCount }}
+                      <small>圖 {{ row.imageCount }}／影 {{ row.videoCount }}</small>
+                    </span>
+                    <span class="schedule-progress-room-enter018202">前往處理 ›</span>
+                  </button>
+                </div>
+              </section>
+            </div>
+
+            <footer class="schedule-progress-footer018202">
+              點選任一機房可直接關閉視窗，並切換上方工作區到該縣市、地區、類型與機房。
+            </footer>
+          </section>
+        </div>
+      </teleport>
 
       <section v-if="isOwner && showEmployeeManager" class="owner-employee-card">
         <div class="owner-employee-header">
@@ -2650,6 +2791,11 @@ const ruleScopeType = ref(DEFAULT_MANAGER_SCOPE_TYPE)
 const ruleScopeRoom = ref('')
 const showScopeManager = ref(true)
 const showEmployeeManager = ref(false)
+// 第 018-202 批：今日班表進度中央彈窗，只統計目前登入帳號已建立的機房。
+const showScheduleProgressModal018202 = ref(false)
+const scheduleProgressFilter018202 = ref('all')
+const scheduleProgressCity018202 = ref('')
+const isScheduleProgressRefreshing018202 = ref(false)
 const showScopeCrudPanel = ref(false)
 const backupImportInput = ref(null)
 const newCityName = ref('')
@@ -2714,6 +2860,56 @@ function toggleEmployeeManager() {
     loadEmployeeProfiles()
   }
 }
+
+function openScheduleProgressModal018202() {
+  closeTopSettingModal()
+  showEmployeeManager.value = false
+  scheduleProgressFilter018202.value = 'all'
+  if (scheduleProgressCity018202.value && !accountWorkingCities018201.value.includes(scheduleProgressCity018202.value)) {
+    scheduleProgressCity018202.value = ''
+  }
+  showScheduleProgressModal018202.value = true
+}
+
+function closeScheduleProgressModal018202() {
+  showScheduleProgressModal018202.value = false
+}
+
+async function refreshScheduleProgress018202() {
+  if (isScheduleProgressRefreshing018202.value || isCentralRoomLocationRefreshing.value) return
+  isScheduleProgressRefreshing018202.value = true
+  const currentScope = getCurrentScopeSelectionSnapshot()
+
+  try {
+    await loadLocationOptionsOnline({ silent: true })
+    applyScopeSelection(currentScope)
+    await refreshCentralRoomLocationStatus018200()
+  } catch (error) {
+    const message = `重新整理今日班表進度失敗：${error.message || error}`
+    statusMessage.value = message
+    showActionToast(message, 'error')
+  } finally {
+    isScheduleProgressRefreshing018202.value = false
+  }
+}
+
+async function selectScheduleProgressRoom018202(row) {
+  if (!row) return
+  const resolved = applyScopeSelection({
+    city: row.city,
+    district: row.district,
+    type: row.type,
+    room: row.room,
+  })
+  rememberCurrentScopeSelection({ syncOnline: true })
+  closeScheduleProgressModal018202()
+  showScopeManager.value = true
+  statusMessage.value = `已切換工作區：${resolved.city} / ${getScopeDistrictDisplay(resolved.district, resolved.type)} / ${resolved.type} / ${resolved.room}`
+
+  await nextTick()
+  document.querySelector('.scope-manager-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
 const showAliasList = ref(false)
 const showRemoveWordList = ref(false)
 
@@ -6159,6 +6355,12 @@ function showNextMedia() {
 }
 
 function handleMediaViewerKeydown(event) {
+  if (event.key === 'Escape' && showScheduleProgressModal018202.value) {
+    event.preventDefault()
+    closeScheduleProgressModal018202()
+    return
+  }
+
   if (!mediaViewerItem.value) return
 
   if (event.key === 'ArrowLeft') {
@@ -8018,7 +8220,12 @@ function getRoomDailyStatus(room, scope = {}) {
     detail: '今日尚未儲存文件3｜媒體 0/0。',
     complete: false,
     documentSaved: false,
-    mediaComplete: false
+    mediaComplete: false,
+    updatedTime: '',
+    mediaReadyCount: 0,
+    mediaTotalCount: 0,
+    imageCount: 0,
+    videoCount: 0,
   }
 
   if ((!record || record.businessDayKey !== businessDayKey) && !centralSummary) return emptyStatus
@@ -8047,7 +8254,12 @@ function getRoomDailyStatus(room, scope = {}) {
       detail: `文件3已於 ${savedTime} 儲存並同步資料庫｜媒體 ${mediaProgress}｜圖 ${imageCount}／影 ${videoCount}${centralRefreshText}`,
       complete: true,
       documentSaved: true,
-      mediaComplete
+      mediaComplete,
+      updatedTime: savedTime,
+      mediaReadyCount: readyCount,
+      mediaTotalCount: totalCount,
+      imageCount,
+      videoCount,
     }
   }
 
@@ -8057,7 +8269,12 @@ function getRoomDailyStatus(room, scope = {}) {
     detail: `今日尚未儲存文件3｜媒體 ${mediaProgress}｜圖 ${imageCount}／影 ${videoCount}${centralRefreshText}`,
     complete: false,
     documentSaved: false,
-    mediaComplete
+    mediaComplete,
+    updatedTime: '',
+    mediaReadyCount: readyCount,
+    mediaTotalCount: totalCount,
+    imageCount,
+    videoCount,
   }
 }
 
@@ -8069,6 +8286,103 @@ function getRoomOptionDisplayLabel(room) {
 const managerRoomDailyUpdatedCount = computed(() => managerRooms.value.filter(room => getRoomDailyStatus(room).documentSaved).length)
 const managerRoomDailyUpdatedSummary = computed(() => `今日資料已更新 ${managerRoomDailyUpdatedCount.value}/${managerRooms.value.length}`)
 const currentRoomDailyStatus = computed(() => ruleScopeRoom.value ? getRoomDailyStatus(ruleScopeRoom.value) : getRoomDailyStatus(''))
+
+const scheduleProgressFilterOptions018202 = [
+  { value: 'all', label: '全部' },
+  { value: 'updated', label: '已更新' },
+  { value: 'pending', label: '未更新' },
+]
+
+const scheduleProgressCityOptions018202 = computed(() => [...accountWorkingCities018201.value])
+
+const scheduleProgressRows018202 = computed(() => {
+  const cityOrder = new Map(accountWorkingCities018201.value.map((city, index) => [city, index]))
+  const typeOrder = new Map(locationTypes.value.map((type, index) => [type, index]))
+  const rows = []
+
+  Object.entries(locationOptions.value?.rooms || {}).forEach(([scopeKey, roomList]) => {
+    const scope = parseAccountRoomScopeKey018201(scopeKey)
+    if (!scope) return
+
+    const districtOrderList = Array.isArray(locationOptions.value?.districts?.[scope.city])
+      ? locationOptions.value.districts[scope.city]
+      : []
+    const districtOrder = districtOrderList.indexOf(scope.district)
+
+    ;(Array.isArray(roomList) ? roomList : []).map(cleanScopeText).filter(Boolean).forEach((room, roomIndex) => {
+      const status = getRoomDailyStatus(room, {
+        city: scope.city,
+        district: scope.district,
+        mode: scope.type,
+      })
+      rows.push({
+        key: `${scope.city}__${scope.district}__${scope.type}__${room}`,
+        city: scope.city,
+        district: scope.district,
+        districtDisplay: getScopeDistrictDisplay(scope.district, scope.type),
+        type: scope.type,
+        room,
+        updated: Boolean(status.documentSaved),
+        updatedTime: status.updatedTime || '',
+        mediaReadyCount: Number(status.mediaReadyCount || 0),
+        mediaTotalCount: Number(status.mediaTotalCount || 0),
+        imageCount: Number(status.imageCount || 0),
+        videoCount: Number(status.videoCount || 0),
+        cityOrder: cityOrder.has(scope.city) ? cityOrder.get(scope.city) : 9999,
+        districtOrder: districtOrder >= 0 ? districtOrder : 9999,
+        typeOrder: typeOrder.has(scope.type) ? typeOrder.get(scope.type) : 9999,
+        roomOrder: roomIndex,
+      })
+    })
+  })
+
+  return rows.sort((left, right) => (
+    left.cityOrder - right.cityOrder ||
+    left.districtOrder - right.districtOrder ||
+    left.typeOrder - right.typeOrder ||
+    left.roomOrder - right.roomOrder ||
+    left.room.localeCompare(right.room, 'zh-Hant')
+  ))
+})
+
+const scheduleProgressSummary018202 = computed(() => {
+  const total = scheduleProgressRows018202.value.length
+  const updated = scheduleProgressRows018202.value.filter(row => row.updated).length
+  const pending = Math.max(0, total - updated)
+  return {
+    total,
+    updated,
+    pending,
+    rate: total ? Math.round((updated / total) * 100) : 0,
+  }
+})
+
+const scheduleProgressFilteredRows018202 = computed(() => scheduleProgressRows018202.value.filter(row => {
+  if (scheduleProgressCity018202.value && row.city !== scheduleProgressCity018202.value) return false
+  if (scheduleProgressFilter018202.value === 'updated' && !row.updated) return false
+  if (scheduleProgressFilter018202.value === 'pending' && row.updated) return false
+  return true
+}))
+
+const scheduleProgressGroupedRows018202 = computed(() => {
+  const groups = []
+  scheduleProgressFilteredRows018202.value.forEach(row => {
+    let group = groups.find(item => item.city === row.city)
+    if (!group) {
+      group = { city: row.city, rows: [], total: 0, updated: 0, rate: 0 }
+      groups.push(group)
+    }
+    group.rows.push(row)
+  })
+
+  groups.forEach(group => {
+    const allCityRows = scheduleProgressRows018202.value.filter(row => row.city === group.city)
+    group.total = allCityRows.length
+    group.updated = allCityRows.filter(row => row.updated).length
+    group.rate = group.total ? Math.round((group.updated / group.total) * 100) : 0
+  })
+  return groups
+})
 
 function validateCurrentListingLocation() {
   const location = getCurrentListingLocation()
@@ -20512,6 +20826,442 @@ button:disabled {
 
   .special-example-field {
     grid-column: 1 / -1;
+  }
+}
+
+
+/* 第 018-202 批：今日班表進度中央彈窗 */
+.schedule-progress-toggle-pill018202 {
+  background: linear-gradient(135deg, #ecfeff, #e0f2fe);
+  color: #0369a1;
+  box-shadow: inset 0 0 0 1px rgba(14, 116, 144, 0.12);
+}
+
+.schedule-progress-backdrop018202 {
+  position: fixed;
+  inset: 0;
+  z-index: 2300;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(15, 23, 42, 0.48);
+  backdrop-filter: blur(9px);
+}
+
+.schedule-progress-modal018202 {
+  width: min(920px, calc(100vw - 36px));
+  max-height: min(88vh, 880px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 36px 100px rgba(15, 23, 42, 0.38);
+}
+
+.schedule-progress-header018202 {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 22px 24px 18px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.schedule-progress-eyebrow018202 {
+  display: block;
+  margin-bottom: 4px;
+  color: #0891b2;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.schedule-progress-header018202 h2 {
+  margin: 0 0 5px;
+  color: #0f172a;
+  font-size: 24px;
+}
+
+.schedule-progress-header018202 p {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.schedule-progress-head-actions018202 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+.schedule-progress-summary018202 {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  padding: 18px 24px 12px;
+}
+
+.schedule-progress-summary-card018202 {
+  min-width: 0;
+  padding: 13px 15px;
+  border: 1px solid #dbeafe;
+  border-radius: 16px;
+  background: #f8fbff;
+}
+
+.schedule-progress-summary-card018202 span {
+  display: block;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.schedule-progress-summary-card018202 strong {
+  display: block;
+  margin-top: 2px;
+  color: #0f172a;
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+.schedule-progress-summary-card018202.is-complete {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.schedule-progress-summary-card018202.is-complete strong {
+  color: #15803d;
+}
+
+.schedule-progress-summary-card018202.is-idle {
+  border-color: #e2e8f0;
+  background: #f8fafc;
+}
+
+.schedule-progress-summary-card018202.is-rate {
+  border-color: #bae6fd;
+  background: #f0f9ff;
+}
+
+.schedule-progress-summary-card018202.is-rate strong {
+  color: #0369a1;
+}
+
+.schedule-progress-toolbar018202 {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 4px 24px 12px;
+}
+
+.schedule-progress-filter-buttons018202 {
+  display: inline-flex;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 999px;
+  background: #f1f5f9;
+}
+
+.schedule-progress-filter-buttons018202 button {
+  min-width: 76px;
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 14px;
+  background: transparent;
+  color: #475569;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.schedule-progress-filter-buttons018202 button.active {
+  background: #ffffff;
+  color: #0369a1;
+  box-shadow: 0 5px 16px rgba(15, 23, 42, 0.1);
+}
+
+.schedule-progress-city-filter018202 {
+  display: grid;
+  gap: 5px;
+  min-width: 210px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.schedule-progress-city-filter018202 select {
+  min-height: 40px;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  padding: 0 12px;
+  background: #fff;
+  color: #0f172a;
+  font-weight: 800;
+}
+
+.schedule-progress-overall-bar018202 {
+  height: 7px;
+  margin: 0 24px 14px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e2e8f0;
+}
+
+.schedule-progress-overall-bar018202 span {
+  display: block;
+  height: 100%;
+  min-width: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #22c55e, #0891b2);
+  transition: width 0.25s ease;
+}
+
+.schedule-progress-scroll018202 {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 24px 18px;
+  scrollbar-gutter: stable;
+}
+
+.schedule-progress-empty018202 {
+  display: grid;
+  gap: 6px;
+  place-items: center;
+  min-height: 220px;
+  padding: 28px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 18px;
+  background: #f8fafc;
+  color: #64748b;
+  text-align: center;
+}
+
+.schedule-progress-empty018202 strong {
+  color: #334155;
+}
+
+.schedule-progress-city-group018202 + .schedule-progress-city-group018202 {
+  margin-top: 18px;
+}
+
+.schedule-progress-city-head018202 {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 220px);
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 8px;
+  padding: 0 4px;
+}
+
+.schedule-progress-city-head018202 > div:first-child {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.schedule-progress-city-head018202 strong {
+  color: #0f172a;
+  font-size: 16px;
+}
+
+.schedule-progress-city-head018202 span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.schedule-progress-city-rate018202 {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e2e8f0;
+}
+
+.schedule-progress-city-rate018202 span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #22c55e;
+}
+
+.schedule-progress-room-list018202 {
+  display: grid;
+  gap: 8px;
+}
+
+.schedule-progress-room-row018202 {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 34px minmax(150px, 1.15fr) minmax(160px, 1.25fr) minmax(120px, 0.8fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: #fff;
+  color: #0f172a;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.schedule-progress-room-row018202:hover {
+  transform: translateY(-1px);
+  border-color: #7dd3fc;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+}
+
+.schedule-progress-room-row018202.is-complete {
+  border-color: #bbf7d0;
+  background: linear-gradient(90deg, rgba(240, 253, 244, 0.9), #fff 42%);
+}
+
+.schedule-progress-room-state018202 {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  font-size: 16px;
+}
+
+.schedule-progress-room-main018202,
+.schedule-progress-room-update018202,
+.schedule-progress-room-media018202 {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.schedule-progress-room-main018202 strong,
+.schedule-progress-room-update018202 strong {
+  overflow: hidden;
+  color: #0f172a;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.schedule-progress-room-main018202 small,
+.schedule-progress-room-update018202 small,
+.schedule-progress-room-media018202 small {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.schedule-progress-room-row018202.is-complete .schedule-progress-room-update018202 strong {
+  color: #15803d;
+}
+
+.schedule-progress-room-row018202.is-idle .schedule-progress-room-update018202 strong {
+  color: #64748b;
+}
+
+.schedule-progress-room-media018202 {
+  color: #334155;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.schedule-progress-room-enter018202 {
+  color: #0284c7;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.schedule-progress-footer018202 {
+  flex: 0 0 auto;
+  padding: 12px 24px 16px;
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+}
+
+@media (max-width: 760px) {
+  .schedule-progress-backdrop018202 {
+    padding: 8px;
+  }
+
+  .schedule-progress-modal018202 {
+    width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+    border-radius: 22px;
+  }
+
+  .schedule-progress-header018202 {
+    flex-direction: column;
+    padding: 18px;
+  }
+
+  .schedule-progress-head-actions018202 {
+    width: 100%;
+  }
+
+  .schedule-progress-head-actions018202 button {
+    flex: 1 1 0;
+  }
+
+  .schedule-progress-summary018202 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 14px 18px 10px;
+  }
+
+  .schedule-progress-toolbar018202 {
+    align-items: stretch;
+    flex-direction: column;
+    padding-inline: 18px;
+  }
+
+  .schedule-progress-filter-buttons018202 {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .schedule-progress-filter-buttons018202 button {
+    min-width: 0;
+    padding-inline: 8px;
+  }
+
+  .schedule-progress-city-filter018202 {
+    min-width: 0;
+  }
+
+  .schedule-progress-overall-bar018202 {
+    margin-inline: 18px;
+  }
+
+  .schedule-progress-scroll018202 {
+    padding-inline: 18px;
+  }
+
+  .schedule-progress-city-head018202 {
+    grid-template-columns: 1fr;
+    gap: 7px;
+  }
+
+  .schedule-progress-room-row018202 {
+    grid-template-columns: 32px minmax(0, 1fr) auto;
+    gap: 9px;
+  }
+
+  .schedule-progress-room-update018202,
+  .schedule-progress-room-media018202 {
+    grid-column: 2 / -1;
+  }
+
+  .schedule-progress-room-enter018202 {
+    grid-column: 3;
+    grid-row: 1;
   }
 }
 
