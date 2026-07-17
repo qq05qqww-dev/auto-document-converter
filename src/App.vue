@@ -1,3 +1,5 @@
+<!-- 第 018-197 批：馬妹冒號小姐標題與馬來縮寫國籍通用辨識修正版 -->
+<!-- batch018-197-malaysia-ma-girl-colon-header-recognition-fix -->
 <!-- 第 018-196 批：分鐘＋底價後置 NS／節數正式方案解析修正版 -->
 <!-- batch018-196-minute-bottom-price-trailing-session-label-fix -->
 <!-- 第 018-195 批：機房今日資料更新與媒體完成進度分離顯示修正版 -->
@@ -3440,6 +3442,9 @@ const defaultCountryAliases = [
   '泰國=泰妹',
   '泰妹=泰妹',
   '馬來西亞=馬來',
+  '馬來妹妹=馬來',
+  '馬來妹=馬來',
+  '馬妹=馬來',
   '馬來=馬來',
   '港澳=港澳',
   '越南=越南',
@@ -8456,7 +8461,9 @@ function normalizeThaiCountryHeaderLine(line) {
   value = value.replace(/^泰國妹\s+/, '泰妹 ')
   value = value.replace(/^泰國\s+/, '泰妹 ')
   // 第 018-155 批：店家常用「馬來妹 小姐名」表示國籍＋姓名，不能把「妹」併進小姐名。
-  value = value.replace(/^馬來(?:妹妹|妹)\s+/, '馬來 ')
+  // 第 018-197 批：同時支援「馬妹:齊橙姬」「馬來妹：齊橙姬」等冒號／無空格標題。
+  value = value.replace(/^馬來(?:妹妹|妹)\s*[:：]?\s*/, '馬來 ')
+  value = value.replace(/^馬妹\s*[:：]?\s*/, '馬來 ')
   return value
 }
 
@@ -8747,6 +8754,9 @@ function getStrictBuiltInCountryAliases() {
   // 固定保底，不受目前員工補充規則、機房規則或誤填的「不要誤判成小姐名」影響。
   ;[
     ['馬來西亞', '馬來'],
+    ['馬來妹妹', '馬來'],
+    ['馬來妹', '馬來'],
+    ['馬妹', '馬來'],
     ['馬來', '馬來'],
     ['越南', '越南'],
     ['越妹', '越妹'],
