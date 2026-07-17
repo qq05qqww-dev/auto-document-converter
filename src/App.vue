@@ -1,5 +1,5 @@
-<!-- 第 018-202 批：今日班表進度中央彈窗／縣市分組／機房直達版 -->
-<!-- batch018-202-daily-schedule-progress-center-modal -->
+<!-- 第 018-203 批：今日班表進度同機房集中／據點展開／未更新優先版 -->
+<!-- batch018-203-schedule-progress-room-group-expand-sites -->
 <!-- 第 018-201 批：登入帳號工作區縣市／地區只顯示已建立機房範圍版 -->
 <!-- batch018-201-account-configured-city-district-dropdown-filter -->
 <!-- 第 018-200 批：網站後台調派後重新整理中央位置、地區與機房媒體進度同步版 -->
@@ -233,22 +233,26 @@
               </div>
             </header>
 
-            <div class="schedule-progress-summary018202">
+            <div class="schedule-progress-summary018202 schedule-progress-summary018203">
               <div class="schedule-progress-summary-card018202">
-                <span>全部機房</span>
-                <strong>{{ scheduleProgressSummary018202.total }}</strong>
+                <span>機房</span>
+                <strong>{{ scheduleProgressSummary018203.rooms }}</strong>
+              </div>
+              <div class="schedule-progress-summary-card018202">
+                <span>據點</span>
+                <strong>{{ scheduleProgressSummary018203.sites }}</strong>
               </div>
               <div class="schedule-progress-summary-card018202 is-complete">
-                <span>已更新</span>
-                <strong>{{ scheduleProgressSummary018202.updated }}</strong>
+                <span>已更新據點</span>
+                <strong>{{ scheduleProgressSummary018203.updatedSites }}</strong>
               </div>
               <div class="schedule-progress-summary-card018202 is-idle">
-                <span>未更新</span>
-                <strong>{{ scheduleProgressSummary018202.pending }}</strong>
+                <span>未更新據點</span>
+                <strong>{{ scheduleProgressSummary018203.pendingSites }}</strong>
               </div>
               <div class="schedule-progress-summary-card018202 is-rate">
                 <span>完成率</span>
-                <strong>{{ scheduleProgressSummary018202.rate }}%</strong>
+                <strong>{{ scheduleProgressSummary018203.rate }}%</strong>
               </div>
             </div>
 
@@ -274,60 +278,85 @@
             </div>
 
             <div class="schedule-progress-overall-bar018202" aria-hidden="true">
-              <span :style="{ width: `${scheduleProgressSummary018202.rate}%` }"></span>
+              <span :style="{ width: `${scheduleProgressSummary018203.rate}%` }"></span>
             </div>
 
             <div class="schedule-progress-scroll018202">
-              <div v-if="!scheduleProgressGroupedRows018202.length" class="schedule-progress-empty018202">
-                <strong>目前沒有符合條件的機房</strong>
+              <div v-if="!scheduleProgressRoomGroups018203.length" class="schedule-progress-empty018202">
+                <strong>目前沒有符合條件的機房據點</strong>
                 <span>可切換「全部」或其他縣市查看；新增機房請到下方「地區機房管理」。</span>
               </div>
 
-              <section
-                v-for="group in scheduleProgressGroupedRows018202"
-                :key="group.city"
-                class="schedule-progress-city-group018202"
-              >
-                <div class="schedule-progress-city-head018202">
-                  <div>
-                    <strong>{{ group.city }}</strong>
-                    <span>{{ group.updated }}/{{ group.total }} 已更新</span>
-                  </div>
-                  <div class="schedule-progress-city-rate018202">
-                    <span :style="{ width: `${group.rate}%` }"></span>
-                  </div>
-                </div>
-
-                <div class="schedule-progress-room-list018202">
+              <div v-else class="schedule-progress-room-groups018203">
+                <section
+                  v-for="group in scheduleProgressRoomGroups018203"
+                  :key="group.key"
+                  class="schedule-progress-room-group018203"
+                  :class="{
+                    'is-complete': group.complete,
+                    'is-partial': group.partial,
+                    'is-pending': group.pendingSites === group.totalSites,
+                    'is-expanded': isScheduleProgressRoomExpanded018203(group.key),
+                  }"
+                >
                   <button
-                    v-for="row in group.rows"
-                    :key="row.key"
-                    class="schedule-progress-room-row018202"
-                    :class="{ 'is-complete': row.updated, 'is-idle': !row.updated }"
+                    class="schedule-progress-room-group-head018203"
                     type="button"
-                    @click="selectScheduleProgressRoom018202(row)"
+                    :aria-expanded="isScheduleProgressRoomExpanded018203(group.key)"
+                    @click="toggleScheduleProgressRoomGroup018203(group.key)"
                   >
-                    <span class="schedule-progress-room-state018202">{{ row.updated ? '✅' : '⚪' }}</span>
-                    <span class="schedule-progress-room-main018202">
-                      <strong>{{ row.room }}</strong>
-                      <small>{{ row.districtDisplay }}／{{ row.type }}</small>
+                    <span class="schedule-progress-room-state018202">{{ group.complete ? '✅' : group.partial ? '🟡' : '⚪' }}</span>
+                    <span class="schedule-progress-room-group-main018203">
+                      <strong>{{ group.room }}</strong>
+                      <small>{{ group.totalSites }} 個據點｜已更新 {{ group.updatedSites }}/{{ group.totalSites }}</small>
                     </span>
-                    <span class="schedule-progress-room-update018202">
-                      <strong>{{ row.updated ? '今日資料已更新' : '今日尚未更新' }}</strong>
-                      <small>{{ row.updated ? `今日 ${row.updatedTime || '已完成'}` : '尚未儲存文件3' }}</small>
+                    <span class="schedule-progress-room-group-media018203">
+                      媒體 {{ group.mediaReadyCount }}/{{ group.mediaTotalCount }}
+                      <small>圖 {{ group.imageCount }}／影 {{ group.videoCount }}</small>
                     </span>
-                    <span class="schedule-progress-room-media018202">
-                      媒體 {{ row.mediaReadyCount }}/{{ row.mediaTotalCount }}
-                      <small>圖 {{ row.imageCount }}／影 {{ row.videoCount }}</small>
+                    <span
+                      class="schedule-progress-room-group-badge018203"
+                      :class="{ 'is-complete': group.complete, 'is-partial': group.partial }"
+                    >
+                      {{ group.complete ? '全部已更新' : group.partial ? '部分已更新' : '全部未更新' }}
                     </span>
-                    <span class="schedule-progress-room-enter018202">前往處理 ›</span>
+                    <span class="schedule-progress-room-chevron018203" aria-hidden="true">⌄</span>
                   </button>
-                </div>
-              </section>
+
+                  <div
+                    v-if="isScheduleProgressRoomExpanded018203(group.key)"
+                    class="schedule-progress-room-sites018203"
+                  >
+                    <button
+                      v-for="row in group.rows"
+                      :key="row.key"
+                      class="schedule-progress-room-row018202 schedule-progress-site-row018203"
+                      :class="{ 'is-complete': row.updated, 'is-idle': !row.updated }"
+                      type="button"
+                      @click="selectScheduleProgressRoom018202(row)"
+                    >
+                      <span class="schedule-progress-room-state018202">{{ row.updated ? '✅' : '⚪' }}</span>
+                      <span class="schedule-progress-room-main018202">
+                        <strong>{{ row.city }}／{{ row.districtDisplay }}</strong>
+                        <small>{{ row.type }}</small>
+                      </span>
+                      <span class="schedule-progress-room-update018202">
+                        <strong>{{ row.updated ? '今日資料已更新' : '今日尚未更新' }}</strong>
+                        <small>{{ row.updated ? `今日 ${row.updatedTime || '已完成'}` : '尚未儲存文件3' }}</small>
+                      </span>
+                      <span class="schedule-progress-room-media018202">
+                        媒體 {{ row.mediaReadyCount }}/{{ row.mediaTotalCount }}
+                        <small>圖 {{ row.imageCount }}／影 {{ row.videoCount }}</small>
+                      </span>
+                      <span class="schedule-progress-room-enter018202">前往處理 ›</span>
+                    </button>
+                  </div>
+                </section>
+              </div>
             </div>
 
             <footer class="schedule-progress-footer018202">
-              點選任一機房可直接關閉視窗，並切換上方工作區到該縣市、地區、類型與機房。
+              同名機房會集中顯示；點機房展開名下據點，再點據點即可切換上方工作區。
             </footer>
           </section>
         </div>
@@ -2795,6 +2824,7 @@ const showEmployeeManager = ref(false)
 const showScheduleProgressModal018202 = ref(false)
 const scheduleProgressFilter018202 = ref('all')
 const scheduleProgressCity018202 = ref('')
+const scheduleProgressExpandedRooms018203 = ref({})
 const isScheduleProgressRefreshing018202 = ref(false)
 const showScopeCrudPanel = ref(false)
 const backupImportInput = ref(null)
@@ -2868,6 +2898,7 @@ function openScheduleProgressModal018202() {
   if (scheduleProgressCity018202.value && !accountWorkingCities018201.value.includes(scheduleProgressCity018202.value)) {
     scheduleProgressCity018202.value = ''
   }
+  scheduleProgressExpandedRooms018203.value = {}
   showScheduleProgressModal018202.value = true
 }
 
@@ -8345,17 +8376,27 @@ const scheduleProgressRows018202 = computed(() => {
   ))
 })
 
-const scheduleProgressSummary018202 = computed(() => {
-  const total = scheduleProgressRows018202.value.length
-  const updated = scheduleProgressRows018202.value.filter(row => row.updated).length
-  const pending = Math.max(0, total - updated)
+const scheduleProgressSummary018203 = computed(() => {
+  const rows = scheduleProgressRows018202.value
+  const roomKeys = new Set(rows.map(row => cleanScopeText(row.room).replace(/\s+/g, '').toLocaleLowerCase()))
+  const updatedSites = rows.filter(row => row.updated).length
+  const sites = rows.length
   return {
-    total,
-    updated,
-    pending,
-    rate: total ? Math.round((updated / total) * 100) : 0,
+    rooms: roomKeys.size,
+    sites,
+    updatedSites,
+    pendingSites: Math.max(0, sites - updatedSites),
+    rate: sites ? Math.round((updatedSites / sites) * 100) : 0,
   }
 })
+
+// 保留舊名稱供其他既有區塊相容；班表彈窗自第 018-203 批起改用 scheduleProgressSummary018203。
+const scheduleProgressSummary018202 = computed(() => ({
+  total: scheduleProgressSummary018203.value.sites,
+  updated: scheduleProgressSummary018203.value.updatedSites,
+  pending: scheduleProgressSummary018203.value.pendingSites,
+  rate: scheduleProgressSummary018203.value.rate,
+}))
 
 const scheduleProgressFilteredRows018202 = computed(() => scheduleProgressRows018202.value.filter(row => {
   if (scheduleProgressCity018202.value && row.city !== scheduleProgressCity018202.value) return false
@@ -8364,25 +8405,75 @@ const scheduleProgressFilteredRows018202 = computed(() => scheduleProgressRows01
   return true
 }))
 
-const scheduleProgressGroupedRows018202 = computed(() => {
-  const groups = []
+function getScheduleProgressRoomGroupKey018203(room) {
+  return cleanScopeText(room).replace(/\s+/g, '').toLocaleLowerCase() || '__unnamed_room__'
+}
+
+const scheduleProgressRoomGroups018203 = computed(() => {
+  const groups = new Map()
+
   scheduleProgressFilteredRows018202.value.forEach(row => {
-    let group = groups.find(item => item.city === row.city)
-    if (!group) {
-      group = { city: row.city, rows: [], total: 0, updated: 0, rate: 0 }
-      groups.push(group)
+    const key = getScheduleProgressRoomGroupKey018203(row.room)
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        room: row.room,
+        rows: [],
+        totalSites: 0,
+        updatedSites: 0,
+        pendingSites: 0,
+        mediaReadyCount: 0,
+        mediaTotalCount: 0,
+        imageCount: 0,
+        videoCount: 0,
+        complete: false,
+        partial: false,
+        statusOrder: 0,
+      })
     }
-    group.rows.push(row)
+    groups.get(key).rows.push(row)
   })
 
-  groups.forEach(group => {
-    const allCityRows = scheduleProgressRows018202.value.filter(row => row.city === group.city)
-    group.total = allCityRows.length
-    group.updated = allCityRows.filter(row => row.updated).length
-    group.rate = group.total ? Math.round((group.updated / group.total) * 100) : 0
-  })
-  return groups
+  return Array.from(groups.values()).map(group => {
+    group.rows.sort((left, right) => (
+      Number(left.updated) - Number(right.updated) ||
+      left.cityOrder - right.cityOrder ||
+      left.districtOrder - right.districtOrder ||
+      left.typeOrder - right.typeOrder ||
+      left.roomOrder - right.roomOrder ||
+      left.key.localeCompare(right.key, 'zh-Hant')
+    ))
+    group.totalSites = group.rows.length
+    group.updatedSites = group.rows.filter(row => row.updated).length
+    group.pendingSites = Math.max(0, group.totalSites - group.updatedSites)
+    group.mediaReadyCount = group.rows.reduce((sum, row) => sum + Number(row.mediaReadyCount || 0), 0)
+    group.mediaTotalCount = group.rows.reduce((sum, row) => sum + Number(row.mediaTotalCount || 0), 0)
+    group.imageCount = group.rows.reduce((sum, row) => sum + Number(row.imageCount || 0), 0)
+    group.videoCount = group.rows.reduce((sum, row) => sum + Number(row.videoCount || 0), 0)
+    group.complete = group.totalSites > 0 && group.updatedSites === group.totalSites
+    group.partial = group.updatedSites > 0 && group.updatedSites < group.totalSites
+    group.statusOrder = group.updatedSites === 0 ? 0 : group.partial ? 1 : 2
+    return group
+  }).sort((left, right) => (
+    left.statusOrder - right.statusOrder ||
+    left.room.localeCompare(right.room, 'zh-Hant')
+  ))
 })
+
+// 舊縣市分組名稱保留相容，避免其他外部測試或既有引用失效。
+const scheduleProgressGroupedRows018202 = computed(() => scheduleProgressRoomGroups018203.value)
+
+function isScheduleProgressRoomExpanded018203(key) {
+  return Boolean(scheduleProgressExpandedRooms018203.value?.[key])
+}
+
+function toggleScheduleProgressRoomGroup018203(key) {
+  if (!key) return
+  scheduleProgressExpandedRooms018203.value = {
+    ...scheduleProgressExpandedRooms018203.value,
+    [key]: !isScheduleProgressRoomExpanded018203(key),
+  }
+}
 
 function validateCurrentListingLocation() {
   const location = getCurrentListingLocation()
@@ -20900,7 +20991,7 @@ button:disabled {
 
 .schedule-progress-summary018202 {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
   padding: 18px 24px 12px;
 }
@@ -21187,6 +21278,132 @@ button:disabled {
   text-align: center;
 }
 
+
+/* 第 018-203 批：同名機房集中分組，點擊後展開名下縣市／地區據點。 */
+.schedule-progress-room-groups018203 {
+  display: grid;
+  gap: 10px;
+}
+
+.schedule-progress-room-group018203 {
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 5px 18px rgba(15, 23, 42, 0.035);
+}
+
+.schedule-progress-room-group018203.is-pending {
+  border-color: #e2e8f0;
+}
+
+.schedule-progress-room-group018203.is-partial {
+  border-color: #fde68a;
+  background: linear-gradient(90deg, rgba(255, 251, 235, 0.72), #ffffff 42%);
+}
+
+.schedule-progress-room-group018203.is-complete {
+  border-color: #bbf7d0;
+  background: linear-gradient(90deg, rgba(240, 253, 244, 0.76), #ffffff 42%);
+}
+
+.schedule-progress-room-group-head018203 {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 34px minmax(190px, 1.35fr) minmax(130px, 0.8fr) auto 28px;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 0;
+  background: transparent;
+  color: #0f172a;
+  text-align: left;
+  cursor: pointer;
+}
+
+.schedule-progress-room-group-head018203:hover {
+  background: rgba(240, 249, 255, 0.72);
+}
+
+.schedule-progress-room-group-main018203,
+.schedule-progress-room-group-media018203 {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.schedule-progress-room-group-main018203 strong {
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.schedule-progress-room-group-main018203 small,
+.schedule-progress-room-group-media018203 small {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.schedule-progress-room-group-media018203 {
+  color: #334155;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.schedule-progress-room-group-badge018203 {
+  justify-self: end;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.schedule-progress-room-group-badge018203.is-partial {
+  background: #fef3c7;
+  color: #a16207;
+}
+
+.schedule-progress-room-group-badge018203.is-complete {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.schedule-progress-room-chevron018203 {
+  display: grid;
+  place-items: center;
+  color: #0284c7;
+  font-size: 20px;
+  font-weight: 900;
+  transition: transform 0.18s ease;
+}
+
+.schedule-progress-room-group018203.is-expanded .schedule-progress-room-chevron018203 {
+  transform: rotate(180deg);
+}
+
+.schedule-progress-room-sites018203 {
+  display: grid;
+  gap: 8px;
+  padding: 0 12px 12px 58px;
+  border-top: 1px solid rgba(226, 232, 240, 0.82);
+  background: rgba(248, 250, 252, 0.72);
+}
+
+.schedule-progress-site-row018203 {
+  margin-top: 10px;
+  box-shadow: none;
+}
+
+.schedule-progress-site-row018203 + .schedule-progress-site-row018203 {
+  margin-top: 0;
+}
+
 @media (max-width: 760px) {
   .schedule-progress-backdrop018202 {
     padding: 8px;
@@ -21262,6 +21479,27 @@ button:disabled {
   .schedule-progress-room-enter018202 {
     grid-column: 3;
     grid-row: 1;
+  }
+
+  .schedule-progress-room-group-head018203 {
+    grid-template-columns: 32px minmax(0, 1fr) 24px;
+    gap: 9px;
+    padding: 13px;
+  }
+
+  .schedule-progress-room-group-media018203,
+  .schedule-progress-room-group-badge018203 {
+    grid-column: 2 / -1;
+    justify-self: start;
+  }
+
+  .schedule-progress-room-chevron018203 {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .schedule-progress-room-sites018203 {
+    padding: 0 8px 8px 20px;
   }
 }
 
