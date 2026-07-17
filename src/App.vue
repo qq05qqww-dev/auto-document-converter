@@ -1,3 +1,5 @@
+<!-- 第 018-205 批：純金額價格列＋外送精準價格對照＋文件1斜線保留修正版 -->
+<!-- batch018-205-standalone-amount-price-mapping-and-source-slash-preserve-fix -->
 <!-- 第 018-204 批：定點／外送＋國籍＋精準價格對照表／機房範圍套用版 -->
 <!-- batch018-204-mode-country-exact-price-mapping-by-scope -->
 <!-- 第 018-203 批：今日班表進度同機房集中／據點展開／未更新優先版 -->
@@ -1509,7 +1511,6 @@
           v-model="sourceText"
           class="work-textarea"
           placeholder="請貼上店家最新資訊。系統會先清掉符號，再抓國籍+小姐名或小姐名+國籍。"
-          @input="normalizeSourceSlashSpaces"
           @paste="handleSourceTextPaste"
         ></textarea>
 
@@ -2165,29 +2166,21 @@ const DEFAULT_MANAGER_SCOPE_TYPE = '定點'
 const CLEAN_START_PANEL_STORAGE_KEY = 'auto-document-converter-clean-start-panel-always-clean-home'
 const ONLINE_READY_VERSION_LABEL = '第 018-126 批：中央媒體來源統一與前後台數量同步修正版'
 const PROTECTED_GLOBAL_RULE_NOTICE = '公版規則已固定保護，不會被清除；若遺失會自動補回預設公版。'
-const SOURCE_SLASH_SPACE_NOTICE = '文件1已啟用斜線自動轉空格，貼上後 / 與 ／ 會自動變成空格。'
-const SOURCE_PASTE_TWO_BLANK_LINES_NOTICE = '文件1貼上後已自動在底部保留兩行空白，方便直接接著貼下一筆資料。'
+const SOURCE_PASTE_TWO_BLANK_LINES_NOTICE = '文件1貼上後已自動在底部保留兩行空白；斜線 / 與 ／ 會保留原樣。'
 const STAFF_PROFILE_STORAGE_KEY = 'auto-document-converter-current-staff-profile'
 const STAFF_DEFAULT_NAME = '未登入使用者'
 const ONLINE_OPTIONS_SCOPE = { city: '__OPTIONS__', district: '__OPTIONS__', mode: '定點', room: '__OPTIONS__' }
 const ONLINE_OPTIONS_KIND = 'employee_location_options_v1'
 
 
-function normalizeSourceTextSlashes(text = '') {
-  return String(text || '').replace(/[\/／]+/g, ' ')
-}
-
-function normalizeSourceSlashSpaces() {
-  const normalized = normalizeSourceTextSlashes(sourceText.value)
-  if (normalized !== sourceText.value) {
-    sourceText.value = normalized
-    statusMessage.value = SOURCE_SLASH_SPACE_NOTICE
-  }
-}
-
+// 第 018-205 批：文件1是原始資料編輯區，不能在輸入階段把 / 或 ／ 改成空格。
+// 斜線可能是價格格式、服務分隔、國籍代碼或店家原文的一部分；
+// 僅在後續解析副本中按各解析規則正規化，不回寫並破壞使用者看到的文件1。
 function normalizeSourceTextAfterPaste(text = '') {
-  const normalized = normalizeSourceTextSlashes(text)
+  const normalized = String(text || '')
     .replace(/\r\n?/g, '\n')
+    .replace(/[\u0085\u2028\u2029]/g, '\n')
+    .replace(/[\u000B\u000C]/g, '\n')
     .replace(/[ \t]+$/gm, '')
   return ensureSourceTextBottomBlankLines(normalized)
 }
@@ -2887,12 +2880,6 @@ function resetStaffProfile() {
   switchStaffProfile()
 }
 
-watch(sourceText, value => {
-  const normalized = normalizeSourceTextSlashes(value)
-  if (normalized !== value) {
-    sourceText.value = normalized
-  }
-})
 const showAdvancedSettings = ref(false)
 const showPriceSettings = ref(false)
 const showFormatSettings = ref(false)
@@ -8110,17 +8097,32 @@ async function submitDocument4ToApi() {
 }
 
 function parsePriceTextToObject(priceText) {
-  const match = String(priceText || '').match(/^([0-9]+(?:\.[0-9]+)?)K\/(\d+)\/(NS|\d+S)$/i)
-  if (!match) return null
+  const value = String(priceText || '').trim()
+  const match = value.match(/^([0-9]+(?:\.[0-9]+)?)K\/(\d+)\/(NS|\d+S)$/i)
+  if (match) {
+    const sessionLabel = normalizePriceSessionLabel(match[3])
 
-  const sessionLabel = normalizePriceSessionLabel(match[3])
+    return {
+      priceText: value,
+      price: Math.round(Number(match[1]) * 1000),
+      minutes: Number(match[2]),
+      sessions: sessionLabel === 'NS' ? null : Number(sessionLabel.replace(/S$/i, '')),
+      sessionLabel
+    }
+  }
+
+  // 第 018-205 批：外送來源常只提供單一總金額，沒有分鐘與節數。
+  // 例：4000、7500 經文件2正規化後分別為 4K、7.5K。
+  // 這類仍是正式價格，只是 minutes / sessions 為空；中央網站保存 priceText 即可正常顯示。
+  const standaloneMatch = value.match(/^([0-9]+(?:\.[0-9]+)?)K$/i)
+  if (!standaloneMatch) return null
 
   return {
-    priceText,
-    price: Math.round(Number(match[1]) * 1000),
-    minutes: Number(match[2]),
-    sessions: sessionLabel === 'NS' ? null : Number(sessionLabel.replace(/S$/i, '')),
-    sessionLabel
+    priceText: value,
+    price: Math.round(Number(standaloneMatch[1]) * 1000),
+    minutes: null,
+    sessions: null,
+    sessionLabel: ''
   }
 }
 
@@ -10098,6 +10100,33 @@ function parsePrices(text, increase, priceContext = {}) {
   const seen = new Set()
   const lines = normalizeDigits(String(text || '')).split('\n')
 
+  const pushStandaloneAmountPrice = amount => {
+    const rawAmount = Number(amount || 0)
+    if (!rawAmount || rawAmount < 1000 || rawAmount > 100000) return
+
+    // 第 018-205 批：純金額也要先套用第 018-204 的「類型＋國籍」精準價格表。
+    // 命中時右側金額即為最終價格；未命中則依該設定的 fallback 回到原規則或維持原價。
+    const exactMapping = resolveExactPriceMapping018204(rawAmount, priceContext)
+    const finalAmount = exactMapping.matched
+      ? exactMapping.amount
+      : exactMapping.useRaw
+        ? rawAmount
+        : resolveFinalAmount(rawAmount, increase)
+
+    if (!finalAmount || finalAmount < 1000 || finalAmount > 1000000) return
+    const text = formatAmount(finalAmount)
+    const key = `standalone/${text}`
+    if (seen.has(key)) return
+    seen.add(key)
+
+    results.push({
+      minutes: Number.MAX_SAFE_INTEGER,
+      sessionSort: Number.MAX_SAFE_INTEGER,
+      sessionLabel: '',
+      text
+    })
+  }
+
   const pushPrice = (minutes, sessionCount, amount, options = {}) => {
     const min = Number(minutes)
     const sessionLabel = normalizePriceSessionLabel(sessionCount || '1S')
@@ -10125,11 +10154,29 @@ function parsePrices(text, increase, priceContext = {}) {
   }
 
   lines.forEach(line => {
-    const normalized = line
+    const normalized = collapseSpacedSingleDigitAmounts(line)
       .replace(/[：]/g, ':')
       .replace(/[／]/g, '/')
       .replace(/　/g, ' ')
       .trim()
+
+    // 第 018-205 批：支援外送常見「單獨一行只有總金額」的正式方案。
+    // 例：4000、4 0 0 0、4,000、NT$4000、4000元、價格 4000。
+    // 純金額沒有分鐘／節數，文件2會輸出 4K；若第 018-204 精準價格表有 4000=6000，則輸出 6K。
+    // 整行必須只包含價格標籤與單一金額，且限制 1000～100000，避免身材、年齡、電話或服務加價誤判。
+    const standaloneAmountText = normalized
+      .replace(/^(?:價格|價錢|金額|費用|外送價|定點價)\s*[:：]?\s*/i, '')
+      .replace(/^(?:NTD|NT\$|TWD|\$)\s*/i, '')
+      .replace(/\s*(?:元|塊)\s*$/i, '')
+      .replace(/[,，]/g, '')
+      .trim()
+    if (/^\d{4,6}$/.test(standaloneAmountText)) {
+      const amount = Number(standaloneAmountText)
+      if (amount >= 1000 && amount <= 100000) {
+        pushStandaloneAmountPrice(amount)
+        return
+      }
+    }
 
     // 第 018-182 批：支援「底價金額在前＋分鐘＋裸節數」。
     // 例：底2700 30 1、底3200 50 1。最後一欄 1 會正規化為 1S。
