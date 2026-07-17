@@ -1,3 +1,5 @@
+<!-- 第 018-194 批：同一行多組「分鐘＋底價」正式方案逐組解析修正版 -->
+<!-- batch018-194-multiple-minute-bottom-price-pairs-per-line-fix -->
 <!-- 第 018-193 批：雙飛對象固定置於一般服務末端／加值服務前方版 -->
 <!-- batch018-193-double-fly-before-addon-service-order -->
 <!-- 第 018-192 批：Unicode 行／段落分隔符正規化與多小姐切筆恢復版 -->
@@ -9291,6 +9293,50 @@ function parsePrices(text, increase) {
 
       if (amount >= 1000 && amount <= 50000 && minutes >= 10 && minutes <= 180) {
         pushPrice(minutes, sessionCount, amount)
+        return
+      }
+    }
+
+    // 第 018-194 批：支援同一行連續多組「分鐘＋底價」方案。
+    // 例：30 25底 50 28底、30分 25底／50分 28底、30 1S 25底 50 1S 28底。
+    // 舊流程每行只做一次完整匹配，這類多方案同行格式無法進入正式價格陣列。
+    // 現在先逐組擷取，且要求整行扣除方案與允許分隔符後不得殘留其他文字，
+    // 避免把一般備註中的分鐘或金額片段誤判為價格。
+    const multiMinuteBottomPairPattern = /(\d{2,3})\s*(?:分鐘|分)?\s*(?:(NS|N\s*\/?\s*S|\d+\s*S)\s*)?([0-9]+(?:\.[0-9]+)?)\s*底(?:價)?/gi
+    const multiMinuteBottomPairs = []
+    let multiMinuteBottomPairMatch
+
+    while ((multiMinuteBottomPairMatch = multiMinuteBottomPairPattern.exec(normalized)) !== null) {
+      multiMinuteBottomPairs.push({
+        fullText: multiMinuteBottomPairMatch[0],
+        minutes: Number(multiMinuteBottomPairMatch[1]),
+        sessionCount: multiMinuteBottomPairMatch[2] || '1S',
+        amount: parseBottomPriceAmount(multiMinuteBottomPairMatch[3])
+      })
+
+      // 防止極端情況下零長度匹配造成迴圈停不下來。
+      if (multiMinuteBottomPairPattern.lastIndex === multiMinuteBottomPairMatch.index) {
+        multiMinuteBottomPairPattern.lastIndex += 1
+      }
+    }
+
+    if (multiMinuteBottomPairs.length >= 2) {
+      const unmatchedText = normalized
+        .replace(multiMinuteBottomPairPattern, ' ')
+        .replace(/(?:快餐|短[鐘鍾]|長[鐘鍾])/gi, ' ')
+        .replace(/[\s,，、;；|／/＋+]+/g, '')
+
+      const allPairsValid = multiMinuteBottomPairs.every(pair => (
+        pair.minutes >= 10 &&
+        pair.minutes <= 180 &&
+        pair.amount >= 1000 &&
+        pair.amount <= 50000
+      ))
+
+      if (!unmatchedText && allPairsValid) {
+        multiMinuteBottomPairs.forEach(pair => {
+          pushPrice(pair.minutes, pair.sessionCount, pair.amount)
+        })
         return
       }
     }
