@@ -1,4 +1,6 @@
 <!-- 第 018-198 批：媒體下拉「本次已上傳」改用實際本頁上傳紀錄，排除文件3新增狀態與暫時 ID 誤判 -->
+<!-- 第 018-199 批：姓名前置 VN／SG／TW／MY 國籍代碼通用辨識修正版 -->
+<!-- batch018-199-country-code-prefix-header-nationality-fix -->
 <!-- batch018-198-media-session-upload-status-actual-record-fix -->
 <!-- 第 018-197 批：馬妹冒號小姐標題與馬來縮寫國籍通用辨識修正版 -->
 <!-- batch018-197-malaysia-ma-girl-colon-header-recognition-fix -->
@@ -3195,6 +3197,31 @@ const COUNTRY_CODE_SUFFIX_MAP_018184 = new Map([
   ['MY', '馬來']
 ])
 
+// 第 018-199 批：支援國籍代碼寫在小姐姓名前面。
+// 例：VN/小米悠、vn小米悠、SG：凱莉、TW-小荳荳、MY 樂樂。
+// 只抓代碼後第一段明確姓名；遇到空白、表情符號、身材或宣傳描述即停止，
+// 避免把「VN/小米悠👉蘿莉小馬抱著搖」整段誤當成姓名。
+function parseCountryCodePrefixHeaderLine(line) {
+  const source = normalizeCountryCodeGlyphs018184(normalizeDigits(String(line || ''))).normalize('NFKC').trim()
+  if (!source) return null
+
+  const match = source.match(
+    /^\s*(TW|SG|VN|MY)\s*(?:[\/／:：\-—_｜|]\s*)?([\u4e00-\u9fa5A-Za-z0-9]{1,18})(?=$|[^\u4e00-\u9fa5A-Za-z0-9])/i
+  )
+  if (!match) return null
+
+  const code = String(match[1] || '').toUpperCase()
+  const country = COUNTRY_CODE_SUFFIX_MAP_018184.get(code) || ''
+  const name = cleanName(match[2])
+  if (!country || !isValidName(name)) return null
+
+  return {
+    country,
+    name,
+    matchedRule: `前置國籍代碼 ${code}`
+  }
+}
+
 // 第 018-182 批：支援小姐名稱尾端直接接國籍代碼，且同一行後面緊接身材。
 // 例：饅頭TW❤️155 45 C 19Y、凱莉SG❤️156 46 E 22Y、樂樂VN❤️165 49 C。
 // 只有代碼位於姓名尾端，且後方是明確 3 位身高或整行結束時才命中，
@@ -3230,6 +3257,9 @@ function parseCountryCodeSuffixHeaderLine(line) {
 function parseStructuredHeaderSameLine(line, rules = getHeaderRulesForCurrentParse()) {
   const cleaned = normalizeHeaderText(line)
   if (!cleaned) return null
+
+  const countryCodePrefixHeader = parseCountryCodePrefixHeaderLine(line)
+  if (countryCodePrefixHeader) return countryCodePrefixHeader
 
   const countryCodeSuffixHeader = parseCountryCodeSuffixHeaderLine(line)
   if (countryCodeSuffixHeader) return countryCodeSuffixHeader
