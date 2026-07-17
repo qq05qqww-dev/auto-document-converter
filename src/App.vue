@@ -1,3 +1,5 @@
+<!-- 第 018-201 批：登入帳號工作區縣市／地區只顯示已建立機房範圍版 -->
+<!-- batch018-201-account-configured-city-district-dropdown-filter -->
 <!-- 第 018-200 批：網站後台調派後重新整理中央位置、地區與機房媒體進度同步版 -->
 <!-- batch018-200-central-location-refresh-room-status-sync -->
 <!-- 第 018-198 批：媒體下拉「本次已上傳」改用實際本頁上傳紀錄，排除文件3新增狀態與暫時 ID 誤判 -->
@@ -295,7 +297,7 @@
             <strong>{{ ruleScopeRoom || '未選機房' }}</strong>
           </div>
           <div class="top-settings-modal-head-actions">
-            <div class="scope-status-pill">{{ currentStaffName }} 已建立：{{ locationCities.length }} 縣市 / {{ totalDistrictCount }} 地區 / {{ totalRoomCount }} 機房</div>
+            <div class="scope-status-pill">{{ currentStaffName }} 已建立：{{ accountWorkingCities018201.length }} 縣市 / {{ accountWorkingDistrictCount018201 }} 地區 / {{ totalRoomCount }} 機房</div>
             <button
               class="ghost-btn scope-central-refresh-btn-018200"
               type="button"
@@ -314,7 +316,7 @@
               縣市 / 國籍
               <select v-model="managerSelectedCity">
                 <option value="">請選縣市</option>
-                <option v-for="city in locationCities" :key="city" :value="city">{{ city }}</option>
+                <option v-for="city in accountWorkingCities018201" :key="city" :value="city">{{ city }}</option>
               </select>
             </label>
 
@@ -324,7 +326,7 @@
                 <option v-if="isManagerOutsideDelivery" :value="OUTSIDE_DELIVERY_SCOPE_DISTRICT">外送免選地區</option>
                 <option v-else value="">請選地區</option>
                 <template v-if="!isManagerOutsideDelivery">
-                  <option v-for="district in managerDistricts" :key="district" :value="district">{{ district }}</option>
+                  <option v-for="district in accountWorkingDistricts018201" :key="district" :value="district">{{ district }}</option>
                 </template>
               </select>
             </label>
@@ -11246,6 +11248,86 @@ const locationOptions = ref(readLocationOptions())
 
 const locationCities = computed(() => locationOptions.value.cities)
 const locationTypes = computed(() => locationOptions.value.types)
+
+// 第 018-201 批：上方日常工作區只顯示目前登入帳號實際建立過機房的縣市／地區。
+// 公版全台縣市與地區仍保留在「管理清單」內，讓帳號可以繼續新增工作範圍；
+// 不再把公版 22 縣市直接塞入日常轉換下拉，避免員工看到不屬於自己的區域。
+function parseAccountRoomScopeKey018201(rawKey) {
+  const parts = String(rawKey || '').split('__')
+  if (parts.length < 3) return null
+  const city = cleanScopeText(parts[0])
+  const district = cleanScopeText(parts[1])
+  const type = cleanScopeText(parts.slice(2).join('__'))
+  if (!city || !district || !type) return null
+  return { city, district, type }
+}
+
+const accountConfiguredRoomScopes018201 = computed(() => {
+  const rooms = locationOptions.value?.rooms && typeof locationOptions.value.rooms === 'object'
+    ? locationOptions.value.rooms
+    : {}
+  const rows = []
+
+  Object.entries(rooms).forEach(([scopeKey, roomList]) => {
+    const activeRooms = Array.isArray(roomList)
+      ? roomList.map(cleanScopeText).filter(Boolean)
+      : []
+    if (!activeRooms.length) return
+
+    const scope = parseAccountRoomScopeKey018201(scopeKey)
+    if (!scope) return
+    rows.push({ ...scope, roomCount: activeRooms.length })
+  })
+
+  return rows
+})
+
+const accountWorkingCities018201 = computed(() => {
+  const configured = new Set(accountConfiguredRoomScopes018201.value.map(row => row.city))
+  const ordered = Array.isArray(locationOptions.value?.cities) ? locationOptions.value.cities : []
+  const fromOptions = ordered.map(cleanScopeText).filter(city => configured.has(city))
+  const missing = [...configured].filter(city => !fromOptions.includes(city))
+  return [...new Set([...fromOptions, ...missing])]
+})
+
+const accountWorkingDistricts018201 = computed(() => {
+  const city = cleanScopeText(managerSelectedCity.value)
+  const type = cleanScopeText(managerSelectedType.value)
+  if (!city || isOutsideDeliveryType(type)) return []
+
+  const configured = new Set(
+    accountConfiguredRoomScopes018201.value
+      .filter(row => row.city === city && (!type || row.type === type))
+      .map(row => row.district)
+      .filter(district => district && district !== OUTSIDE_DELIVERY_SCOPE_DISTRICT)
+  )
+
+  // 若目前類型尚未建立地區，但同一縣市其他類型已有工作範圍，仍顯示帳號已建立的地區，
+  // 讓使用者可以先選地區再切換類型；最終機房清單仍按縣市＋地區＋類型精確過濾。
+  if (!configured.size) {
+    accountConfiguredRoomScopes018201.value
+      .filter(row => row.city === city)
+      .map(row => row.district)
+      .filter(district => district && district !== OUTSIDE_DELIVERY_SCOPE_DISTRICT)
+      .forEach(district => configured.add(district))
+  }
+
+  const ordered = Array.isArray(locationOptions.value?.districts?.[city])
+    ? locationOptions.value.districts[city]
+    : []
+  const fromOptions = ordered.map(cleanScopeText).filter(district => configured.has(district))
+  const missing = [...configured].filter(district => !fromOptions.includes(district))
+  return [...new Set([...fromOptions, ...missing])]
+})
+
+const accountWorkingDistrictCount018201 = computed(() => {
+  const keys = new Set()
+  accountConfiguredRoomScopes018201.value.forEach(row => {
+    if (!row.city || !row.district || row.district === OUTSIDE_DELIVERY_SCOPE_DISTRICT) return
+    keys.add(`${row.city}__${row.district}`)
+  })
+  return keys.size
+})
 const scopeDistricts = computed(() => {
   const city = cleanScopeText(ruleScopeCity.value)
   return locationOptions.value.districts?.[city] || []
@@ -11362,11 +11444,15 @@ function resolveStoredScopeSelection(scope) {
   const district = normalized?.district || ''
   const room = normalized?.room || ''
 
-  const validCity = city && locationCities.value.includes(city) ? city : ''
+  const validCity = city && accountWorkingCities018201.value.includes(city) ? city : ''
   const validType = locationTypes.value.includes(type) ? type : getDefaultManagerScopeType()
   const validDistrict = isOutsideDeliveryType(validType)
     ? OUTSIDE_DELIVERY_SCOPE_DISTRICT
-    : (validCity && (locationOptions.value.districts?.[validCity] || []).includes(district) ? district : '')
+    : (validCity && accountConfiguredRoomScopes018201.value.some(row => (
+        row.city === validCity &&
+        row.district === district &&
+        row.type === validType
+      )) ? district : '')
   const roomKey = `${validCity}__${validDistrict}__${validType}`
   const validRoom = validCity && validDistrict && validType && (locationOptions.value.rooms?.[roomKey] || []).includes(room) ? room : ''
 
@@ -12002,6 +12088,30 @@ function renameLocationRoom(room) {
   selectRoomForManagement(next)
   statusMessage.value = `已修改機房：${targetRoom} → ${next}`
 }
+
+watch(accountWorkingCities018201, cities => {
+  if (isRestoringLastScopeSelection) return
+  const currentCity = cleanScopeText(managerSelectedCity.value)
+  if (!currentCity || cities.includes(currentCity)) return
+
+  managerSelectedCity.value = ''
+  managerSelectedDistrict.value = ''
+  ruleScopeCity.value = ''
+  ruleScopeDistrict.value = ''
+  ruleScopeRoom.value = ''
+  syncRuleScopeLevelFromSelection()
+}, { deep: true })
+
+watch(accountWorkingDistricts018201, districts => {
+  if (isRestoringLastScopeSelection || isOutsideDeliveryType(managerSelectedType.value)) return
+  const currentDistrict = cleanScopeText(managerSelectedDistrict.value)
+  if (!currentDistrict || districts.includes(currentDistrict)) return
+
+  managerSelectedDistrict.value = ''
+  ruleScopeDistrict.value = ''
+  ruleScopeRoom.value = ''
+  syncRuleScopeLevelFromSelection()
+}, { deep: true })
 
 watch(managerSelectedCity, value => {
   if (isRestoringLastScopeSelection) return
