@@ -1,3 +1,5 @@
+<!-- 第 018-200 批：網站後台調派後重新整理中央位置、地區與機房媒體進度同步版 -->
+<!-- batch018-200-central-location-refresh-room-status-sync -->
 <!-- 第 018-198 批：媒體下拉「本次已上傳」改用實際本頁上傳紀錄，排除文件3新增狀態與暫時 ID 誤判 -->
 <!-- 第 018-199 批：姓名前置 VN／SG／TW／MY 國籍代碼通用辨識修正版 -->
 <!-- batch018-199-country-code-prefix-header-nationality-fix -->
@@ -294,6 +296,14 @@
           </div>
           <div class="top-settings-modal-head-actions">
             <div class="scope-status-pill">{{ currentStaffName }} 已建立：{{ locationCities.length }} 縣市 / {{ totalDistrictCount }} 地區 / {{ totalRoomCount }} 機房</div>
+            <button
+              class="ghost-btn scope-central-refresh-btn-018200"
+              type="button"
+              :disabled="isCentralRoomLocationRefreshing"
+              @click="refreshCentralRoomLocationStatus018200"
+            >
+              {{ isCentralRoomLocationRefreshing ? '同步中...' : '重新整理中央位置' }}
+            </button>
             <span class="scope-fixed-pill">固定顯示</span>
           </div>
         </div>
@@ -1983,6 +1993,11 @@ const localUploadedMediaByLadyId = ref({})
 // 第 018-198 批：獨立保存『本頁實際完成上傳』的媒體，不再拿文件3同步或共用本機媒體快取判定。
 const mediaUploadedThisSessionByLadyKey = ref({})
 const centralWebsiteMediaByLadyKey = ref({})
+// 第 018-200 批：保存 01 中央主檔最新縣市／地區／類型／機房與媒體統計。
+// 只記錄目前文件3／文件4正在處理的小姐，不讀取全部中央小姐名單。
+const centralWebsiteLocationByListingId = ref({})
+const centralWebsiteLocationCoverageScopeKeys = ref({})
+const isCentralRoomLocationRefreshing = ref(false)
 // 第 018-126 批：媒體顯示以 01 中央網站 listing_media 為權威來源；converter 本機來源只當未查到中央媒體前的 fallback。
 // 第 018-125 批：媒體刪除來源統一。中央網站刪除後，不再呼叫不存在的 02 converter 刪除端點，改用本機抑制避免 404 與回彈。
 const DELETED_MEDIA_SUPPRESSION_STORAGE_KEY = 'auto-document-converter-deleted-media-suppression-batch018-124'
@@ -2572,7 +2587,8 @@ async function reloadCurrentProfile() {
   const profile = await loadAuthProfile(authUser.value)
   applyAuthenticatedProfile(authUser.value, profile)
   await loadOnlineWorkspace({ silent: true })
-  statusMessage.value = '已重新讀取目前登入身份與線上個人工作區。'
+  await loadFrontendLadies({ silent: true, refresh: true })
+  statusMessage.value = '已重新讀取登入身份、線上個人工作區與中央最新縣市／地區／機房位置。'
 }
 
 function getStaffStorageSuffix() {
@@ -5443,6 +5459,140 @@ async function bindUploadedMediaDirectlyToCentralWebsite(ladyId, mediaItems = []
   return data
 }
 
+function makeCentralLocationSnapshotScopeKey018200(snapshot = {}) {
+  return makeRoomDailyScopeKey({
+    city: snapshot.city,
+    district: snapshot.district,
+    mode: snapshot.environment || snapshot.mode,
+    room: snapshot.room,
+  })
+}
+
+function rememberCentralWebsiteLocationSnapshot018200(data = {}, lady = null, mediaItems = []) {
+  const listingId = String(
+    data?.centralListingId ||
+    data?.listingId ||
+    getCentralListingIdHint(lady) ||
+    lady?.centralListingId ||
+    lady?.listingId ||
+    '',
+  ).trim()
+  if (!listingId) return null
+
+  const media = Array.isArray(mediaItems) ? mediaItems.filter(item => item?.url) : []
+  const imageCount = Number.isFinite(Number(data?.imageCount))
+    ? Math.max(0, Number(data.imageCount))
+    : media.filter(item => String(item?.mediaType || item?.media_type || '').toLowerCase() !== 'video').length
+  const videoCount = Number.isFinite(Number(data?.videoCount))
+    ? Math.max(0, Number(data.videoCount))
+    : media.filter(item => String(item?.mediaType || item?.media_type || '').toLowerCase() === 'video').length
+  const mediaCount = Number.isFinite(Number(data?.mediaCount))
+    ? Math.max(0, Number(data.mediaCount))
+    : media.length
+  const environment = cleanScopeText(data?.environment || data?.mode || lady?.environment || lady?.mode)
+  const district = isOutsideDeliveryType(environment)
+    ? ''
+    : cleanScopeText(data?.district || lady?.district)
+  const snapshot = {
+    listingId,
+    centralListingId: listingId,
+    sourceId: cleanScopeText(data?.sourceId || lady?.sourceIdentity || lady?.sourceId),
+    name: cleanScopeText(data?.name || lady?.name),
+    nationality: cleanScopeText(data?.nationality || data?.country || lady?.country || lady?.nationality),
+    city: cleanScopeText(data?.city || lady?.city),
+    district,
+    environment,
+    mode: environment,
+    room: cleanScopeText(data?.room || lady?.room || lady?.sourceRoom),
+    locationTransferLocked: data?.locationTransferLocked === true,
+    mediaCount,
+    imageCount,
+    videoCount,
+    refreshedAt: new Date().toISOString(),
+  }
+  snapshot.scopeKey = makeCentralLocationSnapshotScopeKey018200(snapshot)
+
+  centralWebsiteLocationByListingId.value = {
+    ...centralWebsiteLocationByListingId.value,
+    [listingId]: snapshot,
+  }
+  return snapshot
+}
+
+function getCentralWebsiteLocationSnapshotForLady018200(lady = null) {
+  if (!lady) return null
+  const listingId = String(
+    getCentralListingIdHint(lady) ||
+    lady?.centralListingId ||
+    lady?.listingId ||
+    '',
+  ).trim()
+  return listingId ? centralWebsiteLocationByListingId.value[listingId] || null : null
+}
+
+function mergeCentralLocationRoomsIntoPersonalOptions018200() {
+  const snapshots = Object.values(centralWebsiteLocationByListingId.value || {}).filter(Boolean)
+  if (!snapshots.length) return false
+
+  const nextRooms = Object.fromEntries(
+    Object.entries(locationOptions.value?.rooms || {}).map(([key, rooms]) => [
+      key,
+      Array.isArray(rooms) ? [...rooms] : [],
+    ]),
+  )
+  let changed = false
+
+  snapshots.forEach(snapshot => {
+    const city = cleanScopeText(snapshot.city)
+    const mode = cleanScopeText(snapshot.environment || snapshot.mode)
+    const district = resolveScopeDistrictForType(snapshot.district, mode)
+    const room = cleanScopeText(snapshot.room)
+    if (!city || !district || !mode || !room) return
+    const key = `${city}__${district}__${mode}`
+    const list = Array.isArray(nextRooms[key]) ? nextRooms[key] : []
+    if (!list.includes(room)) {
+      nextRooms[key] = [...list, room]
+      changed = true
+    }
+  })
+
+  if (!changed) return false
+  locationOptions.value = normalizeLocationOptions({
+    ...locationOptions.value,
+    rooms: nextRooms,
+  })
+  writeLocationOptions(locationOptions.value)
+  if (isOnlineWorkspaceReady()) {
+    void saveLocationOptionsOnline(locationOptions.value, { silent: true })
+  }
+  return true
+}
+
+async function refreshCentralRoomLocationStatus018200() {
+  if (isCentralRoomLocationRefreshing.value) return false
+  isCentralRoomLocationRefreshing.value = true
+  statusMessage.value = '正在重新讀取中央網站最新縣市、地區、機房與媒體進度...'
+
+  try {
+    const loaded = await loadFrontendLadies({
+      silent: true,
+      refresh: true,
+      skipCentralMediaRefresh: false,
+    })
+    if (!loaded) throw new Error(frontendStatusText.value || '中央資料讀取失敗')
+    statusMessage.value = '已重新整理中央位置：後台調派後的縣市、地區、機房與媒體進度已同步；今日文件3紀錄仍保留在原儲存範圍。'
+    showActionToast('中央位置與媒體進度已重新整理。', 'success')
+    return true
+  } catch (error) {
+    const message = `重新整理中央位置失敗：${error.message || error}`
+    statusMessage.value = message
+    showActionToast(message, 'error')
+    return false
+  } finally {
+    isCentralRoomLocationRefreshing.value = false
+  }
+}
+
 async function fetchCentralWebsiteMediaForLady(lady, options = {}) {
   if (!lady) return []
 
@@ -5470,6 +5620,9 @@ async function fetchCentralWebsiteMediaForLady(lady, options = {}) {
 
   if (!response.ok || data.ok === false) {
     if (options.allowMissing && [404, 409].includes(Number(response.status || 0))) {
+      if (options.requireLocation === true) {
+        throw new Error(data.message || `中央主檔位置尚未能唯一確認：HTTP ${response.status}`)
+      }
       return []
     }
     throw new Error(data.message || data.error || `讀取中央網站媒體清單失敗：HTTP ${response.status}`)
@@ -5481,21 +5634,43 @@ async function fetchCentralWebsiteMediaForLady(lady, options = {}) {
     rememberCentralListingIdHint(lady, centralListingId)
   }
 
-  const serverMedia = mergeMediaRecords([], data?.data?.media || data?.media || [])
+  const responseData = data?.data || data || {}
+  const serverMedia = mergeMediaRecords([], responseData?.media || data?.media || [])
+  rememberCentralWebsiteLocationSnapshot018200(responseData, previewLady || lady, serverMedia)
   setCentralWebsiteMediaForLady(lady, serverMedia, previewLady)
   return serverMedia
 }
 
 async function refreshCentralWebsiteMediaForCurrentDocument(options = {}) {
   const ladies = currentDocumentPreviewLadies.value
-  if (!Array.isArray(ladies) || !ladies.length) return { total: 0, refreshed: 0, failed: 0 }
+  if (!Array.isArray(ladies) || !ladies.length) {
+    centralWebsiteLocationByListingId.value = {}
+    centralWebsiteLocationCoverageScopeKeys.value = {}
+    return { total: 0, refreshed: 0, failed: 0 }
+  }
+
+  // 每次只保留目前文件3／文件4的中央位置快照，避免上一批小姐殘留影響機房統計。
+  centralWebsiteLocationByListingId.value = {}
+  centralWebsiteLocationCoverageScopeKeys.value = {}
 
   let refreshed = 0
   let failed = 0
+  const originalScopeKeys = new Set()
+  ladies.slice(0, 80).forEach(lady => {
+    const key = makeRoomDailyScopeKey({
+      city: lady?.sourceCity || lady?.city,
+      district: lady?.sourceDistrict || lady?.district,
+      mode: lady?.sourceMode || lady?.mode || lady?.environment,
+      room: lady?.sourceRoom || lady?.room,
+    })
+    if (key) originalScopeKeys.add(key)
+  })
+
   for (const lady of ladies.slice(0, 80)) {
     try {
       await fetchCentralWebsiteMediaForLady(lady, {
         allowMissing: true,
+        requireLocation: true,
         timeoutMs: options.timeoutMs || 9000
       })
       refreshed += 1
@@ -5503,6 +5678,17 @@ async function refreshCentralWebsiteMediaForCurrentDocument(options = {}) {
       failed += 1
       if (!options.silent) console.warn('讀取中央網站媒體清單失敗：', error)
     }
+  }
+
+  if (failed === 0 && refreshed === Math.min(ladies.length, 80)) {
+    const coverage = {}
+    originalScopeKeys.forEach(key => { coverage[key] = true })
+    Object.values(centralWebsiteLocationByListingId.value || {}).forEach(snapshot => {
+      const key = makeCentralLocationSnapshotScopeKey018200(snapshot)
+      if (key) coverage[key] = true
+    })
+    centralWebsiteLocationCoverageScopeKeys.value = coverage
+    mergeCentralLocationRoomsIntoPersonalOptions018200()
   }
 
   return { total: ladies.length, refreshed, failed }
@@ -5523,6 +5709,24 @@ const currentDocumentPreviewLadies = computed(() => {
       const hintedDatabaseId = getDatabaseIdHint(item)
       const hintedCentralListingId = getCentralListingIdHint(item)
       const centralMediaSnapshot = getCentralWebsiteMediaSnapshotForLady(item, hintedDatabaseId)
+      const centralLocationSnapshot = getCentralWebsiteLocationSnapshotForLady018200({
+        ...item,
+        centralListingId: hintedCentralListingId,
+        listingId: hintedCentralListingId,
+      })
+      const effectiveCity = centralLocationSnapshot?.city || item.city || ''
+      const effectiveDistrict = centralLocationSnapshot?.district || item.district || ''
+      const effectiveMode = centralLocationSnapshot?.environment || centralLocationSnapshot?.mode || item.mode || ''
+      const effectiveRoom = centralLocationSnapshot?.room || item.room || item.sourceRoom || ''
+      const effectiveLocationInfo = {
+        ...(item.locationInfo || {}),
+        city: effectiveCity,
+        district: effectiveDistrict,
+        mode: effectiveMode,
+        room: effectiveRoom,
+        roomName: effectiveRoom,
+        locationTransferLocked: Boolean(centralLocationSnapshot?.locationTransferLocked),
+      }
 
       return {
         id: dbLady?.id || hintedDatabaseId || `current-document-${index + 1}`,
@@ -5531,14 +5735,18 @@ const currentDocumentPreviewLadies = computed(() => {
         isCurrentDocumentPreview: true,
         country: item.country || '',
         name: item.name || '',
-        city: item.city || '',
-        district: item.district || '',
-        mode: item.mode || '',
-        room: item.room || '',
-        sourceRoom: item.sourceRoom || '',
+        city: effectiveCity,
+        district: effectiveDistrict,
+        mode: effectiveMode,
+        environment: effectiveMode,
+        room: effectiveRoom,
+        sourceCity: item.city || '',
+        sourceDistrict: item.district || '',
+        sourceMode: item.mode || '',
+        sourceRoom: item.sourceRoom || item.room || '',
         sourceIdentity: item.sourceIdentity || makeStableLadySourceIdentity(item),
-        location: item.location || '',
-        locationInfo: item.locationInfo || {},
+        location: [effectiveCity, effectiveDistrict, effectiveMode, effectiveRoom].filter(Boolean).join(' / '),
+        locationInfo: effectiveLocationInfo,
         syncState: assessment.state,
         syncStateLabel: assessment.label,
         syncStateMessage: assessment.message,
@@ -7774,6 +7982,23 @@ function markCurrentRoomMediaChecked(options = {}) {
   })
 }
 
+function getCentralRoomMediaSummary018200(scope = {}) {
+  const key = makeRoomDailyScopeKey(scope)
+  if (!key || !centralWebsiteLocationCoverageScopeKeys.value?.[key]) return null
+
+  const snapshots = Object.values(centralWebsiteLocationByListingId.value || {})
+    .filter(snapshot => makeCentralLocationSnapshotScopeKey018200(snapshot) === key)
+  const mediaReadyCount = snapshots.filter(snapshot => Number(snapshot?.mediaCount || 0) > 0).length
+
+  return {
+    mediaReadyCount,
+    mediaTotalCount: snapshots.length,
+    imageCount: snapshots.reduce((sum, snapshot) => sum + Math.max(0, Number(snapshot?.imageCount || 0)), 0),
+    videoCount: snapshots.reduce((sum, snapshot) => sum + Math.max(0, Number(snapshot?.videoCount || 0)), 0),
+    refreshed: true,
+  }
+}
+
 function getRoomDailyStatus(room, scope = {}) {
   const location = {
     city: scope.city || managerSelectedCity.value || ruleScopeCity.value,
@@ -7784,6 +8009,7 @@ function getRoomDailyStatus(room, scope = {}) {
   const key = makeRoomDailyScopeKey(location)
   const record = key ? normalizeRoomDailyStatusStore(roomDailyStatusByScope.value)[key] : null
   const businessDayKey = getBusinessDayKey()
+  const centralSummary = getCentralRoomMediaSummary018200(location)
   const emptyStatus = {
     state: 'idle',
     shortLabel: '⚪ 今日尚未更新｜媒體 0/0',
@@ -7793,22 +8019,30 @@ function getRoomDailyStatus(room, scope = {}) {
     mediaComplete: false
   }
 
-  if (!record || record.businessDayKey !== businessDayKey) return emptyStatus
+  if ((!record || record.businessDayKey !== businessDayKey) && !centralSummary) return emptyStatus
 
-  const documentSaved = Boolean(record.documentSavedAt && getBusinessDayKey(record.documentSavedAt) === businessDayKey)
-  const totalCount = Math.max(Number(record.documentItemCount || 0), Number(record.mediaTotalCount || 0))
-  const readyCount = Math.min(totalCount || Number(record.mediaReadyCount || 0), Number(record.mediaReadyCount || 0))
+  const validRecord = record?.businessDayKey === businessDayKey ? record : {}
+  const documentSaved = Boolean(validRecord.documentSavedAt && getBusinessDayKey(validRecord.documentSavedAt) === businessDayKey)
+  const totalCount = centralSummary
+    ? Number(centralSummary.mediaTotalCount || 0)
+    : Math.max(Number(validRecord.documentItemCount || 0), Number(validRecord.mediaTotalCount || 0))
+  const readyCount = centralSummary
+    ? Math.min(totalCount, Number(centralSummary.mediaReadyCount || 0))
+    : Math.min(totalCount || Number(validRecord.mediaReadyCount || 0), Number(validRecord.mediaReadyCount || 0))
+  const imageCount = centralSummary ? Number(centralSummary.imageCount || 0) : Number(validRecord.imageCount || 0)
+  const videoCount = centralSummary ? Number(centralSummary.videoCount || 0) : Number(validRecord.videoCount || 0)
   const mediaProgress = totalCount > 0 ? `${readyCount}/${totalCount}` : '0/0'
   const mediaComplete = totalCount > 0 && readyCount >= totalCount
+  const centralRefreshText = centralSummary ? '｜中央位置已同步' : ''
 
   // 第 018-195 批：今日資料是否已更新，只以文件3成功儲存／同步資料庫為準。
-  // 圖片與影片完成度獨立顯示，不再阻擋機房被計入「今日資料已更新」。
+  // 第 018-200 批：媒體進度改讀 01 中央主檔的最新位置；調派後不搬移今日文件3歷史紀錄。
   if (documentSaved) {
-    const savedTime = formatRoomDailyStatusTime(record.documentSavedAt) || '今日'
+    const savedTime = formatRoomDailyStatusTime(validRecord.documentSavedAt) || '今日'
     return {
       state: 'complete',
       shortLabel: `✅ 今日資料已更新｜媒體 ${mediaProgress}`,
-      detail: `文件3已於 ${savedTime} 儲存並同步資料庫｜媒體 ${mediaProgress}｜圖 ${record.imageCount || 0}／影 ${record.videoCount || 0}`,
+      detail: `文件3已於 ${savedTime} 儲存並同步資料庫｜媒體 ${mediaProgress}｜圖 ${imageCount}／影 ${videoCount}${centralRefreshText}`,
       complete: true,
       documentSaved: true,
       mediaComplete
@@ -7818,7 +8052,7 @@ function getRoomDailyStatus(room, scope = {}) {
   return {
     state: 'idle',
     shortLabel: `⚪ 今日尚未更新｜媒體 ${mediaProgress}`,
-    detail: `今日尚未儲存文件3｜媒體 ${mediaProgress}｜圖 ${record.imageCount || 0}／影 ${record.videoCount || 0}`,
+    detail: `今日尚未儲存文件3｜媒體 ${mediaProgress}｜圖 ${imageCount}／影 ${videoCount}${centralRefreshText}`,
     complete: false,
     documentSaved: false,
     mediaComplete
