@@ -1,3 +1,5 @@
+<!-- 第 018-214 批：外送無國籍小姐自動顯示台妹修正版 -->
+<!-- batch018-214-outside-delivery-missing-country-default-taiwan-fix -->
 <!-- 第 018-213 批：老闆公版服務同義詞專屬恢復＋版面完整修正版 -->
 <!-- batch018-213-owner-global-service-alias-restore-layout-fix -->
 <!-- 第 018-212 批：服務同義詞誤覆蓋一鍵恢復上一份完整規則版 -->
@@ -9307,6 +9309,13 @@ function cleanupSourceText(text) {
   return normalizeLooseNameBodyCountryLines(normalizedLines)
 }
 
+function getMissingCountryFallback018214() {
+  // 第 018-214 批：只有目前工作區選擇「外送」時，來源未提供國籍的小姐才預設為台妹。
+  // 明確寫出的馬來／越南／泰妹／日妹等國籍仍維持原值；定點沿用既有預設，不受影響。
+  const mode = String(ruleScopeType.value || managerSelectedType.value || '').trim()
+  return mode === '外送' ? '台妹' : '馬來'
+}
+
 function normalizeLooseNameBodyCountryLines(text) {
   const lines = String(text || '').split('\n')
   let currentCountry = ''
@@ -9317,7 +9326,7 @@ function normalizeLooseNameBodyCountryLines(text) {
 
     const looseHeader = parseLooseNameBodyHeaderLine(line)
     if (looseHeader && !extractLooseCountryContext(line)) {
-      const country = currentCountry || '馬來'
+      const country = currentCountry || getMissingCountryFallback018214()
       return `${country} ${line}`.replace(/[ \t]+/g, ' ').trim()
     }
 
@@ -9523,7 +9532,7 @@ function analyzeRecordForPreview(block) {
   // 第 018-180 批：已成功辨識的小姐標題國籍必須優先。
   // 舊版讓整個區塊內任一服務字樣覆蓋標題，例如「馬來 乳媚妖」區塊含
   // 「泰國洗無水床+300」時，explicitCountry 會誤成泰妹。
-  const finalCountry = header?.country || explicitCountry || (header ? '馬來' : '')
+  const finalCountry = header?.country || explicitCountry || (header ? getMissingCountryFallback018214() : '')
   const parsedBody = parseBody(block)
   const headerAge = extractAgeFromHeaderLines(block, header, finalCountry)
   const body = parsedBody ? {
@@ -9681,7 +9690,7 @@ function parseNameOnlyRecord(block) {
     if (!isNameOnlyHeaderLine(line)) continue
 
     return {
-      country: extractCountryFromBlock(block) || '馬來',
+      country: extractCountryFromBlock(block) || getMissingCountryFallback018214(),
       name: cleanName(line)
     }
   }
