@@ -1,3 +1,5 @@
+<!-- 第 018-207 批：來源小姐價格支援 K／完整金額雙格式＋精準價格／區間加價 K 寫法通用版 -->
+<!-- batch018-207-source-k-amount-and-mapping-k-flex-fix -->
 <!-- 第 018-206 批：金額設定新增區間加價規則＋即時預覽版 -->
 <!-- batch018-206-price-range-markup-rules-live-preview -->
 <!-- 第 018-205 批：純金額價格列＋外送精準價格對照＋文件1斜線保留修正版 -->
@@ -3609,6 +3611,27 @@ function parseCountryCodeSuffixHeaderLine(line) {
   }
 }
 
+function parsePricePrefixedNameHeaderLine018207(line) {
+  const source = normalizeHeaderText(normalizeCountryCodeGlyphs018184(normalizeDigits(String(line || ''))))
+    .replace(/[\[\]【】()（）]/g, ' ')
+    .trim()
+  if (!source || isNotHeaderLine(source)) return null
+
+  const match = source.match(/^([0-9]+(?:\.[0-9]+)?\s*(?:K|千)?|[0-9]{4,6})\s+([\u4e00-\u9fa5A-Za-z0-9]{1,18})(?=$|\s|[^\u4e00-\u9fa5A-Za-z0-9])/i)
+  if (!match) return null
+
+  const amount = parseFlexibleAmount018207(match[1], { min: 1000, max: 100000 })
+  const name = cleanName(match[2])
+  if (!amount || !isValidName(name)) return null
+
+  return {
+    country: '',
+    name,
+    amount,
+    matchedRule: '價格前置姓名標題'
+  }
+}
+
 function parseStructuredHeaderSameLine(line, rules = getHeaderRulesForCurrentParse()) {
   const cleaned = normalizeHeaderText(line)
   if (!cleaned) return null
@@ -3618,6 +3641,9 @@ function parseStructuredHeaderSameLine(line, rules = getHeaderRulesForCurrentPar
 
   const countryCodeSuffixHeader = parseCountryCodeSuffixHeaderLine(line)
   if (countryCodeSuffixHeader) return countryCodeSuffixHeader
+
+  const pricePrefixedNameHeader = parsePricePrefixedNameHeaderLine018207(line)
+  if (pricePrefixedNameHeader) return pricePrefixedNameHeader
 
   const malaysiaShortHeader = parseMalaysiaShortHeaderLine(cleaned)
   if (malaysiaShortHeader) return malaysiaShortHeader
@@ -9384,6 +9410,29 @@ function isNameOnlyHeaderLine(line) {
   return /^[\u4e00-\u9fa5A-Za-z0-9]+$/.test(cleaned)
 }
 
+function extractHeaderStandaloneAmount018207(block = '', header = null) {
+  const lines = normalizeImportedLineBreaks018192(String(block || ''))
+    .split('\n')
+    .map(line => String(line || '').trim())
+    .filter(Boolean)
+    .slice(0, 6)
+
+  const headerAmount = Number(header?.amount || 0)
+  if (headerAmount >= 1000 && headerAmount <= 100000) return headerAmount
+
+  for (const line of lines) {
+    const matchedHeader = parsePricePrefixedNameHeaderLine018207(line)
+    if (matchedHeader?.amount) return Number(matchedHeader.amount)
+
+    const normalized = normalizeHeaderText(normalizeDigits(line)).replace(/[\[\]【】()（）]/g, ' ').trim()
+    const standaloneMatch = normalized.match(/^([0-9]+(?:\.[0-9]+)?\s*(?:K|千)?|[0-9]{4,6})(?=$|\s)/i)
+    const amount = parseFlexibleAmount018207(standaloneMatch?.[1], { min: 1000, max: 100000 })
+    if (amount) return amount
+  }
+
+  return 0
+}
+
 function buildPreviewHeaderTitle(name = '', country = '') {
   const safeName = String(name || '').trim() || '未辨識小姐'
   const safeCountry = String(country || '').trim()
@@ -9414,6 +9463,13 @@ function analyzeRecordForPreview(block) {
     country: finalCountry,
     mode: ruleScopeType.value
   })
+  const headerStandaloneAmount018207 = extractHeaderStandaloneAmount018207(block, header)
+  if (!prices.length && headerStandaloneAmount018207) {
+    prices.push(...parsePrices(String(headerStandaloneAmount018207), getAppliedIncrease(finalCountry), {
+      country: finalCountry,
+      mode: ruleScopeType.value
+    }))
+  }
   const services = extractServices(block, {
     name: header?.name || '',
     country: finalCountry,
@@ -10199,12 +10255,10 @@ function parsePrices(text, increase, priceContext = {}) {
       .replace(/\s*(?:元|塊)\s*$/i, '')
       .replace(/[,，]/g, '')
       .trim()
-    if (/^\d{4,6}$/.test(standaloneAmountText)) {
-      const amount = Number(standaloneAmountText)
-      if (amount >= 1000 && amount <= 100000) {
-        pushStandaloneAmountPrice(amount)
-        return
-      }
+    const standaloneAmount = parseFlexibleAmount018207(standaloneAmountText, { min: 1000, max: 100000 })
+    if (standaloneAmount) {
+      pushStandaloneAmountPrice(standaloneAmount)
+      return
     }
 
     // 第 018-182 批：支援「底價金額在前＋分鐘＋裸節數」。
@@ -11283,6 +11337,51 @@ function getPriceMappingProfileKey018204(mode, country) {
   return `${normalizePriceProfileMode018204(mode)}__${normalizePriceProfileCountry018204(country)}`
 }
 
+function getPriceKUnitMultiplier018207(unit = '') {
+  const normalizedUnit = String(unit || '').trim().toUpperCase()
+  return normalizedUnit === 'K' || normalizedUnit === '千' ? 1000 : 1
+}
+
+function parseFlexibleAmount018207(value, options = {}) {
+  const { allowSigned = false, min = 0, max = 1000000 } = options || {}
+  const source = String(value ?? '')
+    .normalize('NFKC')
+    .replace(/[，,]/g, '')
+    .replace(/\s+/g, '')
+    .replace(/^(?:NTD|NT\$|TWD|\$)/i, '')
+    .replace(/(?:元|塊)$/i, '')
+    .trim()
+  if (!source) return null
+
+  const pattern = allowSigned
+    ? /^([+-]?)(\d+(?:\.\d+)?)(K|千)?$/i
+    : /^(\d+(?:\.\d+)?)(K|千)?$/i
+  const match = source.match(pattern)
+  if (!match) return null
+
+  let sign = ''
+  let numericText = ''
+  let unit = ''
+  if (allowSigned) {
+    sign = match[1] || ''
+    numericText = match[2] || ''
+    unit = match[3] || ''
+  } else {
+    numericText = match[1] || ''
+    unit = match[2] || ''
+  }
+
+  const base = Number(numericText)
+  if (!Number.isFinite(base)) return null
+
+  const amount = Math.round(base * getPriceKUnitMultiplier018207(unit)) * (sign === '-' ? -1 : 1)
+  if (!Number.isFinite(amount)) return null
+
+  const abs = Math.abs(amount)
+  if (abs < Number(min) || abs > Number(max)) return null
+  return amount
+}
+
 function normalizeExactPriceMappings018204(value) {
   const rows = Array.isArray(value)
     ? value
@@ -11290,9 +11389,9 @@ function normalizeExactPriceMappings018204(value) {
   const map = new Map()
 
   rows.forEach(row => {
-    const from = Number(String(row?.from ?? '').replace(/[^\d]/g, ''))
-    const to = Number(String(row?.to ?? '').replace(/[^\d]/g, ''))
-    if (!from || !to || from > 1000000 || to > 1000000) return
+    const from = parseFlexibleAmount018207(row?.from, { min: 1000, max: 1000000 })
+    const to = parseFlexibleAmount018207(row?.to, { min: 1000, max: 1000000 })
+    if (!from || !to) return
     map.set(from, { from, to })
   })
 
@@ -11309,10 +11408,10 @@ function normalizePriceRangeRules018206(value) {
 
   rows.forEach((row, index) => {
     if (row && typeof row === 'object' && !Object.prototype.hasOwnProperty.call(row, 'raw')) {
-      const min = Number(String(row?.min ?? row?.from ?? '').replace(/[^\d]/g, ''))
-      const max = Number(String(row?.max ?? row?.to ?? row?.min ?? row?.from ?? '').replace(/[^\d]/g, ''))
-      const add = Number(String(row?.add ?? row?.increase ?? '').replace(/[^\d.-]/g, ''))
-      if (!min || !max || !Number.isFinite(add) || min > 1000000 || max > 1000000 || Math.abs(add) > 1000000) return
+      const min = parseFlexibleAmount018207(row?.min ?? row?.from, { min: 1000, max: 1000000 })
+      const max = parseFlexibleAmount018207(row?.max ?? row?.to ?? row?.min ?? row?.from, { min: 1000, max: 1000000 })
+      const add = parseFlexibleAmount018207(row?.add ?? row?.increase, { allowSigned: true, min: 1, max: 1000000 })
+      if (!min || !max || !Number.isFinite(add)) return
       const start = Math.min(min, max)
       const end = Math.max(min, max)
       map.set(`${start}-${end}`, { min: start, max: end, add, order: Number(row?.order ?? index) })
@@ -11328,14 +11427,14 @@ function normalizePriceRangeRules018206(value) {
       .replace(/^回\s*/i, '')
       .replace(/都/g, '')
       .replace(/\s+/g, '')
-    // 同時接受正式格式「3000-4000=+1500」與通訊文字「回 3000-4000 都+1500」。
-    const match = cleaned.match(/^(\d{3,7})(?:-(\d{3,7}))?(?:(?:=|：|:|→)([+-]?\d{1,7})|([+-]\d{1,7}))$/)
+    // 第 018-207 批：同時接受 3000-4000=+1500、14K-16K=+5K、回14K-16K都+5K。
+    const match = cleaned.match(/^([+-]?\d+(?:\.\d+)?(?:K|千)?)(?:-([+-]?\d+(?:\.\d+)?(?:K|千)?))?(?:(?:=|：|:|→)([+-]?\d+(?:\.\d+)?(?:K|千)?)|([+-]\d+(?:\.\d+)?(?:K|千)?))$/i)
     if (!match) return
 
-    const start = Number(match[1])
-    const end = Number(match[2] || match[1])
-    const add = Number(match[3] ?? match[4])
-    if (!start || !end || !Number.isFinite(add) || start > 1000000 || end > 1000000 || Math.abs(add) > 1000000) return
+    const start = parseFlexibleAmount018207(match[1], { min: 1000, max: 1000000 })
+    const end = parseFlexibleAmount018207(match[2] || match[1], { min: 1000, max: 1000000 })
+    const add = parseFlexibleAmount018207(match[3] ?? match[4], { allowSigned: true, min: 1, max: 1000000 })
+    if (!start || !end || !Number.isFinite(add)) return
     const min = Math.min(start, end)
     const max = Math.max(start, end)
     map.set(`${min}-${max}`, { min, max, add, order: index })
@@ -11499,7 +11598,7 @@ async function savePriceSettings018204() {
   const hasEditorText = String(priceMappingRulesText018204.value || '').trim().length > 0
   const hasRangeText = String(priceRangeRulesText018206.value || '').trim().length > 0
   if (hasEditorText && !normalizeExactPriceMappings018204(priceMappingRulesText018204.value).length) {
-    const message = '價格對照表格式不正確；請使用「原價=新價」，例如 5000=7500。'
+    const message = '價格對照表格式不正確；請使用「原價=新價」，例如 5000=7500 或 14K=18K。'
     setRoomRuleFeedback(message, 'warning', { toast: true })
     return false
   }
@@ -11507,7 +11606,7 @@ async function savePriceSettings018204() {
     ? getInvalidPriceRangeRuleLines018206(priceRangeRulesText018206.value)
     : []
   if (invalidRangeLines.length) {
-    const message = `區間加價格式不正確：${invalidRangeLines.slice(0, 2).join('、')}。請使用「起價-迄價=+加價」，例如 6000-9000=+2500。`
+    const message = `區間加價格式不正確：${invalidRangeLines.slice(0, 2).join('、')}。請使用「起價-迄價=+加價」，例如 6000-9000=+2500 或 14K-16K=+5K。`
     setRoomRuleFeedback(message, 'warning', { toast: true })
     return false
   }
