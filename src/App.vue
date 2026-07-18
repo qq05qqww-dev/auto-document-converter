@@ -1,3 +1,5 @@
+<!-- 第 018-206 批：金額設定新增區間加價規則＋即時預覽版 -->
+<!-- batch018-206-price-range-markup-rules-live-preview -->
 <!-- 第 018-205 批：純金額價格列＋外送精準價格對照＋文件1斜線保留修正版 -->
 <!-- batch018-205-standalone-amount-price-mapping-and-source-slash-preserve-fix -->
 <!-- 第 018-204 批：定點／外送＋國籍＋精準價格對照表／機房範圍套用版 -->
@@ -773,9 +775,33 @@
             <small>命中時直接使用右側最終價格，不再重複疊加國籍、固定或分鐘加價；分鐘與節數維持原方案。</small>
           </label>
 
+          <label class="price-range-editor018206">
+            區間加價規則（選填），一行一組，格式：起價-迄價=+加價
+            <textarea
+              v-model="priceRangeRulesText018206"
+              class="rule-textarea small"
+              placeholder="例如：&#10;3000-4000=+1500&#10;5000=+1500&#10;6000-9000=+2500&#10;10000-12000=+3000"
+            ></textarea>
+            <small>只有未命中上方精準價格時才套用；也可直接貼「回 3000-4000 都+1500」這類文字。命中後以「原價＋區間加價」作為最終價格，不再重複疊加國籍、固定或分鐘加價。</small>
+          </label>
+
+          <div v-if="priceRangePreview018206.length" class="price-range-preview018206">
+            <div class="price-range-preview-title018206">區間規則即時預覽</div>
+            <div class="price-range-preview-grid018206">
+              <div
+                v-for="row in priceRangePreview018206"
+                :key="row.key"
+                class="price-range-preview-item018206"
+              >
+                <strong>{{ row.scope }}</strong>
+                <span>{{ row.examples }}</span>
+              </div>
+            </div>
+          </div>
+
           <div class="price-mapping-fallback-row018204">
             <label>
-              未命中對照表
+              未命中精準價格與區間規則
               <select v-model="priceMappingFallback018204">
                 <option value="legacy">套用原本金額／國籍／分鐘加價規則</option>
                 <option value="raw">維持文件1原價</option>
@@ -791,7 +817,7 @@
           </div>
 
           <div v-if="priceMappingProfiles018204.length" class="price-mapping-saved-list018204">
-            <div class="price-mapping-saved-title018204">已儲存的精準價格組合</div>
+            <div class="price-mapping-saved-title018204">已儲存的價格組合</div>
             <div
               v-for="profile in priceMappingProfiles018204"
               :key="getPriceMappingProfileKey018204(profile.mode, profile.country)"
@@ -807,12 +833,12 @@
                   <strong>{{ getPriceProfileModeLabel018204(profile.mode) }}</strong>
                   ／{{ getPriceProfileCountryLabel018204(profile.country) }}
                 </span>
-                <span>{{ profile.mappings.length }} 組價格</span>
+                <span>{{ profile.mappings.length }} 組精準｜{{ profile.ranges.length }} 組區間</span>
               </button>
               <button
                 class="price-mapping-delete018204"
                 type="button"
-                title="刪除這組價格對照"
+                title="刪除這組價格規則"
                 @click="removePriceMappingProfile018204(profile)"
               >×</button>
             </div>
@@ -821,7 +847,7 @@
 
         <div class="setting-save-item">
           <label>
-            加價模式（未命中精準價格時使用）
+            加價模式（未命中精準價格與區間規則時使用）
             <select v-model="priceMode">
               <option value="country">依國籍自動加價</option>
               <option value="global">全部固定加價</option>
@@ -3034,6 +3060,9 @@ const priceMappingProfiles018204 = ref([])
 const priceProfileMode018204 = ref('外送')
 const priceProfileCountry018204 = ref('*')
 const priceMappingRulesText018204 = ref('')
+// 第 018-206 批：同一「類型＋國籍」價格組合可另外保存區間加價表。
+// 例：6000-9000=+2500；只有未命中精準價格時才套用。
+const priceRangeRulesText018206 = ref('')
 const priceMappingFallback018204 = ref('legacy')
 const titleMode = ref('country-name')
 const formatHint = ref('【國籍 名稱】身高 體重 Cup 年齡　短鐘K/30/1S　長鐘K/50/1S')
@@ -11270,6 +11299,61 @@ function normalizeExactPriceMappings018204(value) {
   return Array.from(map.values()).sort((a, b) => a.from - b.from)
 }
 
+function normalizePriceRangeRules018206(value) {
+  const rows = Array.isArray(value)
+    ? value
+    : String(value || '')
+        .split(/\r?\n/)
+        .map(line => ({ raw: line }))
+  const map = new Map()
+
+  rows.forEach((row, index) => {
+    if (row && typeof row === 'object' && !Object.prototype.hasOwnProperty.call(row, 'raw')) {
+      const min = Number(String(row?.min ?? row?.from ?? '').replace(/[^\d]/g, ''))
+      const max = Number(String(row?.max ?? row?.to ?? row?.min ?? row?.from ?? '').replace(/[^\d]/g, ''))
+      const add = Number(String(row?.add ?? row?.increase ?? '').replace(/[^\d.-]/g, ''))
+      if (!min || !max || !Number.isFinite(add) || min > 1000000 || max > 1000000 || Math.abs(add) > 1000000) return
+      const start = Math.min(min, max)
+      const end = Math.max(min, max)
+      map.set(`${start}-${end}`, { min: start, max: end, add, order: Number(row?.order ?? index) })
+      return
+    }
+
+    const original = String(row?.raw ?? row ?? '').trim()
+    if (!original) return
+    const cleaned = original
+      .replace(/[，,]/g, '')
+      .replace(/[～~至]/g, '-')
+      .replace(/[－—–]/g, '-')
+      .replace(/^回\s*/i, '')
+      .replace(/都/g, '')
+      .replace(/\s+/g, '')
+    // 同時接受正式格式「3000-4000=+1500」與通訊文字「回 3000-4000 都+1500」。
+    const match = cleaned.match(/^(\d{3,7})(?:-(\d{3,7}))?(?:(?:=|：|:|→)([+-]?\d{1,7})|([+-]\d{1,7}))$/)
+    if (!match) return
+
+    const start = Number(match[1])
+    const end = Number(match[2] || match[1])
+    const add = Number(match[3] ?? match[4])
+    if (!start || !end || !Number.isFinite(add) || start > 1000000 || end > 1000000 || Math.abs(add) > 1000000) return
+    const min = Math.min(start, end)
+    const max = Math.max(start, end)
+    map.set(`${min}-${max}`, { min, max, add, order: index })
+  })
+
+  return Array.from(map.values()).sort((a, b) => {
+    if (a.min !== b.min) return a.min - b.min
+    if (a.max !== b.max) return a.max - b.max
+    return a.order - b.order
+  })
+}
+
+function priceRangeRulesToText018206(ranges) {
+  return normalizePriceRangeRules018206(ranges)
+    .map(row => `${row.min}${row.max === row.min ? '' : `-${row.max}`}=${row.add >= 0 ? '+' : ''}${row.add}`)
+    .join('\n')
+}
+
 function normalizePriceMappingProfiles018204(value) {
   const rows = Array.isArray(value) ? value : []
   const map = new Map()
@@ -11278,13 +11362,15 @@ function normalizePriceMappingProfiles018204(value) {
     const mode = normalizePriceProfileMode018204(row?.mode)
     const country = normalizePriceProfileCountry018204(row?.country)
     const mappings = normalizeExactPriceMappings018204(row?.mappings ?? row?.rulesText ?? row?.rules)
-    if (!mappings.length) return
+    const ranges = normalizePriceRangeRules018206(row?.ranges ?? row?.rangeRulesText ?? row?.rangeRules)
+    if (!mappings.length && !ranges.length) return
     const fallback = row?.fallback === 'raw' ? 'raw' : 'legacy'
     map.set(getPriceMappingProfileKey018204(mode, country), {
       mode,
       country,
       fallback,
-      mappings
+      mappings,
+      ranges
     })
   })
 
@@ -11351,11 +11437,13 @@ function isSelectedPriceMappingProfile018204(profile) {
 function loadPriceMappingEditor018204() {
   const profile = getSelectedPriceMappingProfile018204()
   priceMappingRulesText018204.value = profile ? priceMappingsToText018204(profile.mappings) : ''
+  priceRangeRulesText018206.value = profile ? priceRangeRulesToText018206(profile.ranges) : ''
   priceMappingFallback018204.value = profile?.fallback === 'raw' ? 'raw' : 'legacy'
 }
 
 function clearPriceMappingEditor018204() {
   priceMappingRulesText018204.value = ''
+  priceRangeRulesText018206.value = ''
   priceMappingFallback018204.value = 'legacy'
 }
 
@@ -11372,12 +11460,13 @@ function removePriceMappingProfile018204(profile) {
     getPriceMappingProfileKey018204(item.mode, item.country) !== key
   ))
   if (isSelectedPriceMappingProfile018204(profile)) clearPriceMappingEditor018204()
-  statusMessage.value = `已移除「${getPriceProfileModeLabel018204(profile?.mode)}／${getPriceProfileCountryLabel018204(profile?.country)}」精準價格對照；請按儲存才會正式寫入。`
+  statusMessage.value = `已移除「${getPriceProfileModeLabel018204(profile?.mode)}／${getPriceProfileCountryLabel018204(profile?.country)}」價格規則；請按儲存才會正式寫入。`
 }
 
 function upsertPriceMappingProfileFromEditor018204() {
   const mappings = normalizeExactPriceMappings018204(priceMappingRulesText018204.value)
-  if (!mappings.length) return false
+  const ranges = normalizePriceRangeRules018206(priceRangeRulesText018206.value)
+  if (!mappings.length && !ranges.length) return false
 
   const mode = normalizePriceProfileMode018204(priceProfileMode018204.value)
   const country = normalizePriceProfileCountry018204(priceProfileCountry018204.value)
@@ -11386,25 +11475,44 @@ function upsertPriceMappingProfileFromEditor018204() {
     mode,
     country,
     fallback: priceMappingFallback018204.value === 'raw' ? 'raw' : 'legacy',
-    mappings
+    mappings,
+    ranges
   }
   const remaining = priceMappingProfiles018204.value.filter(item => (
     getPriceMappingProfileKey018204(item.mode, item.country) !== key
   ))
   priceMappingProfiles018204.value = normalizePriceMappingProfiles018204([...remaining, profile])
   priceMappingRulesText018204.value = priceMappingsToText018204(mappings)
+  priceRangeRulesText018206.value = priceRangeRulesToText018206(ranges)
   return true
+}
+
+function getInvalidPriceRangeRuleLines018206(value) {
+  return String(value || '')
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .filter(line => !normalizePriceRangeRules018206(line).length)
 }
 
 async function savePriceSettings018204() {
   const hasEditorText = String(priceMappingRulesText018204.value || '').trim().length > 0
+  const hasRangeText = String(priceRangeRulesText018206.value || '').trim().length > 0
   if (hasEditorText && !normalizeExactPriceMappings018204(priceMappingRulesText018204.value).length) {
     const message = '價格對照表格式不正確；請使用「原價=新價」，例如 5000=7500。'
     setRoomRuleFeedback(message, 'warning', { toast: true })
     return false
   }
+  const invalidRangeLines = hasRangeText
+    ? getInvalidPriceRangeRuleLines018206(priceRangeRulesText018206.value)
+    : []
+  if (invalidRangeLines.length) {
+    const message = `區間加價格式不正確：${invalidRangeLines.slice(0, 2).join('、')}。請使用「起價-迄價=+加價」，例如 6000-9000=+2500。`
+    setRoomRuleFeedback(message, 'warning', { toast: true })
+    return false
+  }
 
-  if (hasEditorText) upsertPriceMappingProfileFromEditor018204()
+  if (hasEditorText || hasRangeText) upsertPriceMappingProfileFromEditor018204()
 
   return saveRuleFields('金額設定', [
     'priceMode',
@@ -11438,24 +11546,62 @@ function findApplicablePriceMappingProfile018204(country, mode) {
 
 function resolveExactPriceMapping018204(rawAmount, context = {}) {
   const hasContext = cleanScopeText(context?.country) || cleanScopeText(context?.mode)
-  if (!hasContext) return { profile: null, matched: false, amount: Number(rawAmount || 0), useRaw: false }
+  if (!hasContext) return { profile: null, matched: false, matchType: '', amount: Number(rawAmount || 0), useRaw: false }
 
   const profile = findApplicablePriceMappingProfile018204(context.country, context.mode)
-  if (!profile) return { profile: null, matched: false, amount: Number(rawAmount || 0), useRaw: false }
+  if (!profile) return { profile: null, matched: false, matchType: '', amount: Number(rawAmount || 0), useRaw: false }
 
   const raw = Number(rawAmount || 0)
   const row = profile.mappings.find(item => Number(item.from) === raw)
   if (row) {
-    return { profile, matched: true, amount: Number(row.to), useRaw: false }
+    return { profile, matched: true, matchType: 'exact', amount: Number(row.to), useRaw: false }
+  }
+
+  // 第 018-206 批：精準價格未命中時，再找區間加價。
+  // 若規則重疊，優先使用涵蓋範圍較窄者；右側加價後即為最終價格。
+  const range = normalizePriceRangeRules018206(profile.ranges)
+    .filter(item => raw >= Number(item.min) && raw <= Number(item.max))
+    .sort((a, b) => {
+      const spanDiff = (a.max - a.min) - (b.max - b.min)
+      if (spanDiff) return spanDiff
+      return a.order - b.order
+    })[0]
+  if (range) {
+    return {
+      profile,
+      matched: true,
+      matchType: 'range',
+      range,
+      amount: raw + Number(range.add || 0),
+      useRaw: false
+    }
   }
 
   return {
     profile,
     matched: false,
+    matchType: '',
     amount: raw,
     useRaw: profile.fallback === 'raw'
   }
 }
+
+const priceRangePreview018206 = computed(() => {
+  return normalizePriceRangeRules018206(priceRangeRulesText018206.value).map(row => {
+    const samples = row.min === row.max
+      ? [row.min]
+      : [row.min, row.max]
+    return {
+      key: `${row.min}-${row.max}-${row.add}`,
+      scope: row.min === row.max
+        ? `${formatAmount(row.min)} 指定價位 ${row.add >= 0 ? '+' : ''}${formatAmount(Math.abs(row.add))}`
+        : `${formatAmount(row.min)}～${formatAmount(row.max)} 皆 ${row.add >= 0 ? '+' : '-'}${formatAmount(Math.abs(row.add))}`,
+      examples: samples
+        .map(value => `${formatAmount(value)} → ${formatAmount(value + row.add)}`)
+        .join('、')
+    }
+  })
+})
 
 watch([priceProfileMode018204, priceProfileCountry018204], () => {
   loadPriceMappingEditor018204()
@@ -11674,8 +11820,9 @@ function resolveFinalAmountWithMinuteRule(rawAmount, increase, minutes, priceCon
   const raw = Number(rawAmount || 0)
   const exactMapping = resolveExactPriceMapping018204(raw, priceContext)
 
-  // 第 018-204 批：精準價格對照命中時，右側金額就是最後方案價格。
-  // 例：外送台妹 5000=7500，直接輸出 7500，不再疊加國籍／固定／分鐘加價。
+  // 第 018-206 批：精準價格或區間加價命中時，計算結果就是最後方案價格。
+  // 例：5000=7500 直接輸出 7500；6000-9000=+2500 時，8000 直接輸出 10500。
+  // 命中後不再疊加國籍／固定／分鐘加價。
   if (exactMapping.matched) return exactMapping.amount
   if (exactMapping.useRaw) return raw
 
@@ -21953,6 +22100,53 @@ button:disabled {
   min-height: 130px;
 }
 
+.price-range-editor018206 {
+  display: grid;
+  gap: 7px;
+  padding-top: 2px;
+  font-weight: 700;
+  color: #27364f;
+}
+
+.price-range-editor018206 textarea {
+  min-height: 150px;
+}
+
+.price-range-preview018206 {
+  display: grid;
+  gap: 9px;
+  padding: 12px;
+  border: 1px solid rgba(43, 154, 111, 0.2);
+  border-radius: 14px;
+  background: rgba(233, 250, 242, 0.72);
+}
+
+.price-range-preview-title018206 {
+  color: #246d53;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.price-range-preview-grid018206 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.price-range-preview-item018206 {
+  display: grid;
+  gap: 3px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.88);
+  color: #3c4b60;
+  font-size: 12px;
+}
+
+.price-range-preview-item018206 strong {
+  color: #214f40;
+}
+
 .price-mapping-fallback-row018204 {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -22027,6 +22221,10 @@ button:disabled {
 
   .price-mapping-clear-editor018204 {
     width: 100%;
+  }
+
+  .price-range-preview-grid018206 {
+    grid-template-columns: 1fr;
   }
 }
 
