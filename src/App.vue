@@ -1,3 +1,5 @@
+<!-- 第 018-212 批：服務同義詞誤覆蓋一鍵恢復上一份完整規則版 -->
+<!-- batch018-212-restore-previous-service-alias-rules -->
 <!-- 第 018-211 批：定點指定國籍 X底千元制補強＋各類型國籍規則分流修正版 -->
 <!-- batch018-211-fixed-selected-country-bottom-k-routing-fix -->
 <!-- 第 018-210 批：外送非馬來 X底千元制＋底價區間依類型國籍分流儲存修正版 -->
@@ -1433,10 +1435,21 @@
 
         <div v-if="activeAdvancedPanel === 'service-alias'" class="advanced-panel-clean">
           <div class="setting-save-item advanced-save-item">
-            <label>
-              服務同義詞規則，一行一組，格式：店家寫法=固定寫法
-              <textarea v-model="aliasRulesText"></textarea>
-            </label>
+            <div class="advanced-card-title-row">
+              <div>
+                <strong>服務同義詞規則</strong>
+                <p>一行一組，格式：店家寫法=固定寫法。恢復按鈕只處理服務同義詞，不會修改服務排序或其他規則。</p>
+              </div>
+              <button
+                type="button"
+                class="mini-toggle-btn"
+                :disabled="isSavingScopeRules"
+                @click="restorePreviousServiceAliasRules018212"
+              >
+                {{ isSavingScopeRules ? '儲存中...' : '恢復上一份服務同義詞' }}
+              </button>
+            </div>
+            <textarea v-model="aliasRulesText"></textarea>
           </div>
         </div>
 
@@ -14451,6 +14464,24 @@ function applyRuleData(data, options = {}) {
     showAliasList.value = false
     showRemoveWordList.value = false
   }
+}
+
+// 第 018-212 批：服務同義詞被誤貼成服務排序時，提供單一欄位的一鍵安全恢復。
+// 只把服務同義詞還原為第 018-208～018-211 沿用的完整預設內容，
+// 並透過既有分層儲存流程保存；服務排序、國籍、價格及其他設定完全不動。
+async function restorePreviousServiceAliasRules018212() {
+  if (isSavingScopeRules.value) return
+
+  const confirmed = window.confirm(
+    `確定要恢復上一份完整服務同義詞嗎？\n\n將覆蓋目前服務同義詞，共恢復 ${defaultAliasRules.length} 筆。\n服務排序、價格、國籍與其他設定不會變更。`
+  )
+  if (!confirmed) return
+
+  aliasRulesText.value = defaultAliasRules.join('\n')
+  const saved = await saveRuleFields('服務同義詞', ['aliasRulesText'])
+  if (!saved) return
+
+  statusMessage.value = `已恢復上一份完整服務同義詞，共 ${defaultAliasRules.length} 筆；其他設定未修改。`
 }
 
 function addAliasRule() {
