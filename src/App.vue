@@ -1,3 +1,5 @@
+<!-- 第 018-209 批：定點／外送雙底價依目前類型分流轉換修正版 -->
+<!-- batch018-209-mode-specific-bottom-price-routing-fix -->
 <!-- 第 018-208 批：K 價格規則原文保留＋日妹國籍顯示＋國籍價格姓名切分修正版 -->
 <!-- batch018-208-preserve-k-rule-text-japanese-girl-header-price-fix -->
 <!-- 第 018-207 批：來源小姐價格支援 K／完整金額雙格式＋精準價格／區間加價 K 寫法通用版 -->
@@ -4371,6 +4373,10 @@ function isPriceLine(line) {
 
   // 30分/1S 2.2K、60分鐘 回3200、短鐘30分/2.5底
   if (/\d{2,3}\s*(?:分鐘|分)/.test(value) && /([0-9]+(?:\.[0-9]+)?\s*[kK]|[0-9]{3,5}|[0-9]+(?:\.[0-9]+)?\s*底|回\s*[0-9]{3,5})/.test(value)) return true
+
+  // 第 018-209 批：支援同一行依類型列出不同裸底價。
+  // 例：定點14底/外送15底、店內價 1.4底／到府價 1500底。
+  if (parseModeSpecificBottomPriceLine018209(value).valid) return true
 
   // 第 018-188 批：支援未寫「分／分鐘」與節數、但明確帶「底」的正式價格列。
   // 例：40 2000底、60 2300底、40 21底；「底」是必要標記，避免身材數字被誤判。
@@ -10173,6 +10179,65 @@ function normalizeBodyText(text) {
 
 
 
+function normalizePriceModeLabel018209(value) {
+  const compact = normalizeDigits(String(value || ''))
+    .normalize('NFKC')
+    .replace(/\s+/g, '')
+
+  if (/^(?:定點|定点|店內|店内|到店|工作室)$/.test(compact)) return '定點'
+  if (/^(?:外送|外約|外约|到府|外出)$/.test(compact)) return '外送'
+  return ''
+}
+
+function parseModeSpecificBottomPriceLine018209(line, currentMode = '') {
+  const normalized = normalizeDigits(String(line || ''))
+    .normalize('NFKC')
+    .replace(/[：]/g, ':')
+    .replace(/[／]/g, '/')
+    .replace(/　/g, ' ')
+    .trim()
+
+  if (!normalized) {
+    return { valid: false, mode: '', amount: 0, pairs: [] }
+  }
+
+  // 第 018-209 批：一行可同時列出定點與外送底價，轉換時只取目前工作區類型。
+  // 支援半形／全形斜線、空格、價／價格／底價標籤，以及常見類型同義詞。
+  const pairPattern = /(定點|定点|店內|店内|到店|工作室|外送|外約|外约|到府|外出)\s*(?:底價|價格|價)?\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?)\s*底(?:價)?/gi
+  const pairs = []
+  let matched
+
+  while ((matched = pairPattern.exec(normalized)) !== null) {
+    const mode = normalizePriceModeLabel018209(matched[1])
+    const amount = parseBottomPriceAmount(matched[2])
+    if (mode && amount >= 1000 && amount <= 100000) {
+      pairs.push({ mode, amount, raw: matched[0] })
+    }
+
+    if (pairPattern.lastIndex === matched.index) pairPattern.lastIndex += 1
+  }
+
+  pairPattern.lastIndex = 0
+  const unmatchedText = normalized
+    .replace(pairPattern, ' ')
+    .replace(/[\s/|、,，;；＋+]+/g, '')
+
+  if (!pairs.length || unmatchedText) {
+    return { valid: false, mode: '', amount: 0, pairs: [] }
+  }
+
+  const mode = normalizePriceModeLabel018209(currentMode)
+  const selected = mode ? pairs.find(item => item.mode === mode) : null
+
+  return {
+    valid: true,
+    mode,
+    amount: Number(selected?.amount || 0),
+    pairs
+  }
+}
+
+
 function parseBottomPriceAmount(value) {
   const rawText = String(value || '').trim()
   const rawAmount = Number(rawText)
@@ -10282,6 +10347,20 @@ function parsePrices(text, increase, priceContext = {}) {
       .replace(/[／]/g, '/')
       .replace(/　/g, ' ')
       .trim()
+
+    // 第 018-209 批：支援「定點14底/外送15底」這類同一行雙類型底價。
+    // 依目前選定的定點／外送工作區只取對應底價，再沿用既有精準價格、區間、國籍與金額轉換規則。
+    // 若此行結構有效但沒有目前類型，整行不會誤套另一個類型的價格。
+    const modeSpecificBottomPrice018209 = parseModeSpecificBottomPriceLine018209(
+      normalized,
+      priceContext.mode || ruleScopeType.value || managerSelectedType.value
+    )
+    if (modeSpecificBottomPrice018209.valid) {
+      if (modeSpecificBottomPrice018209.amount) {
+        pushStandaloneAmountPrice(modeSpecificBottomPrice018209.amount)
+      }
+      return
+    }
 
     // 第 018-205 批：支援外送常見「單獨一行只有總金額」的正式方案。
     // 例：4000、4 0 0 0、4,000、NT$4000、4000元、價格 4000。
