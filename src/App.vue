@@ -1,3 +1,7 @@
+<!-- 第 018-211 批：定點指定國籍 X底千元制補強＋各類型國籍規則分流修正版 -->
+<!-- batch018-211-fixed-selected-country-bottom-k-routing-fix -->
+<!-- 第 018-210 批：外送非馬來 X底千元制＋底價區間依類型國籍分流儲存修正版 -->
+<!-- batch018-210-external-non-malay-bottom-k-and-scoped-range-save-fix -->
 <!-- 第 018-209 批：定點／外送雙底價依目前類型分流轉換修正版 -->
 <!-- batch018-209-mode-specific-bottom-price-routing-fix -->
 <!-- 第 018-208 批：K 價格規則原文保留＋日妹國籍顯示＋國籍價格姓名切分修正版 -->
@@ -768,7 +772,11 @@
 
           <div class="price-mapping-current-scope018204">
             <strong>目前儲存範圍：</strong>{{ currentRuleScopeLabel }}
-            <span>同一組設定可依「類型＋國籍」分開保存；目前機房／縣市層級仍沿用既有個人規則範圍。</span>
+            <span>同一組設定依「類型＋國籍」完全分開保存；定點規則不會套到外送，外送規則也不會套到定點。</span>
+          </div>
+
+          <div class="price-bottom-notation-hint018210">
+            {{ priceBottomNotationHint018210 }}
           </div>
 
           <label class="price-mapping-editor018204">
@@ -786,9 +794,10 @@
             <textarea
               v-model="priceRangeRulesText018206"
               class="rule-textarea small"
-              placeholder="例如：&#10;3000-4000=+1500&#10;5000=+1500&#10;6000-9000=+2500&#10;10000-12000=+3000"
+              placeholder="例如：&#10;13底-15底=+4000&#10;3000-4000=+1500&#10;14K-16K=+5K&#10;5000=+1500"
             ></textarea>
-            <small>只有未命中上方精準價格時才套用；也可直接貼「回 3000-4000 都+1500」這類文字。命中後以「原價＋區間加價」作為最終價格，不再重複疊加國籍、固定或分鐘加價。</small>
+            <small>支援完整金額、K／千與「底」寫法，例如「13底-15底=+4000」。底價會依目前選擇的類型＋國籍解析後分開儲存。</small>
+            <small>只有未命中上方精準價格時才套用；也可直接貼「回 13底-15底 都+4000」。命中後以「原價＋區間加價」作為最終價格，不再重複疊加國籍、固定或分鐘加價。</small>
           </label>
 
           <div v-if="priceRangePreview018206.length" class="price-range-preview018206">
@@ -3905,8 +3914,10 @@ const defaultCountryAliases = [
   '越妹=越妹',
   '新加坡=新加坡',
   '日本=日妹',
+  '日本妹=日妹',
   '日妹=日妹',
   '韓國=韓國',
+  '韓國妹=韓國',
   '韓妹=韓國',
   '俄羅斯=俄羅斯',
   '俄妹=俄羅斯',
@@ -10189,7 +10200,7 @@ function normalizePriceModeLabel018209(value) {
   return ''
 }
 
-function parseModeSpecificBottomPriceLine018209(line, currentMode = '') {
+function parseModeSpecificBottomPriceLine018209(line, currentMode = '', priceContext = {}) {
   const normalized = normalizeDigits(String(line || ''))
     .normalize('NFKC')
     .replace(/[：]/g, ':')
@@ -10209,7 +10220,10 @@ function parseModeSpecificBottomPriceLine018209(line, currentMode = '') {
 
   while ((matched = pairPattern.exec(normalized)) !== null) {
     const mode = normalizePriceModeLabel018209(matched[1])
-    const amount = parseBottomPriceAmount(matched[2])
+    const amount = parseBottomPriceAmount(matched[2], {
+      ...priceContext,
+      mode
+    })
     if (mode && amount >= 1000 && amount <= 100000) {
       pairs.push({ mode, amount, raw: matched[0] })
     }
@@ -10238,14 +10252,26 @@ function parseModeSpecificBottomPriceLine018209(line, currentMode = '') {
 }
 
 
-function parseBottomPriceAmount(value) {
+function parseBottomPriceAmount(value, priceContext = {}) {
   const rawText = String(value || '').trim()
   const rawAmount = Number(rawText)
   if (!rawAmount) return 0
 
-  // 第 018-100 批：底價縮寫補正。
+  // 第 018-211 批：指定國籍不分定點／外送，整數 X底採千元制。
+  // 台妹／日妹／俄羅斯／韓國／港澳的 14底 = 14000；其他國籍延續第 018-210 批：
+  // 外送非馬來採千元制，定點其他國籍及外送馬來維持舊制。小數 1.4底始終是 1400。
+  if (
+    Number.isInteger(rawAmount) &&
+    rawAmount >= 10 &&
+    rawAmount < 100 &&
+    usesThousandUnitBottom018211(priceContext)
+  ) {
+    return rawAmount * 1000
+  }
+
+  // 舊底價規則完整保留：
   // 1.5底 / 2.5底：小數 K 寫法，乘 1000。
-  // 15底 / 19底 / 22底：兩位數百元寫法，乘 100。
+  // 15底 / 19底 / 22底：未命中千元制國籍／類型時，沿用兩位數百元寫法，乘 100。
   // 1500底 / 1900底：已是實際金額，原樣保留。
   if (rawAmount >= 1000) return rawAmount
   if (rawText.includes('.')) return rawAmount * 1000
@@ -10353,7 +10379,8 @@ function parsePrices(text, increase, priceContext = {}) {
     // 若此行結構有效但沒有目前類型，整行不會誤套另一個類型的價格。
     const modeSpecificBottomPrice018209 = parseModeSpecificBottomPriceLine018209(
       normalized,
-      priceContext.mode || ruleScopeType.value || managerSelectedType.value
+      priceContext.mode || ruleScopeType.value || managerSelectedType.value,
+      priceContext
     )
     if (modeSpecificBottomPrice018209.valid) {
       if (modeSpecificBottomPrice018209.amount) {
@@ -10389,7 +10416,7 @@ function parsePrices(text, increase, priceContext = {}) {
       const minutes = Number(bottomAmountFirstMatch[2])
       const sessionCount = bottomAmountFirstMatch[3] || '1S'
 
-      if (amount >= 1000 && amount <= 50000 && minutes >= 10 && minutes <= 180) {
+      if (amount >= 1000 && amount <= 100000 && minutes >= 10 && minutes <= 180) {
         pushPrice(minutes, sessionCount, amount)
         return
       }
@@ -10409,7 +10436,7 @@ function parsePrices(text, increase, priceContext = {}) {
         fullText: multiMinuteBottomPairMatch[0],
         minutes: Number(multiMinuteBottomPairMatch[1]),
         sessionCount: multiMinuteBottomPairMatch[2] || multiMinuteBottomPairMatch[4] || '1S',
-        amount: parseBottomPriceAmount(multiMinuteBottomPairMatch[3])
+        amount: parseBottomPriceAmount(multiMinuteBottomPairMatch[3], priceContext)
       })
 
       // 防止極端情況下零長度匹配造成迴圈停不下來。
@@ -10428,7 +10455,7 @@ function parsePrices(text, increase, priceContext = {}) {
         pair.minutes >= 10 &&
         pair.minutes <= 180 &&
         pair.amount >= 1000 &&
-        pair.amount <= 50000
+        pair.amount <= 100000
       ))
 
       if (!unmatchedText && allPairsValid) {
@@ -10448,10 +10475,10 @@ function parsePrices(text, increase, priceContext = {}) {
     )
     if (minuteBottomTrailingSessionMatch) {
       const minutes = Number(minuteBottomTrailingSessionMatch[1])
-      const amount = parseBottomPriceAmount(minuteBottomTrailingSessionMatch[2])
+      const amount = parseBottomPriceAmount(minuteBottomTrailingSessionMatch[2], priceContext)
       const sessionCount = minuteBottomTrailingSessionMatch[3] || '1S'
 
-      if (minutes >= 10 && minutes <= 180 && amount >= 1000 && amount <= 50000) {
+      if (minutes >= 10 && minutes <= 180 && amount >= 1000 && amount <= 100000) {
         pushPrice(minutes, sessionCount, amount)
         return
       }
@@ -10466,9 +10493,9 @@ function parsePrices(text, increase, priceContext = {}) {
     )
     if (minuteNoSessionBottomAmountMatch) {
       const minutes = Number(minuteNoSessionBottomAmountMatch[1])
-      const amount = parseBottomPriceAmount(minuteNoSessionBottomAmountMatch[2])
+      const amount = parseBottomPriceAmount(minuteNoSessionBottomAmountMatch[2], priceContext)
 
-      if (minutes >= 10 && minutes <= 180 && amount >= 1000 && amount <= 50000) {
+      if (minutes >= 10 && minutes <= 180 && amount >= 1000 && amount <= 100000) {
         pushPrice(minutes, '1S', amount)
         return
       }
@@ -10477,17 +10504,19 @@ function parsePrices(text, increase, priceContext = {}) {
     // 第 018-185 批：支援「分鐘＋節數＋兩位數底價」且分鐘未寫「分／分鐘」的正式方案。
     // 例：40 1S 21底、60 1S 25底、60 2S 30底。
     // 整行必須完整符合，並且必須具有節數與「底」標記，避免將身材或一般數字列誤判為價格。
-    // 兩位數底價仍沿用既有 parseBottomPriceAmount：21底 = 2100、30底 = 3000，
-    // 後續照常套用國籍／固定加價與分鐘加價規則。
+    // 兩位數底價會依目前類型＋國籍解析：
+    // 指定國籍（台妹／日妹／俄羅斯／韓國／港澳）不分定點外送皆為 21000；
+    // 其他國籍則延續第 018-210 批：外送非馬來為 21000，其餘為 2100。
+    // 後續照常套用精準價格／區間規則或既有加價流程。
     const minuteSessionShortBottomMatch = normalized.match(
       /^(?:快餐|短[鐘鍾]|長[鐘鍾])?\s*(\d{2,3})\s*(?:分鐘|分)?\s*(NS|N\s*\/?\s*S|\d+\s*S?)\s*([0-9]+(?:\.[0-9]+)?)\s*底(?:價)?$/i
     )
     if (minuteSessionShortBottomMatch) {
       const minutes = Number(minuteSessionShortBottomMatch[1])
       const sessionCount = minuteSessionShortBottomMatch[2] || '1S'
-      const amount = parseBottomPriceAmount(minuteSessionShortBottomMatch[3])
+      const amount = parseBottomPriceAmount(minuteSessionShortBottomMatch[3], priceContext)
 
-      if (minutes >= 10 && minutes <= 180 && amount >= 1000 && amount <= 50000) {
+      if (minutes >= 10 && minutes <= 180 && amount >= 1000 && amount <= 100000) {
         pushPrice(minutes, sessionCount, amount)
         return
       }
@@ -10507,7 +10536,7 @@ function parsePrices(text, increase, priceContext = {}) {
         ? rawAmount * 1000
         : rawAmount
 
-      if (minutes >= 10 && minutes <= 180 && amount >= 1000 && amount <= 50000) {
+      if (minutes >= 10 && minutes <= 180 && amount >= 1000 && amount <= 100000) {
         pushPrice(minutes, sessionCount, amount)
         return
       }
@@ -10582,7 +10611,7 @@ function parsePrices(text, increase, priceContext = {}) {
     if (bottomBeforeAmountMatch) {
       const minutes = Number(bottomBeforeAmountMatch[1])
       const sessionCount = bottomBeforeAmountMatch[2] || '1S'
-      const amount = parseBottomPriceAmount(bottomBeforeAmountMatch[3])
+      const amount = parseBottomPriceAmount(bottomBeforeAmountMatch[3], priceContext)
       pushPrice(minutes, sessionCount, amount)
       return
     }
@@ -10594,7 +10623,7 @@ function parsePrices(text, increase, priceContext = {}) {
     if (sessionBeforeBottomMatch) {
       const minutes = Number(sessionBeforeBottomMatch[1])
       const sessionCount = sessionBeforeBottomMatch[2] || '1S'
-      const amount = parseBottomPriceAmount(sessionBeforeBottomMatch[3])
+      const amount = parseBottomPriceAmount(sessionBeforeBottomMatch[3], priceContext)
       pushPrice(minutes, sessionCount, amount)
       return
     }
@@ -10613,9 +10642,10 @@ function parsePrices(text, increase, priceContext = {}) {
       // batch018-47：
       // 「20分/1300底」的 1300 是實際金額，不可以再 *1000，
       // 否則會變成 1300.5K/20/1S。
-      // 第 018-100 批：補正店家常見兩位數底價。
-      // 例：「20分 15底」代表 1500，不是 15000；「40分 19底」代表 1900。
-      const amount = parseBottomPriceAmount(oldMatch[2])
+      // 第 018-211 批：兩位數底價依類型＋國籍分流。
+      // 台妹／日妹／俄羅斯／韓國／港澳不分定點外送均為 15000；
+      // 其他國籍延續第 018-210 批：外送非馬來為 15000，其餘為 1500。
+      const amount = parseBottomPriceAmount(oldMatch[2], priceContext)
       pushPrice(minutes, sessionCount, amount)
       return
     }
@@ -11499,15 +11529,60 @@ function parseFlexibleAmount018207(value, options = {}) {
   return amount
 }
 
-function normalizeExactPriceMappings018204(value) {
+
+const THOUSAND_UNIT_BOTTOM_COUNTRIES_018211 = new Set([
+  '台妹',
+  '日妹',
+  '俄羅斯',
+  '韓國',
+  '港澳'
+])
+
+function usesThousandUnitBottom018211(context = {}) {
+  const mode = normalizePriceProfileMode018204(context?.mode)
+  const country = normalizePriceProfileCountry018204(context?.country)
+
+  // 第 018-211 批：台妹、日妹、俄羅斯、韓國、港澳不分定點／外送，
+  // 兩位數整數 X底都採千元制，例如 14底 = 14K。
+  // 其他國籍完整保留第 018-210 批：外送非馬來採千元制；定點與外送馬來維持舊制。
+  if (country === '*') return false
+  if (THOUSAND_UNIT_BOTTOM_COUNTRIES_018211.has(country)) return true
+  return mode === '外送' && country !== '馬來'
+}
+
+function parsePriceRuleAmountToken018210(value, context = {}, options = {}) {
+  const { allowSigned = false, min = 0, max = 1000000 } = options || {}
+  const source = String(value ?? '')
+    .normalize('NFKC')
+    .replace(/[，,]/g, '')
+    .replace(/\s+/g, '')
+    .trim()
+
+  const bottomMatch = source.match(/^([+-]?)(\d+(?:\.\d+)?)底(?:價)?$/i)
+  if (!bottomMatch) {
+    return parseFlexibleAmount018207(source, { allowSigned, min, max })
+  }
+
+  const sign = bottomMatch[1] || ''
+  if (!allowSigned && sign === '-') return null
+
+  const unsignedAmount = parseBottomPriceAmount(bottomMatch[2], context)
+  const amount = unsignedAmount * (sign === '-' ? -1 : 1)
+  const abs = Math.abs(amount)
+
+  if (!Number.isFinite(amount) || abs < Number(min) || abs > Number(max)) return null
+  return amount
+}
+
+function normalizeExactPriceMappings018204(value, context = {}) {
   const rows = Array.isArray(value)
     ? value
     : parseKeyValueLines(String(value || '')).map(([from, to]) => ({ from, to }))
   const map = new Map()
 
   rows.forEach(row => {
-    const from = parseFlexibleAmount018207(row?.from, { min: 1000, max: 1000000 })
-    const to = parseFlexibleAmount018207(row?.to, { min: 1000, max: 1000000 })
+    const from = parsePriceRuleAmountToken018210(row?.from, context, { min: 1000, max: 1000000 })
+    const to = parsePriceRuleAmountToken018210(row?.to, context, { min: 1000, max: 1000000 })
     if (!from || !to) return
     map.set(from, { from, to })
   })
@@ -11515,7 +11590,7 @@ function normalizeExactPriceMappings018204(value) {
   return Array.from(map.values()).sort((a, b) => a.from - b.from)
 }
 
-function normalizePriceRangeRules018206(value) {
+function normalizePriceRangeRules018206(value, context = {}) {
   const rows = Array.isArray(value)
     ? value
     : String(value || '')
@@ -11525,9 +11600,9 @@ function normalizePriceRangeRules018206(value) {
 
   rows.forEach((row, index) => {
     if (row && typeof row === 'object' && !Object.prototype.hasOwnProperty.call(row, 'raw')) {
-      const min = parseFlexibleAmount018207(row?.min ?? row?.from, { min: 1000, max: 1000000 })
-      const max = parseFlexibleAmount018207(row?.max ?? row?.to ?? row?.min ?? row?.from, { min: 1000, max: 1000000 })
-      const add = parseFlexibleAmount018207(row?.add ?? row?.increase, { allowSigned: true, min: 1, max: 1000000 })
+      const min = parsePriceRuleAmountToken018210(row?.min ?? row?.from, context, { min: 1000, max: 1000000 })
+      const max = parsePriceRuleAmountToken018210(row?.max ?? row?.to ?? row?.min ?? row?.from, context, { min: 1000, max: 1000000 })
+      const add = parsePriceRuleAmountToken018210(row?.add ?? row?.increase, context, { allowSigned: true, min: 1, max: 1000000 })
       if (!min || !max || !Number.isFinite(add)) return
       const start = Math.min(min, max)
       const end = Math.max(min, max)
@@ -11538,19 +11613,27 @@ function normalizePriceRangeRules018206(value) {
     const original = String(row?.raw ?? row ?? '').trim()
     if (!original) return
     const cleaned = original
+      .normalize('NFKC')
       .replace(/[，,]/g, '')
       .replace(/[～~至]/g, '-')
       .replace(/[－—–]/g, '-')
       .replace(/^回\s*/i, '')
       .replace(/都/g, '')
       .replace(/\s+/g, '')
-    // 第 018-207 批：同時接受 3000-4000=+1500、14K-16K=+5K、回14K-16K都+5K。
-    const match = cleaned.match(/^([+-]?\d+(?:\.\d+)?(?:K|千)?)(?:-([+-]?\d+(?:\.\d+)?(?:K|千)?))?(?:(?:=|：|:|→)([+-]?\d+(?:\.\d+)?(?:K|千)?)|([+-]\d+(?:\.\d+)?(?:K|千)?))$/i)
+
+    // 第 018-211 批：端點與加價都支援完整金額、K／千與「底」。
+    // 台妹／日妹／俄羅斯／韓國／港澳不分定點外送，13底～15底皆解析成 13K～15K；
+    // 其他國籍延續第 018-210 批：外送非馬來為 13K～15K，其餘維持 1300～1500。
+    const amountToken = '[+-]?\\d+(?:\\.\\d+)?(?:(?:K|千)|底(?:價)?)?'
+    const match = cleaned.match(new RegExp(
+      `^(${amountToken})(?:-(${amountToken}))?(?:(?:=|：|:|→)(${amountToken})|([+-]\\d+(?:\\.\\d+)?(?:(?:K|千)|底(?:價)?)?))$`,
+      'i'
+    ))
     if (!match) return
 
-    const start = parseFlexibleAmount018207(match[1], { min: 1000, max: 1000000 })
-    const end = parseFlexibleAmount018207(match[2] || match[1], { min: 1000, max: 1000000 })
-    const add = parseFlexibleAmount018207(match[3] ?? match[4], { allowSigned: true, min: 1, max: 1000000 })
+    const start = parsePriceRuleAmountToken018210(match[1], context, { min: 1000, max: 1000000 })
+    const end = parsePriceRuleAmountToken018210(match[2] || match[1], context, { min: 1000, max: 1000000 })
+    const add = parsePriceRuleAmountToken018210(match[3] ?? match[4], context, { allowSigned: true, min: 1, max: 1000000 })
     if (!start || !end || !Number.isFinite(add)) return
     const min = Math.min(start, end)
     const max = Math.max(start, end)
@@ -11578,15 +11661,15 @@ function normalizePriceMappingDisplayText018208(value) {
     .join('\n')
 }
 
-function isSameExactPriceMappingText018208(textValue, mappings) {
-  const parsed = normalizeExactPriceMappings018204(textValue)
-  const normalizedMappings = normalizeExactPriceMappings018204(mappings)
+function isSameExactPriceMappingText018208(textValue, mappings, context = {}) {
+  const parsed = normalizeExactPriceMappings018204(textValue, context)
+  const normalizedMappings = normalizeExactPriceMappings018204(mappings, context)
   return JSON.stringify(parsed) === JSON.stringify(normalizedMappings)
 }
 
-function isSamePriceRangeText018208(textValue, ranges) {
-  const parsed = normalizePriceRangeRules018206(textValue).map(({ min, max, add }) => ({ min, max, add }))
-  const normalizedRanges = normalizePriceRangeRules018206(ranges).map(({ min, max, add }) => ({ min, max, add }))
+function isSamePriceRangeText018208(textValue, ranges, context = {}) {
+  const parsed = normalizePriceRangeRules018206(textValue, context).map(({ min, max, add }) => ({ min, max, add }))
+  const normalizedRanges = normalizePriceRangeRules018206(ranges, context).map(({ min, max, add }) => ({ min, max, add }))
   return JSON.stringify(parsed) === JSON.stringify(normalizedRanges)
 }
 
@@ -11599,14 +11682,15 @@ function normalizePriceMappingProfiles018204(value) {
     const country = normalizePriceProfileCountry018204(row?.country)
     const rawMappingsText = normalizePriceMappingDisplayText018208(row?.mappingsText ?? row?.rulesText ?? '')
     const rawRangesText = normalizePriceMappingDisplayText018208(row?.rangesText ?? row?.rangeRulesText ?? '')
-    const mappings = normalizeExactPriceMappings018204(row?.mappings ?? rawMappingsText ?? row?.rules)
-    const ranges = normalizePriceRangeRules018206(row?.ranges ?? rawRangesText ?? row?.rangeRules)
+    const context = { mode, country }
+    const mappings = normalizeExactPriceMappings018204(row?.mappings ?? rawMappingsText ?? row?.rules, context)
+    const ranges = normalizePriceRangeRules018206(row?.ranges ?? rawRangesText ?? row?.rangeRules, context)
     if (!mappings.length && !ranges.length) return
     const fallback = row?.fallback === 'raw' ? 'raw' : 'legacy'
-    const mappingsText = rawMappingsText && isSameExactPriceMappingText018208(rawMappingsText, mappings)
+    const mappingsText = rawMappingsText && isSameExactPriceMappingText018208(rawMappingsText, mappings, context)
       ? rawMappingsText
       : ''
-    const rangesText = rawRangesText && isSamePriceRangeText018208(rawRangesText, ranges)
+    const rangesText = rawRangesText && isSamePriceRangeText018208(rawRangesText, ranges, context)
       ? rawRangesText
       : ''
     map.set(getPriceMappingProfileKey018204(mode, country), {
@@ -11668,6 +11752,35 @@ function getPriceProfileCountryLabel018204(country) {
   return normalized === '*' ? '全部國籍' : normalized
 }
 
+const priceBottomNotationHint018210 = computed(() => {
+  const mode = normalizePriceProfileMode018204(priceProfileMode018204.value)
+  const country = normalizePriceProfileCountry018204(priceProfileCountry018204.value)
+  const modeLabel = getPriceProfileModeLabel018204(mode)
+  const countryLabel = getPriceProfileCountryLabel018204(country)
+
+  if (THOUSAND_UNIT_BOTTOM_COUNTRIES_018211.has(country)) {
+    return `目前「${modeLabel}／${countryLabel}」使用指定國籍千元底價制：14底 = 14K；定點與外送都相同。`
+  }
+
+  if (mode === '外送' && country !== '*' && country !== '馬來') {
+    return `目前「${modeLabel}／${countryLabel}」延續外送非馬來底價制：14底 = 14K；13底-15底 = 13K-15K。`
+  }
+
+  if (mode === '外送' && country === '馬來') {
+    return '目前「外送／馬來」維持原底價制：14底 = 1.4K。'
+  }
+
+  if (country === '*') {
+    return `目前「${modeLabel}／全部國籍」無法判斷國籍底價制；請選擇具體國籍後分開儲存。`
+  }
+
+  if (mode === '*') {
+    return `目前「全部類型／${countryLabel}」維持原底價制：14底 = 1.4K；如定點與外送價格不同，請分開建立規則。`
+  }
+
+  return `目前「${modeLabel}／${countryLabel}」維持原底價制：14底 = 1.4K。`
+})
+
 function getSelectedPriceMappingProfile018204() {
   const key = getPriceMappingProfileKey018204(priceProfileMode018204.value, priceProfileCountry018204.value)
   return priceMappingProfiles018204.value.find(profile => (
@@ -11716,12 +11829,13 @@ function removePriceMappingProfile018204(profile) {
 function upsertPriceMappingProfileFromEditor018204() {
   const mappingsText = normalizePriceMappingDisplayText018208(priceMappingRulesText018204.value)
   const rangesText = normalizePriceMappingDisplayText018208(priceRangeRulesText018206.value)
-  const mappings = normalizeExactPriceMappings018204(mappingsText)
-  const ranges = normalizePriceRangeRules018206(rangesText)
-  if (!mappings.length && !ranges.length) return false
-
   const mode = normalizePriceProfileMode018204(priceProfileMode018204.value)
   const country = normalizePriceProfileCountry018204(priceProfileCountry018204.value)
+  const context = { mode, country }
+  const mappings = normalizeExactPriceMappings018204(mappingsText, context)
+  const ranges = normalizePriceRangeRules018206(rangesText, context)
+  if (!mappings.length && !ranges.length) return false
+
   const key = getPriceMappingProfileKey018204(mode, country)
   const profile = {
     mode,
@@ -11744,27 +11858,31 @@ function upsertPriceMappingProfileFromEditor018204() {
   return true
 }
 
-function getInvalidPriceRangeRuleLines018206(value) {
+function getInvalidPriceRangeRuleLines018206(value, context = {}) {
   return String(value || '')
     .split(/\r?\n/)
     .map(line => line.trim())
     .filter(Boolean)
-    .filter(line => !normalizePriceRangeRules018206(line).length)
+    .filter(line => !normalizePriceRangeRules018206(line, context).length)
 }
 
 async function savePriceSettings018204() {
   const hasEditorText = String(priceMappingRulesText018204.value || '').trim().length > 0
   const hasRangeText = String(priceRangeRulesText018206.value || '').trim().length > 0
-  if (hasEditorText && !normalizeExactPriceMappings018204(priceMappingRulesText018204.value).length) {
-    const message = '價格對照表格式不正確；請使用「原價=新價」，例如 5000=7500 或 14K=18K。'
+  const context = {
+    mode: normalizePriceProfileMode018204(priceProfileMode018204.value),
+    country: normalizePriceProfileCountry018204(priceProfileCountry018204.value)
+  }
+  if (hasEditorText && !normalizeExactPriceMappings018204(priceMappingRulesText018204.value, context).length) {
+    const message = '價格對照表格式不正確；請使用「原價=新價」，例如 5000=7500、14K=18K 或 14底=18K。'
     setRoomRuleFeedback(message, 'warning', { toast: true })
     return false
   }
   const invalidRangeLines = hasRangeText
-    ? getInvalidPriceRangeRuleLines018206(priceRangeRulesText018206.value)
+    ? getInvalidPriceRangeRuleLines018206(priceRangeRulesText018206.value, context)
     : []
   if (invalidRangeLines.length) {
-    const message = `區間加價格式不正確：${invalidRangeLines.slice(0, 2).join('、')}。請使用「起價-迄價=+加價」，例如 6000-9000=+2500 或 14K-16K=+5K。`
+    const message = `區間加價格式不正確：${invalidRangeLines.slice(0, 2).join('、')}。請使用「起價-迄價=+加價」，例如 13底-15底=+4000、6000-9000=+2500 或 14K-16K=+5K。`
     setRoomRuleFeedback(message, 'warning', { toast: true })
     return false
   }
@@ -11816,7 +11934,10 @@ function resolveExactPriceMapping018204(rawAmount, context = {}) {
 
   // 第 018-206 批：精準價格未命中時，再找區間加價。
   // 若規則重疊，優先使用涵蓋範圍較窄者；右側加價後即為最終價格。
-  const range = normalizePriceRangeRules018206(profile.ranges)
+  const range = normalizePriceRangeRules018206(profile.ranges, {
+    mode: profile.mode,
+    country: profile.country
+  })
     .filter(item => raw >= Number(item.min) && raw <= Number(item.max))
     .sort((a, b) => {
       const spanDiff = (a.max - a.min) - (b.max - b.min)
@@ -11844,7 +11965,11 @@ function resolveExactPriceMapping018204(rawAmount, context = {}) {
 }
 
 const priceRangePreview018206 = computed(() => {
-  return normalizePriceRangeRules018206(priceRangeRulesText018206.value).map(row => {
+  const context = {
+    mode: normalizePriceProfileMode018204(priceProfileMode018204.value),
+    country: normalizePriceProfileCountry018204(priceProfileCountry018204.value)
+  }
+  return normalizePriceRangeRules018206(priceRangeRulesText018206.value, context).map(row => {
     const samples = row.min === row.max
       ? [row.min]
       : [row.min, row.max]
@@ -22355,6 +22480,17 @@ button:disabled {
 
 .price-mapping-current-scope018204 span {
   color: #697990;
+}
+
+.price-bottom-notation-hint018210 {
+  padding: 10px 12px;
+  border: 1px solid rgba(15, 118, 110, 0.2);
+  border-radius: 12px;
+  background: rgba(20, 184, 166, 0.08);
+  color: #315f5b;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.6;
 }
 
 .price-mapping-editor018204 textarea {
