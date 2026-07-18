@@ -1,3 +1,5 @@
+<!-- 第 018-208 批：K 價格規則原文保留＋日妹國籍顯示＋國籍價格姓名切分修正版 -->
+<!-- batch018-208-preserve-k-rule-text-japanese-girl-header-price-fix -->
 <!-- 第 018-207 批：來源小姐價格支援 K／完整金額雙格式＋精準價格／區間加價 K 寫法通用版 -->
 <!-- batch018-207-source-k-amount-and-mapping-k-flex-fix -->
 <!-- 第 018-206 批：金額設定新增區間加價規則＋即時預覽版 -->
@@ -3611,6 +3613,37 @@ function parseCountryCodeSuffixHeaderLine(line) {
   }
 }
 
+function parseCountryPriceNameHeaderLine018208(line) {
+  const source = normalizeHeaderText(normalizeCountryCodeGlyphs018184(normalizeDigits(String(line || ''))))
+    .replace(/[\[\]【】()（）]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (!source || isNotHeaderLine(source)) return null
+
+  const aliases = getCountryKeys().sort((a, b) => b.length - a.length)
+  for (const alias of aliases) {
+    const escapedAlias = escapeRegExp(alias)
+    const match = source.match(new RegExp(
+      `^${escapedAlias}\\s*([0-9]+(?:\\.[0-9]+)?\\s*(?:K|千)?|[0-9]{4,6})\\s*([\\u4e00-\\u9fa5A-Za-z0-9]{1,18})(?=$|\\s|[^\\u4e00-\\u9fa5A-Za-z0-9])`,
+      'i'
+    ))
+    if (!match) continue
+
+    const amount = parseFlexibleAmount018207(match[1], { min: 1000, max: 100000 })
+    const name = cleanName(match[2])
+    if (!amount || !isValidName(name)) continue
+
+    return {
+      country: normalizeCountry(alias),
+      name,
+      amount,
+      matchedRule: '國籍＋價格＋姓名標題'
+    }
+  }
+
+  return null
+}
+
 function parsePricePrefixedNameHeaderLine018207(line) {
   const source = normalizeHeaderText(normalizeCountryCodeGlyphs018184(normalizeDigits(String(line || ''))))
     .replace(/[\[\]【】()（）]/g, ' ')
@@ -3641,6 +3674,9 @@ function parseStructuredHeaderSameLine(line, rules = getHeaderRulesForCurrentPar
 
   const countryCodeSuffixHeader = parseCountryCodeSuffixHeaderLine(line)
   if (countryCodeSuffixHeader) return countryCodeSuffixHeader
+
+  const countryPriceNameHeader = parseCountryPriceNameHeaderLine018208(line)
+  if (countryPriceNameHeader) return countryPriceNameHeader
 
   const pricePrefixedNameHeader = parsePricePrefixedNameHeaderLine018207(line)
   if (pricePrefixedNameHeader) return pricePrefixedNameHeader
@@ -3846,6 +3882,7 @@ const defaultCountryPriceRules = [
   '越南=500',
   '越妹=500',
   '新加坡=500',
+  '日妹=1000',
   '日本=1000',
   '韓國=1000',
   '外籍=500'
@@ -3865,8 +3902,8 @@ const defaultCountryAliases = [
   '越南=越南',
   '越妹=越妹',
   '新加坡=新加坡',
-  '日本=日本',
-  '日妹=日本',
+  '日本=日妹',
+  '日妹=日妹',
   '韓國=韓國',
   '韓妹=韓國',
   '俄羅斯=俄羅斯',
@@ -9262,7 +9299,7 @@ function extractLooseCountryContext(line) {
   // 例：「泰國洗無水床+300」只是服務，不得把目前馬來小姐改成泰妹。
   if (isNotHeaderLine(cleaned)) return ''
 
-  const explicitMatch = cleaned.match(/(?:國家|國籍)\s*[:：]?\s*(馬來西亞|馬來|越南|越妹|新加坡|港澳|台灣|台妹|泰國|泰妹|日本|韓國|外籍)/)
+  const explicitMatch = cleaned.match(/(?:國家|國籍)\s*[:：]?\s*(馬來西亞|馬來|越南|越妹|新加坡|港澳|台灣|台妹|泰國|泰妹|日本|日妹|韓國|外籍)/)
   if (explicitMatch) return normalizeCountry(explicitMatch[1])
 
   const standaloneCountry = extractStandaloneCountryFromLine(cleaned)
@@ -9551,7 +9588,7 @@ function extractCountryFromBlock(block) {
   if (countryCodeHeader?.country) return normalizeCountry(countryCodeHeader.country)
 
   for (const line of lines) {
-    const labeledMatch = line.match(/(?:國家|國籍)\s*[:：]?\s*(馬來西亞|馬來|越南|越妹|新加坡|港澳|台灣|台妹|泰國|泰妹|日本|韓國|外籍)/)
+    const labeledMatch = line.match(/(?:國家|國籍)\s*[:：]?\s*(馬來西亞|馬來|越南|越妹|新加坡|港澳|台灣|台妹|泰國|泰妹|日本|日妹|韓國|外籍)/)
     if (labeledMatch) return normalizeCountry(labeledMatch[1])
   }
 
@@ -9685,7 +9722,8 @@ function getStrictBuiltInCountryAliases() {
     ['台灣', '台妹'],
     ['台妹', '台妹'],
     ['港澳', '港澳'],
-    ['日本', '日本'],
+    ['日本', '日妹'],
+    ['日妹', '日妹'],
     ['韓國', '韓國'],
     ['外籍', '外籍']
   ].forEach(([from, to]) => {
@@ -11453,6 +11491,26 @@ function priceRangeRulesToText018206(ranges) {
     .join('\n')
 }
 
+function normalizePriceMappingDisplayText018208(value) {
+  return String(value || '')
+    .split(/\r?\n/)
+    .map(line => line.trim().replace(/k\b/gi, 'K').replace(/\s*=\s*/g, '='))
+    .filter(Boolean)
+    .join('\n')
+}
+
+function isSameExactPriceMappingText018208(textValue, mappings) {
+  const parsed = normalizeExactPriceMappings018204(textValue)
+  const normalizedMappings = normalizeExactPriceMappings018204(mappings)
+  return JSON.stringify(parsed) === JSON.stringify(normalizedMappings)
+}
+
+function isSamePriceRangeText018208(textValue, ranges) {
+  const parsed = normalizePriceRangeRules018206(textValue).map(({ min, max, add }) => ({ min, max, add }))
+  const normalizedRanges = normalizePriceRangeRules018206(ranges).map(({ min, max, add }) => ({ min, max, add }))
+  return JSON.stringify(parsed) === JSON.stringify(normalizedRanges)
+}
+
 function normalizePriceMappingProfiles018204(value) {
   const rows = Array.isArray(value) ? value : []
   const map = new Map()
@@ -11460,16 +11518,26 @@ function normalizePriceMappingProfiles018204(value) {
   rows.forEach(row => {
     const mode = normalizePriceProfileMode018204(row?.mode)
     const country = normalizePriceProfileCountry018204(row?.country)
-    const mappings = normalizeExactPriceMappings018204(row?.mappings ?? row?.rulesText ?? row?.rules)
-    const ranges = normalizePriceRangeRules018206(row?.ranges ?? row?.rangeRulesText ?? row?.rangeRules)
+    const rawMappingsText = normalizePriceMappingDisplayText018208(row?.mappingsText ?? row?.rulesText ?? '')
+    const rawRangesText = normalizePriceMappingDisplayText018208(row?.rangesText ?? row?.rangeRulesText ?? '')
+    const mappings = normalizeExactPriceMappings018204(row?.mappings ?? rawMappingsText ?? row?.rules)
+    const ranges = normalizePriceRangeRules018206(row?.ranges ?? rawRangesText ?? row?.rangeRules)
     if (!mappings.length && !ranges.length) return
     const fallback = row?.fallback === 'raw' ? 'raw' : 'legacy'
+    const mappingsText = rawMappingsText && isSameExactPriceMappingText018208(rawMappingsText, mappings)
+      ? rawMappingsText
+      : ''
+    const rangesText = rawRangesText && isSamePriceRangeText018208(rawRangesText, ranges)
+      ? rawRangesText
+      : ''
     map.set(getPriceMappingProfileKey018204(mode, country), {
       mode,
       country,
       fallback,
       mappings,
-      ranges
+      ranges,
+      mappingsText,
+      rangesText
     })
   })
 
@@ -11491,7 +11559,7 @@ function priceMappingsToText018204(mappings) {
 
 const priceProfileCountryOptions018204 = computed(() => {
   const preferred = [
-    '*', '台妹', '港澳', '日本', '韓國', '俄羅斯',
+    '*', '台妹', '港澳', '日妹', '韓國', '俄羅斯',
     '越妹', '越南', '泰妹', '馬來', '新加坡', '外籍'
   ]
   const values = new Set(preferred)
@@ -11535,8 +11603,12 @@ function isSelectedPriceMappingProfile018204(profile) {
 
 function loadPriceMappingEditor018204() {
   const profile = getSelectedPriceMappingProfile018204()
-  priceMappingRulesText018204.value = profile ? priceMappingsToText018204(profile.mappings) : ''
-  priceRangeRulesText018206.value = profile ? priceRangeRulesToText018206(profile.ranges) : ''
+  priceMappingRulesText018204.value = profile
+    ? (profile.mappingsText || priceMappingsToText018204(profile.mappings))
+    : ''
+  priceRangeRulesText018206.value = profile
+    ? (profile.rangesText || priceRangeRulesToText018206(profile.ranges))
+    : ''
   priceMappingFallback018204.value = profile?.fallback === 'raw' ? 'raw' : 'legacy'
 }
 
@@ -11563,8 +11635,10 @@ function removePriceMappingProfile018204(profile) {
 }
 
 function upsertPriceMappingProfileFromEditor018204() {
-  const mappings = normalizeExactPriceMappings018204(priceMappingRulesText018204.value)
-  const ranges = normalizePriceRangeRules018206(priceRangeRulesText018206.value)
+  const mappingsText = normalizePriceMappingDisplayText018208(priceMappingRulesText018204.value)
+  const rangesText = normalizePriceMappingDisplayText018208(priceRangeRulesText018206.value)
+  const mappings = normalizeExactPriceMappings018204(mappingsText)
+  const ranges = normalizePriceRangeRules018206(rangesText)
   if (!mappings.length && !ranges.length) return false
 
   const mode = normalizePriceProfileMode018204(priceProfileMode018204.value)
@@ -11575,14 +11649,19 @@ function upsertPriceMappingProfileFromEditor018204() {
     country,
     fallback: priceMappingFallback018204.value === 'raw' ? 'raw' : 'legacy',
     mappings,
-    ranges
+    ranges,
+    mappingsText,
+    rangesText
   }
   const remaining = priceMappingProfiles018204.value.filter(item => (
     getPriceMappingProfileKey018204(item.mode, item.country) !== key
   ))
   priceMappingProfiles018204.value = normalizePriceMappingProfiles018204([...remaining, profile])
-  priceMappingRulesText018204.value = priceMappingsToText018204(mappings)
-  priceRangeRulesText018206.value = priceRangeRulesToText018206(ranges)
+  const savedProfile = priceMappingProfiles018204.value.find(item => (
+    getPriceMappingProfileKey018204(item.mode, item.country) === key
+  ))
+  priceMappingRulesText018204.value = savedProfile?.mappingsText || priceMappingsToText018204(mappings)
+  priceRangeRulesText018206.value = savedProfile?.rangesText || priceRangeRulesToText018206(ranges)
   return true
 }
 
@@ -11756,8 +11835,12 @@ function getCountryKeys() {
 function normalizeCountry(country) {
   const value = normalizeCountryCodeGlyphs018184(String(country || '')).trim()
   const countryCode = COUNTRY_CODE_SUFFIX_MAP_018184.get(value.toUpperCase())
-  if (countryCode) return countryCode
-  return getCountryAliasMap().get(value) || value
+  const aliased = countryCode || getCountryAliasMap().get(value) || value
+
+  // 第 018-208 批：外送來源與使用者畫面統一顯示「日妹」。
+  // 即使舊帳號仍保存「日妹=日本」或既有價格設定國籍為「日本」，讀取時也會相容轉成日妹。
+  if (value === '日妹' || value === '日本' || aliased === '日本' || aliased === '日妹') return '日妹'
+  return aliased
 }
 
 function cleanName(value) {
