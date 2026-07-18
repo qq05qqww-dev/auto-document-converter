@@ -1,3 +1,5 @@
+<!-- 第 018-213 批：老闆公版服務同義詞專屬恢復＋版面完整修正版 -->
+<!-- batch018-213-owner-global-service-alias-restore-layout-fix -->
 <!-- 第 018-212 批：服務同義詞誤覆蓋一鍵恢復上一份完整規則版 -->
 <!-- batch018-212-restore-previous-service-alias-rules -->
 <!-- 第 018-211 批：定點指定國籍 X底千元制補強＋各類型國籍規則分流修正版 -->
@@ -1434,22 +1436,24 @@
         </div>
 
         <div v-if="activeAdvancedPanel === 'service-alias'" class="advanced-panel-clean">
-          <div class="setting-save-item advanced-save-item">
-            <div class="advanced-card-title-row">
-              <div>
+          <div class="setting-save-item advanced-save-item owner-service-alias-panel018213">
+            <div class="advanced-card-title-row owner-service-alias-title018213">
+              <div class="owner-service-alias-heading018213">
                 <strong>服務同義詞規則</strong>
-                <p>一行一組，格式：店家寫法=固定寫法。恢復按鈕只處理服務同義詞，不會修改服務排序或其他規則。</p>
+                <p v-if="isOwner">一行一組，格式：店家寫法=固定寫法。下方恢復功能只會還原老闆第一層公司全站公版，不會寫入商家／員工機房補充規則。</p>
+                <p v-else>一行一組，格式：店家寫法=固定寫法。商家／員工可維護自己的地區補充，但不能執行老闆公版恢復。</p>
               </div>
               <button
+                v-if="isOwner"
                 type="button"
-                class="mini-toggle-btn"
+                class="mini-toggle-btn owner-service-alias-restore-btn018213"
                 :disabled="isSavingScopeRules"
-                @click="restorePreviousServiceAliasRules018212"
+                @click="restoreOwnerGlobalServiceAliasRules018213"
               >
-                {{ isSavingScopeRules ? '儲存中...' : '恢復上一份服務同義詞' }}
+                {{ isSavingScopeRules ? '儲存中...' : '恢復老闆公版服務同義詞' }}
               </button>
             </div>
-            <textarea v-model="aliasRulesText"></textarea>
+            <textarea class="owner-service-alias-textarea018213" v-model="aliasRulesText"></textarea>
           </div>
         </div>
 
@@ -14466,22 +14470,27 @@ function applyRuleData(data, options = {}) {
   }
 }
 
-// 第 018-212 批：服務同義詞被誤貼成服務排序時，提供單一欄位的一鍵安全恢復。
-// 只把服務同義詞還原為第 018-208～018-211 沿用的完整預設內容，
-// 並透過既有分層儲存流程保存；服務排序、國籍、價格及其他設定完全不動。
-async function restorePreviousServiceAliasRules018212() {
+// 第 018-213 批：恢復功能只允許老闆操作，並強制寫入第一層公司全站公版。
+// 商家／員工機房補充規則不會被覆蓋；服務排序、國籍、價格及其他設定完全不動。
+async function restoreOwnerGlobalServiceAliasRules018213() {
   if (isSavingScopeRules.value) return
 
+  if (!isOwner.value) {
+    setRoomRuleFeedback('只有老闆可以恢復第一層公司全站公版服務同義詞；商家／員工補充規則不會被修改。', 'warning', { toast: true })
+    return
+  }
+
   const confirmed = window.confirm(
-    `確定要恢復上一份完整服務同義詞嗎？\n\n將覆蓋目前服務同義詞，共恢復 ${defaultAliasRules.length} 筆。\n服務排序、價格、國籍與其他設定不會變更。`
+    `確定要恢復老闆第一層公司全站公版服務同義詞嗎？\n\n將覆蓋老闆公版的服務同義詞，共恢復 ${defaultAliasRules.length} 筆。\n商家／員工機房補充、服務排序、價格、國籍與其他設定都不會變更。`
   )
   if (!confirmed) return
 
+  ruleScopeLevel.value = 'global'
   aliasRulesText.value = defaultAliasRules.join('\n')
-  const saved = await saveRuleFields('服務同義詞', ['aliasRulesText'])
+  const saved = await saveRuleFields('老闆公版服務同義詞', ['aliasRulesText'])
   if (!saved) return
 
-  statusMessage.value = `已恢復上一份完整服務同義詞，共 ${defaultAliasRules.length} 筆；其他設定未修改。`
+  statusMessage.value = `已恢復老闆第一層公司全站公版服務同義詞，共 ${defaultAliasRules.length} 筆；商家／員工補充與其他設定未修改。`
 }
 
 function addAliasRule() {
@@ -21239,6 +21248,56 @@ button:disabled {
 
 .advanced-panel-clean > .advanced-save-item {
   width: 100%;
+}
+
+/* 第 018-213 批：服務同義詞恢復只屬於老闆公版，內容區固定單欄完整寬度 */
+.owner-service-alias-panel018213 {
+  display: flex !important;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+}
+
+.owner-service-alias-title018213 {
+  width: 100%;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+}
+
+.owner-service-alias-heading018213 {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.owner-service-alias-heading018213 p {
+  margin: 5px 0 0;
+  line-height: 1.55;
+}
+
+.owner-service-alias-restore-btn018213 {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.owner-service-alias-textarea018213 {
+  display: block;
+  width: 100% !important;
+  min-width: 0;
+  min-height: 220px;
+  margin-top: 0 !important;
+  box-sizing: border-box;
+}
+
+@media (max-width: 760px) {
+  .owner-service-alias-title018213 {
+    flex-wrap: wrap;
+  }
+
+  .owner-service-alias-restore-btn018213 {
+    width: 100%;
+  }
 }
 
 .advanced-two-col-grid > .advanced-save-item {
