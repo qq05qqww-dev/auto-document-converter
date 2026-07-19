@@ -1,3 +1,5 @@
+<!-- 第 018-229 批：同一小姐露臉／不露臉攝影並存保留修正版 -->
+<!-- batch018-229-photography-face-no-face-both-explicit-keep-fix -->
 <!-- 第 018-228 批：攝影冒號露臉／不露臉加價解析修正版 -->
 <!-- batch018-228-photography-colon-face-amount-parse-fix -->
 <!-- batch018-227-location-manager-overflow-click-layer-layout-fix -->
@@ -12620,14 +12622,33 @@ function extractServices(block, currentLady = {}) {
   const explicitPhotographyAmount = findExplicitAmountForServiceName(block, '攝影')
   const explicitNoFacePhotographyAmount = findExplicitPhotographyAmount(block, 'no-face')
   const explicitFacePhotographyAmount = findExplicitPhotographyAmount(block, 'face')
+  const hasExplicitNoFacePhotography = hasExplicitPhotographyQualifier018229(block, 'no-face')
+  const hasExplicitFacePhotography = hasExplicitPhotographyQualifier018229(block, 'face')
 
-  if (shouldPreferNoFacePhotography(block)) {
+  // 第 018-229 批：同一位小姐可能同時列出「攝影不露臉」與「攝影露臉」。
+  // 舊版為避免「不露臉」內含「露臉」而採不露臉單一優先，會把真正明列的露臉方案刪掉。
+  // 現在先辨識兩種完整服務是否各自明確出現；若兩者都有，就分別保留各自金額。
+  if (hasExplicitNoFacePhotography && hasExplicitFacePhotography) {
+    removePhotographyServiceVariants(found)
+
+    const noFaceOutput = explicitNoFacePhotographyAmount
+      ? `攝影不露臉+${explicitNoFacePhotographyAmount}`
+      : '攝影不露臉'
+    const faceOutput = explicitFacePhotographyAmount
+      ? `攝影露臉+${explicitFacePhotographyAmount}`
+      : '攝影露臉'
+
+    found.add(noFaceOutput)
+    found.add(faceOutput)
+    if (explicitNoFacePhotographyAmount) explicitPaidAliasOutputs.add(noFaceOutput)
+    if (explicitFacePhotographyAmount) explicitPaidAliasOutputs.add(faceOutput)
+  } else if (hasExplicitNoFacePhotography || shouldPreferNoFacePhotography(block)) {
     removePhotographyServiceVariants(found)
     const amount = explicitNoFacePhotographyAmount || explicitPhotographyAmount
     const output = amount ? `攝影不露臉+${amount}` : '攝影不露臉'
     found.add(output)
     if (amount) explicitPaidAliasOutputs.add(output)
-  } else if (shouldPreferFacePhotography(block)) {
+  } else if (hasExplicitFacePhotography || shouldPreferFacePhotography(block)) {
     removePhotographyServiceVariants(found)
     const amount = explicitFacePhotographyAmount || explicitPhotographyAmount
     const output = amount ? `攝影露臉+${amount}` : '攝影露臉'
@@ -12943,10 +12964,9 @@ function reconcileExplicitServiceAmounts(found, sourceText, aliases = []) {
 }
 
 function normalizeOverlappingServices(found) {
-  // 第 018-113 批：有「攝影不露臉+1000」時，不能同時保留「攝影露臉+1000」。
-  if (found.has('攝影不露臉+1000') && found.has('攝影露臉+1000')) {
-    found.delete('攝影露臉+1000')
-  }
+  // 第 018-229 批：露臉與不露臉是兩個可同時存在的正式攝影方案。
+  // 是否為「不露臉」文字內含「露臉」造成的假命中，已在來源辨識階段處理；
+  // 這裡不可再只因金額相同就刪除露臉方案。
 
   // 第 018-119 批：文件1 寫「買2節3s / 買兩節3S」時，輸出以店家原意「買2節3s」為準。
   // 若舊規則同時抓到 2+1s，會在下方去重移除。
@@ -13872,6 +13892,31 @@ function removePhotographyServiceVariants(found) {
     const base = normalizeServiceAliasMatchText(stripMonetaryServiceSuffix(item))
     if (photographyBases.has(base)) found.delete(item)
   })
+}
+
+
+// 第 018-229 批：辨識同一份來源內是否「各自明確」存在露臉／不露臉攝影。
+// 不能只用整段 includes('不露臉') 決定露臉不存在，否則兩種方案同時列出時會遺失其中一種。
+function hasExplicitPhotographyQualifier018229(text, mode = 'face') {
+  let value = normalizePhotographyDescriptorText018228(text)
+  if (!value) return false
+
+  if (mode === 'no-face') {
+    return /攝影(?:\+?\d+)?不露臉(?:\+?\d+)?/.test(value)
+      || /攝影不露臉(?:\+?\d+)?/.test(value)
+      || /不露臉攝影(?:\+?\d+)?/.test(value)
+  }
+
+  // 先移除完整「不露臉攝影」片段，再尋找真正獨立存在的「露臉攝影」。
+  // 這樣「不露臉」內含的「露臉」不會造成誤判，但另一行明寫露臉仍會被保留。
+  value = value
+    .replace(/攝影(?:\+?\d+)?不露臉(?:\+?\d+)?/g, '')
+    .replace(/攝影不露臉(?:\+?\d+)?/g, '')
+    .replace(/不露臉攝影(?:\+?\d+)?/g, '')
+
+  return /攝影(?:\+?\d+)?露臉(?:\+?\d+)?/.test(value)
+    || /攝影露臉(?:\+?\d+)?/.test(value)
+    || /露臉攝影(?:\+?\d+)?/.test(value)
 }
 
 
