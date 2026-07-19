@@ -1,4 +1,5 @@
 <!-- 第 018-217 批：標題年齡自動移出小姐名稱＋年齡僅保留身材尾端修正版 -->
+<!-- batch018-218-outside-delivery-no-weight-height-cup-age-parse-fix -->
 <!-- batch018-217-header-age-removed-from-name-single-body-age-fix -->
 <!-- 第 018-216 批：正式儲存全面線上成功判定＋本機僅快取修正版 -->
 <!-- batch018-216-formal-save-online-confirmed-local-cache-only-fix -->
@@ -8771,11 +8772,22 @@ function parseConfirmedTextToJson(text) {
     const name = titleParts.slice(1).join(' ') || ''
 
     const bodyMatch = rest.match(/^(\d{3})\s+(\d{2})\s+([A-Za-z])(?:\s+(\d{2})y)?\s*(.*)$/)
-    const height = bodyMatch ? Number(bodyMatch[1]) : null
+    const outsideBodyWithoutWeightMatch = !bodyMatch && isOutsideDeliveryType(location.mode)
+      ? rest.match(/^(\d{3})\s+([A-Za-z])(?:\s+(\d{2})y)?\s*(.*)$/)
+      : null
+    const height = bodyMatch
+      ? Number(bodyMatch[1])
+      : (outsideBodyWithoutWeightMatch ? Number(outsideBodyWithoutWeightMatch[1]) : null)
     const weight = bodyMatch ? Number(bodyMatch[2]) : null
-    const cup = bodyMatch ? bodyMatch[3].toUpperCase() : ''
-    const age = bodyMatch && bodyMatch[4] ? Number(bodyMatch[4]) : null
-    const pricesPart = bodyMatch ? bodyMatch[5] : rest
+    const cup = bodyMatch
+      ? bodyMatch[3].toUpperCase()
+      : (outsideBodyWithoutWeightMatch ? outsideBodyWithoutWeightMatch[2].toUpperCase() : '')
+    const age = bodyMatch && bodyMatch[4]
+      ? Number(bodyMatch[4])
+      : (outsideBodyWithoutWeightMatch?.[3] ? Number(outsideBodyWithoutWeightMatch[3]) : null)
+    const pricesPart = bodyMatch
+      ? bodyMatch[5]
+      : (outsideBodyWithoutWeightMatch ? outsideBodyWithoutWeightMatch[4] : rest)
 
     const pricePlans = pricesPart
       .split(/\s+/)
@@ -9586,7 +9598,9 @@ function analyzeRecordForPreview(block) {
   const missing = []
 
   if (!header) missing.push('小姐姓名／國籍')
-  if (!body) missing.push('身高／體重／罩杯')
+  if (!body) {
+    missing.push(isOutsideDeliveryType(ruleScopeType.value) ? '身高／罩杯／年齡' : '身高／體重／罩杯')
+  }
   if (!prices.length) missing.push('正式價格方案')
 
   const complete = Boolean(header && body && prices.length)
@@ -9953,7 +9967,9 @@ function isBodySuffixOnly(text) {
 
   if (!value) return false
 
-  return /^(?:\d{2}(?:歲|y|Y)?)?\d{3}\d{2}(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)?[A-Za-z].*$/i.test(value)
+  const fullBodySuffixMatched = /^(?:\d{2}(?:歲|y|Y)?)?\d{3}\d{2}(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)?[A-Za-z].*$/i.test(value)
+  const outsideNoWeightSuffixMatched = /^\d{3}(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)?[A-Ka-k]\d{2}(?:歲|y|Y)?$/i.test(value)
+  return fullBodySuffixMatched || outsideNoWeightSuffixMatched
 }
 
 function removeHeaderNoise(text) {
@@ -9968,6 +9984,15 @@ function removeHeaderNoise(text) {
   // 標題同一行可能長這樣：
   // 越南妹妹 京香 157/44/D
   // 需要先把身材片段切掉，避免小姐名變成「京香15744D」或「16244E」。
+  // 第 018-218 批：外送來源可能省略體重，直接寫「161/H/21」。
+  // 這段是身高／罩杯／年齡，不可黏進小姐姓名。
+  if (isOutsideDeliveryType(ruleScopeType.value || managerSelectedType.value)) {
+    value = value.replace(
+      /\d{3}\s*[\/.．。·・,，:：_-]\s*(?:(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)\s*)?(?:奶|罩杯|胸)?\s*([A-Ka-k])\s*(?:奶|杯)?\s*[\/.．。·・,，:：_-]\s*\d{2}\s*(?:歲|y|Y)?\s*$/giu,
+      ''
+    )
+  }
+
   value = value
     .replace(/\d{2}\s*(?:歲|y|Y)\s*[.．\s]*\d{3}\s*[\/.．]\s*\d{2}\s*[\/.．]?\s*(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)?[A-Za-z].*$/g, '')
     .replace(/\d{3}\s*[\/.．]\s*\d{2}\s*[\/.．]?\s*(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)?[A-Za-z].*$/g, '')
@@ -10074,6 +10099,36 @@ function parseSeparatedDigitBodyLine(line) {
   })
 }
 
+function parseOutsideDeliveryBodyWithoutWeight018218(line) {
+  // 第 018-218 批：外送妹可省略體重，來源格式例如「161/H/21」。
+  // 只有目前工作區為外送時才啟用，避免改變定點既有身材判斷。
+  const currentMode = cleanScopeText(ruleScopeType.value || managerSelectedType.value)
+  if (!isOutsideDeliveryType(currentMode)) return null
+
+  const source = normalizeDigits(String(line || '')).normalize('NFKC').trim()
+  if (!source) return null
+
+  const match = source.match(
+    /(\d{3})\s*(?:[\/.．。·・,，:：_-]\s*|\s+)(?:(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)\s*)?(?:奶|罩杯|胸)?\s*([A-Ka-k])\s*(?:奶|杯)?\s*(?:[\/.．。·・,，:：_-]\s*|\s+)(\d{2})\s*(?:歲|y|Y)?(?=\s|$|[^0-9A-Za-z])/iu
+  )
+  if (!match) return null
+
+  const height = Number(match[1])
+  const cup = String(match[2] || '').toUpperCase()
+  const age = Number(match[3])
+  if (!Number.isFinite(height) || height < 130 || height > 210) return null
+  if (!/^[A-K]$/.test(cup)) return null
+  if (!Number.isFinite(age) || age < 18 || age > 65) return null
+
+  return {
+    height: String(height),
+    weight: '',
+    cup,
+    age: `${age}y`,
+    matchedRule: '外送無體重：身高／罩杯／年齡'
+  }
+}
+
 function parseBody(text) {
   const rawLines = normalizeDigits(String(text || ''))
     .split('\n')
@@ -10083,6 +10138,9 @@ function parseBody(text) {
   for (const line of rawLines) {
     const separatedDigitBody = parseSeparatedDigitBodyLine(line)
     if (separatedDigitBody) return separatedDigitBody
+
+    const outsideDeliveryBodyWithoutWeight018218 = parseOutsideDeliveryBodyWithoutWeight018218(line)
+    if (outsideDeliveryBodyWithoutWeight018218) return outsideDeliveryBodyWithoutWeight018218
 
     const advancedBody = parseBodyWithAdvancedRegex(line)
     if (advancedBody) return advancedBody
