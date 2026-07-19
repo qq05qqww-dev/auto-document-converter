@@ -2652,6 +2652,7 @@
 <!-- batch018-120-sync-id-backfill-media-upload-fix -->
 <!-- batch018-138-central-direct-media-upload-bind-fix -->
 <script setup>
+// batch018-231-supabase-auth-load-single-flight-employee-rules-403-fix
 // batch018-175-age-before-cup-body-and-cup-whitelist-fix
 // batch018-176-structured-source-recognition-owner-regex-output-unification
 // batch018-177-wide-recognition-modal-owner-chinese-special-format
@@ -3595,6 +3596,96 @@ const SUPABASE_PUBLIC_API_KEY = 'sb_publishable_nc-vY2-GIr_jkEvS3YIUEQ_vw8bImsk'
 const authReady = ref(false)
 const authUser = ref(null)
 const authProfile = ref(null)
+
+// 第 018-231 批：所有去重鎖都只存在目前瀏覽器分頁；不同員工、不同裝置各自獨立，互不等待。
+const AUTH_SESSION_CACHE_MS018231 = 15000
+const ONLINE_LOAD_DEDUPE_MS018231 = 1800
+let authSessionPromise018231 = null
+let cachedAuthSession018231 = null
+let cachedAuthSessionAt018231 = 0
+let cachedAuthSessionUserId018231 = ''
+let onlineWorkspaceLoadPromise018231 = null
+let onlineWorkspaceLoadUserId018231 = ''
+let onlineWorkspaceLoadedAt018231 = 0
+let locationOptionsLoadPromise018231 = null
+let locationOptionsLoadUserId018231 = ''
+let locationOptionsLoadedAt018231 = 0
+let employeeCommonLoadPromise018231 = null
+let employeeCommonLoadUserId018231 = ''
+let employeeCommonLoadedAt018231 = 0
+let currentScopeRulesLoadPromise018231 = null
+let currentScopeRulesLoadKey018231 = ''
+let currentScopeRulesLoadedAt018231 = 0
+let ownerGlobalRuleLoadPromise018231 = null
+let ownerGlobalRuleLoadUserId018231 = ''
+let ownerGlobalRuleLoadedAt018231 = 0
+let ownerGlobalRuleCache018231 = null
+let suppressScopeRuleAutoLoad018231 = false
+
+function cacheAuthSession018231(session) {
+  cachedAuthSession018231 = session || null
+  cachedAuthSessionAt018231 = Date.now()
+  cachedAuthSessionUserId018231 = String(session?.user?.id || '')
+}
+
+function resetOnlineRequestGuards018231() {
+  authSessionPromise018231 = null
+  cachedAuthSession018231 = null
+  cachedAuthSessionAt018231 = 0
+  cachedAuthSessionUserId018231 = ''
+  onlineWorkspaceLoadPromise018231 = null
+  onlineWorkspaceLoadUserId018231 = ''
+  onlineWorkspaceLoadedAt018231 = 0
+  locationOptionsLoadPromise018231 = null
+  locationOptionsLoadUserId018231 = ''
+  locationOptionsLoadedAt018231 = 0
+  employeeCommonLoadPromise018231 = null
+  employeeCommonLoadUserId018231 = ''
+  employeeCommonLoadedAt018231 = 0
+  currentScopeRulesLoadPromise018231 = null
+  currentScopeRulesLoadKey018231 = ''
+  currentScopeRulesLoadedAt018231 = 0
+  ownerGlobalRuleLoadPromise018231 = null
+  ownerGlobalRuleLoadUserId018231 = ''
+  ownerGlobalRuleLoadedAt018231 = 0
+  ownerGlobalRuleCache018231 = null
+  suppressScopeRuleAutoLoad018231 = false
+}
+
+async function getAuthSession018231(options = {}) {
+  if (!supabaseConfigured || !supabase) {
+    return { data: { session: null }, error: new Error('Supabase 尚未設定。') }
+  }
+
+  const force = options.force === true
+  const now = Date.now()
+  const activeUserId = String(authUser.value?.id || '')
+  const cacheMatchesUser = !activeUserId || !cachedAuthSessionUserId018231 || activeUserId === cachedAuthSessionUserId018231
+
+  if (
+    !force &&
+    cacheMatchesUser &&
+    cachedAuthSession018231 &&
+    now - cachedAuthSessionAt018231 < AUTH_SESSION_CACHE_MS018231
+  ) {
+    return { data: { session: cachedAuthSession018231 }, error: null }
+  }
+
+  if (authSessionPromise018231) return authSessionPromise018231
+
+  authSessionPromise018231 = (async () => {
+    const result = await supabase.auth.getSession()
+    if (!result?.error) cacheAuthSession018231(result?.data?.session || null)
+    return result
+  })()
+
+  try {
+    return await authSessionPromise018231
+  } finally {
+    authSessionPromise018231 = null
+  }
+}
+
 const loginEmail = ref('')
 const loginPassword = ref('')
 const loginStatus = ref('請輸入員工 Email 與密碼。')
@@ -3639,6 +3730,10 @@ function cleanStaffName(value) {
 }
 
 function applyAuthenticatedProfile(user, profile = null) {
+  const previousUserId = String(authUser.value?.id || '')
+  const nextUserId = String(user?.id || '')
+  if (previousUserId !== nextUserId) resetOnlineRequestGuards018231()
+
   authUser.value = user || null
   authProfile.value = profile || null
 
@@ -3707,7 +3802,7 @@ async function refreshAuthState() {
     return
   }
 
-  const { data, error } = await supabase.auth.getSession()
+  const { data, error } = await getAuthSession018231({ force: true })
   if (error) {
     loginStatus.value = `登入狀態讀取失敗：${error.message}`
     loginStatusType.value = 'error'
@@ -3724,7 +3819,8 @@ async function refreshAuthState() {
 
   const profile = await loadAuthProfile(user)
   applyAuthenticatedProfile(user, profile)
-  await loadOnlineWorkspace({ silent: true })
+  cacheAuthSession018231(data?.session || null)
+  await loadOnlineWorkspace({ silent: true, force: true })
   authReady.value = true
 }
 
@@ -3760,13 +3856,14 @@ async function loginWithSupabase() {
   const user = data?.user || data?.session?.user || null
   const profile = await loadAuthProfile(user)
   applyAuthenticatedProfile(user, profile)
+  cacheAuthSession018231(data?.session || null)
 
   loginPassword.value = ''
   loginStatus.value = '登入成功。'
   loginStatusType.value = 'ok'
   isAuthBusy.value = false
 
-  await loadOnlineWorkspace({ silent: true })
+  await loadOnlineWorkspace({ silent: true, force: true })
   closeAllTopPanelsForCleanStart()
 }
 
@@ -3824,7 +3921,7 @@ function cancelEditEmployee() {
 }
 
 async function callCreateEmployeeFunction(payload) {
-  const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+  const { data: sessionData, error: sessionError } = await getAuthSession018231()
   const accessToken = sessionData?.session?.access_token || ''
 
   if (sessionError || !accessToken) {
@@ -4047,6 +4144,7 @@ async function deleteEmployeeAccount(profile) {
 async function logoutFromSupabase() {
   if (!supabaseConfigured) return
   await supabase.auth.signOut()
+  resetOnlineRequestGuards018231()
   authUser.value = null
   authProfile.value = null
   currentStaffName.value = STAFF_DEFAULT_NAME
@@ -4066,17 +4164,33 @@ async function reloadCurrentProfile() {
   if (!authUser.value) return
   const profile = await loadAuthProfile(authUser.value)
   applyAuthenticatedProfile(authUser.value, profile)
-  await loadOnlineWorkspace({ silent: true })
+  await loadOnlineWorkspace({ silent: true, force: true })
   await loadFrontendLadies({ silent: true, refresh: true })
   statusMessage.value = '已重新讀取登入身份、線上個人工作區與中央最新縣市／地區／機房位置。'
 }
 
-function getStaffStorageSuffix() {
+function getLegacyStaffStorageSuffix018231() {
   return encodeURIComponent(cleanStaffName(currentStaffName.value))
 }
 
+function getStaffStorageSuffix() {
+  const userId = String(authUser.value?.id || '').trim()
+  return userId
+    ? `uid_${encodeURIComponent(userId)}`
+    : `name_${getLegacyStaffStorageSuffix018231()}`
+}
+
 function getStaffScopedStorageKey(baseKey) {
-  return `${baseKey}__staff__${getStaffStorageSuffix()}`
+  const nextKey = `${baseKey}__staff__${getStaffStorageSuffix()}`
+
+  // 舊版本用顯示名稱當快取鍵；登入後只做一次相容搬移，正式資料仍以 Supabase user_id 為準。
+  if (authUser.value?.id && localStorage.getItem(nextKey) === null) {
+    const legacyKey = `${baseKey}__staff__${getLegacyStaffStorageSuffix018231()}`
+    const legacyValue = localStorage.getItem(legacyKey)
+    if (legacyValue !== null) localStorage.setItem(nextKey, legacyValue)
+  }
+
+  return nextKey
 }
 
 async function switchStaffProfile() {
@@ -4098,7 +4212,7 @@ async function switchStaffProfile() {
   ruleScopeRoom.value = ''
   ruleScopeLevel.value = 'global'
 
-  await loadOnlineWorkspace({ silent: true })
+  await loadOnlineWorkspace({ silent: true, force: true })
   closeAllTopPanelsForCleanStart()
   statusMessage.value = `已切換到「${nextName}」個人工作區。縣市、地區、機房與規則都會跟其他員工分開保存。`
 }
@@ -5560,7 +5674,7 @@ onMounted(async () => {
   if (!authUser.value) return
   repairProtectedGlobalRules()
   closeAllTopPanelsForCleanStart()
-  loadRules({ silent: true })
+  // 第 018-231 批：refreshAuthState 已完整讀取線上工作區，不再重複呼叫 loadRules。
   loadConfirmedText({ silent: true })
   normalizeDocument3Text()
   await loadFrontendLadies({ silent: true })
@@ -8959,7 +9073,7 @@ function buildCentralWebsiteSyncItem(item, previewLady = null) {
 }
 
 async function getCentralWebsiteAccessToken() {
-  const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+  const { data: sessionData, error: sessionError } = await getAuthSession018231()
   const accessToken = sessionData?.session?.access_token || ''
   if (sessionError || !accessToken) {
     throw new Error(`無法取得員工登入憑證：${sessionError?.message || '請重新登入'}`)
@@ -14744,6 +14858,83 @@ function buildOnlineOptionsPayload(options = locationOptions.value) {
   }
 }
 
+function normalizeEmployeeRuleScope018231(scope = {}) {
+  return {
+    city: cleanScopeText(scope.city),
+    district: cleanScopeText(scope.district),
+    mode: cleanScopeText(scope.mode || scope.type),
+    room: cleanScopeText(scope.room)
+  }
+}
+
+async function readEmployeeRuleRow018231(scope) {
+  if (!isOnlineWorkspaceReady()) return null
+  const normalized = normalizeEmployeeRuleScope018231(scope)
+  const { data, error } = await supabase
+    .from('employee_rules')
+    .select('rules')
+    .eq('user_id', authUser.value.id)
+    .eq('city', normalized.city)
+    .eq('district', normalized.district)
+    .eq('mode', normalized.mode)
+    .eq('room', normalized.room)
+    .limit(1)
+
+  if (error) throw error
+  return Array.isArray(data) && data.length ? data[0]?.rules || null : null
+}
+
+async function saveEmployeeRuleRow018231(scope, rules, label = '員工規則') {
+  if (!isOnlineWorkspaceReady()) throw new Error('尚未登入，無法寫入線上員工規則。')
+  const normalized = normalizeEmployeeRuleScope018231(scope)
+
+  const { data: existingRows, error: readError } = await supabase
+    .from('employee_rules')
+    .select('user_id')
+    .eq('user_id', authUser.value.id)
+    .eq('city', normalized.city)
+    .eq('district', normalized.district)
+    .eq('mode', normalized.mode)
+    .eq('room', normalized.room)
+    .limit(1)
+
+  if (readError) throw readError
+
+  let result = null
+  if (Array.isArray(existingRows) && existingRows.length) {
+    result = await supabase
+      .from('employee_rules')
+      .update({ rules })
+      .eq('user_id', authUser.value.id)
+      .eq('city', normalized.city)
+      .eq('district', normalized.district)
+      .eq('mode', normalized.mode)
+      .eq('room', normalized.room)
+      .select('rules')
+  } else {
+    result = await supabase
+      .from('employee_rules')
+      .insert({
+        user_id: authUser.value.id,
+        city: normalized.city,
+        district: normalized.district,
+        mode: normalized.mode,
+        room: normalized.room,
+        rules
+      })
+      .select('rules')
+  }
+
+  if (result?.error) throw result.error
+  if (!Array.isArray(result?.data) || !result.data.length) {
+    throw new Error(`${label}寫入 0 筆；請確認 employee_rules 的 SELECT／INSERT／UPDATE 權限。`)
+  }
+
+  const verified = await readEmployeeRuleRow018231(normalized)
+  if (!verified || typeof verified !== 'object') throw new Error(`${label}送出後未能重新讀回。`)
+  return verified
+}
+
 async function saveLocationOptionsOnline(options = locationOptions.value, opts = {}) {
   if (!isOnlineWorkspaceReady()) {
     const error = new Error('尚未登入，無法把管理清單儲存到線上。')
@@ -14754,46 +14945,17 @@ async function saveLocationOptionsOnline(options = locationOptions.value, opts =
 
   try {
     const payload = buildOnlineOptionsPayload(options)
-    const { data: savedRows, error } = await supabase
-      .from('employee_rules')
-      .upsert({
-        user_id: authUser.value.id,
-        city: ONLINE_OPTIONS_SCOPE.city,
-        district: ONLINE_OPTIONS_SCOPE.district,
-        mode: ONLINE_OPTIONS_SCOPE.mode,
-        room: ONLINE_OPTIONS_SCOPE.room,
-        rules: payload
-      }, { onConflict: 'user_id,city,district,mode,room' })
-      .select('rules')
+    const savedRule = await saveEmployeeRuleRow018231(ONLINE_OPTIONS_SCOPE, payload, '管理清單')
+    if (!savedRule?.options) throw new Error('管理清單送出後沒有讀回 options。')
 
-    if (error) throw error
-
-    const savedRule = Array.isArray(savedRows) ? savedRows[0]?.rules : null
-    if (!savedRule?.options) {
-      throw new Error('Supabase 回傳寫入 0 筆或沒有管理清單內容。')
-    }
-
-    let verifiedOptions = normalizeLocationOptions(savedRule.options)
-    if (opts.verify !== false) {
-      const { data: verifiedRow, error: verifyError } = await supabase
-        .from('employee_rules')
-        .select('rules')
-        .eq('user_id', authUser.value.id)
-        .eq('city', ONLINE_OPTIONS_SCOPE.city)
-        .eq('district', ONLINE_OPTIONS_SCOPE.district)
-        .eq('mode', ONLINE_OPTIONS_SCOPE.mode)
-        .eq('room', ONLINE_OPTIONS_SCOPE.room)
-        .maybeSingle()
-
-      if (verifyError) throw verifyError
-      if (!verifiedRow?.rules?.options) throw new Error('管理清單送出後未能重新讀回。')
-      verifiedOptions = normalizeLocationOptions(verifiedRow.rules.options)
-    }
+    const verifiedOptions = normalizeLocationOptions(savedRule.options)
 
     if (!areLocationOptionsEquivalent018216(verifiedOptions, payload.options)) {
       throw new Error('線上重新讀回的管理清單與本次修改不同。')
     }
 
+    locationOptionsLoadUserId018231 = String(authUser.value?.id || '')
+    locationOptionsLoadedAt018231 = Date.now()
     if (!opts.silent) statusMessage.value = '已在線上儲存並驗證目前縣市／地區／機房清單。'
     return verifiedOptions
   } catch (error) {
@@ -14804,7 +14966,7 @@ async function saveLocationOptionsOnline(options = locationOptions.value, opts =
   }
 }
 
-async function loadLocationOptionsOnline(opts = {}) {
+async function loadLocationOptionsOnlineInternal018231(opts = {}) {
   if (!isOnlineWorkspaceReady()) {
     locationOptions.value = readLocationOptions()
     return false
@@ -14849,6 +15011,31 @@ async function loadLocationOptionsOnline(opts = {}) {
   return false
 }
 
+async function loadLocationOptionsOnline(opts = {}) {
+  const userId = String(authUser.value?.id || '')
+  if (locationOptionsLoadPromise018231 && locationOptionsLoadUserId018231 === userId) {
+    return locationOptionsLoadPromise018231
+  }
+  if (
+    opts.force !== true &&
+    userId &&
+    locationOptionsLoadUserId018231 === userId &&
+    Date.now() - locationOptionsLoadedAt018231 < ONLINE_LOAD_DEDUPE_MS018231
+  ) {
+    return true
+  }
+
+  locationOptionsLoadUserId018231 = userId
+  locationOptionsLoadPromise018231 = loadLocationOptionsOnlineInternal018231(opts)
+  try {
+    const result = await locationOptionsLoadPromise018231
+    locationOptionsLoadedAt018231 = Date.now()
+    return result
+  } finally {
+    locationOptionsLoadPromise018231 = null
+  }
+}
+
 async function getOnlineEmployeeAccountCommonRules018215() {
   if (!isOnlineWorkspaceReady() || isOwner.value) return null
 
@@ -14873,25 +15060,15 @@ async function saveOnlineEmployeeAccountCommonRules018215(data) {
   }
 
   const payload = normalizeEmployeeAccountCommonRules018215(data)
-  const { data: savedRows, error } = await supabase
-    .from('employee_rules')
-    .upsert({
-      user_id: authUser.value.id,
-      city: EMPLOYEE_COMMON_RULE_SCOPE018215.city,
-      district: EMPLOYEE_COMMON_RULE_SCOPE018215.district,
-      mode: EMPLOYEE_COMMON_RULE_SCOPE018215.mode,
-      room: EMPLOYEE_COMMON_RULE_SCOPE018215.room,
-      rules: payload
-    }, { onConflict: 'user_id,city,district,mode,room' })
-    .select('rules')
-
-  if (error) throw error
-  if (!Array.isArray(savedRows) || !savedRows.length) {
-    throw new Error('Supabase 回傳寫入 0 筆；請確認 employee_rules 的登入帳號寫入權限。')
-  }
-
-  const verified = await getOnlineEmployeeAccountCommonRules018215()
+  const savedRule = await saveEmployeeRuleRow018231(
+    EMPLOYEE_COMMON_RULE_SCOPE018215,
+    payload,
+    '登入帳號常用規則'
+  )
+  const verified = normalizeEmployeeAccountCommonRules018215(savedRule)
   if (!verified) throw new Error('帳號常用規則送出後未能重新讀回。')
+  employeeCommonLoadUserId018231 = String(authUser.value?.id || '')
+  employeeCommonLoadedAt018231 = Date.now()
 
   const different = [
     normalizeRuleTextForCompare(verified.aliasRulesText) !== normalizeRuleTextForCompare(payload.aliasRulesText) ? '服務同義詞' : '',
@@ -14904,7 +15081,7 @@ async function saveOnlineEmployeeAccountCommonRules018215(data) {
   return verified
 }
 
-async function loadEmployeeAccountCommonRules018215(opts = {}) {
+async function loadEmployeeAccountCommonRulesInternal018231(opts = {}) {
   if (isOwner.value) {
     employeeAccountCommonRules018215.value = buildEmptyEmployeeAccountCommonRules018215()
     return employeeAccountCommonRules018215.value
@@ -14926,6 +15103,32 @@ async function loadEmployeeAccountCommonRules018215(opts = {}) {
   employeeAccountCommonRules018215.value = normalizeEmployeeAccountCommonRules018215(resolved)
   writeEmployeeAccountCommonCache018215(employeeAccountCommonRules018215.value)
   return employeeAccountCommonRules018215.value
+}
+
+async function loadEmployeeAccountCommonRules018215(opts = {}) {
+  const userId = String(authUser.value?.id || '')
+  if (employeeCommonLoadPromise018231 && employeeCommonLoadUserId018231 === userId) {
+    return employeeCommonLoadPromise018231
+  }
+  if (
+    opts.force !== true &&
+    userId &&
+    employeeCommonLoadUserId018231 === userId &&
+    Date.now() - employeeCommonLoadedAt018231 < ONLINE_LOAD_DEDUPE_MS018231 &&
+    employeeAccountCommonRules018215.value
+  ) {
+    return employeeAccountCommonRules018215.value
+  }
+
+  employeeCommonLoadUserId018231 = userId
+  employeeCommonLoadPromise018231 = loadEmployeeAccountCommonRulesInternal018231(opts)
+  try {
+    const result = await employeeCommonLoadPromise018231
+    employeeCommonLoadedAt018231 = Date.now()
+    return result
+  } finally {
+    employeeCommonLoadPromise018231 = null
+  }
 }
 
 function restoreQuickRuleRoomFields018215() {
@@ -14998,13 +15201,53 @@ async function saveQuickCommonRules018215() {
   }
 }
 
-async function loadOnlineWorkspace(opts = {}) {
-  await loadLocationOptionsOnline({ silent: true })
-  await loadEmployeeAccountCommonRules018215({ silent: true })
-  applyLastScopeSelection({ silent: true })
-  repairProtectedGlobalRules()
-  await loadCurrentScopeRules({ silent: true, preferOnline: true })
+async function loadOnlineWorkspaceInternal018231(opts = {}) {
+  suppressScopeRuleAutoLoad018231 = true
+  try {
+    await Promise.all([
+      loadLocationOptionsOnline({ silent: true, force: opts.force === true }),
+      loadEmployeeAccountCommonRules018215({ silent: true, force: opts.force === true })
+    ])
+
+    applyLastScopeSelection({ silent: true })
+    // Vue watcher 預設在下一個 flush 執行；等一個 tick 再解除，避免清單與 room watcher 另外重讀一次。
+    await nextTick()
+    repairProtectedGlobalRules()
+    await loadCurrentScopeRules({ silent: true, preferOnline: true, force: opts.force === true })
+  } finally {
+    suppressScopeRuleAutoLoad018231 = false
+  }
+
   if (!opts.silent) statusMessage.value = '已同步線上個人工作區與登入帳號常用規則。'
+  return true
+}
+
+async function loadOnlineWorkspace(opts = {}) {
+  const userId = String(authUser.value?.id || '')
+  if (!userId) return false
+
+  if (onlineWorkspaceLoadPromise018231) {
+    if (onlineWorkspaceLoadUserId018231 === userId) return onlineWorkspaceLoadPromise018231
+    try { await onlineWorkspaceLoadPromise018231 } catch {}
+  }
+
+  if (
+    opts.force !== true &&
+    onlineWorkspaceLoadUserId018231 === userId &&
+    Date.now() - onlineWorkspaceLoadedAt018231 < ONLINE_LOAD_DEDUPE_MS018231
+  ) {
+    return true
+  }
+
+  onlineWorkspaceLoadUserId018231 = userId
+  onlineWorkspaceLoadPromise018231 = loadOnlineWorkspaceInternal018231(opts)
+  try {
+    const result = await onlineWorkspaceLoadPromise018231
+    onlineWorkspaceLoadedAt018231 = Date.now()
+    return result
+  } finally {
+    onlineWorkspaceLoadPromise018231 = null
+  }
 }
 
 const BACKUP_STORAGE_KEYS = [
@@ -15608,7 +15851,7 @@ function renameLocationRoom(room) {
 }
 
 watch(accountWorkingCities018201, cities => {
-  if (isRestoringLastScopeSelection) return
+  if (isRestoringLastScopeSelection || suppressScopeRuleAutoLoad018231) return
   const currentCity = cleanScopeText(managerSelectedCity.value)
   if (!currentCity || cities.includes(currentCity)) return
 
@@ -15621,7 +15864,7 @@ watch(accountWorkingCities018201, cities => {
 }, { deep: true })
 
 watch(accountWorkingDistricts018201, districts => {
-  if (isRestoringLastScopeSelection || isOutsideDeliveryType(managerSelectedType.value)) return
+  if (isRestoringLastScopeSelection || suppressScopeRuleAutoLoad018231 || isOutsideDeliveryType(managerSelectedType.value)) return
   const currentDistrict = cleanScopeText(managerSelectedDistrict.value)
   if (!currentDistrict || districts.includes(currentDistrict)) return
 
@@ -15633,7 +15876,7 @@ watch(accountWorkingDistricts018201, districts => {
 
 watch(managerSelectedCity, value => {
   closeRoomStatusDropdown018222()
-  if (isRestoringLastScopeSelection) return
+  if (isRestoringLastScopeSelection || suppressScopeRuleAutoLoad018231) return
   ruleScopeCity.value = value
   const nextType = managerSelectedType.value || getDefaultManagerScopeType()
   const nextDistrict = isOutsideDeliveryType(nextType) ? OUTSIDE_DELIVERY_SCOPE_DISTRICT : ''
@@ -15646,7 +15889,7 @@ watch(managerSelectedCity, value => {
 
 watch(managerSelectedDistrict, value => {
   closeRoomStatusDropdown018222()
-  if (isRestoringLastScopeSelection) return
+  if (isRestoringLastScopeSelection || suppressScopeRuleAutoLoad018231) return
   const nextType = managerSelectedType.value || getDefaultManagerScopeType()
   ruleScopeDistrict.value = resolveScopeDistrictForType(value, nextType)
   ruleScopeType.value = nextType
@@ -15656,7 +15899,7 @@ watch(managerSelectedDistrict, value => {
 
 watch(managerSelectedType, value => {
   closeRoomStatusDropdown018222()
-  if (isRestoringLastScopeSelection) return
+  if (isRestoringLastScopeSelection || suppressScopeRuleAutoLoad018231) return
   const nextType = value || getDefaultManagerScopeType()
   if (!value && managerSelectedType.value !== nextType) {
     managerSelectedType.value = nextType
@@ -15674,6 +15917,7 @@ watch(managerSelectedType, value => {
 
 watch(ruleScopeRoom, async value => {
   syncRuleScopeLevelFromSelection()
+  if (suppressScopeRuleAutoLoad018231) return
 
   if (
     !isOwner.value &&
@@ -16132,7 +16376,7 @@ function mergeOwnerAndEmployeeRules(ownerData = {}, supplementData = {}) {
   }
 }
 
-async function getOnlineOwnerGlobalRule() {
+async function getOnlineOwnerGlobalRuleInternal018231() {
   if (!isOnlineWorkspaceReady()) return null
 
   const { data, error } = await supabase.rpc('get_owner_global_rule')
@@ -16160,6 +16404,34 @@ async function getOnlineOwnerGlobalRule() {
   })
   if (legacy.error) throw legacy.error
   return legacy.data && typeof legacy.data === 'object' ? legacy.data : null
+}
+
+async function getOnlineOwnerGlobalRule(options = {}) {
+  const userId = String(authUser.value?.id || '')
+  if (ownerGlobalRuleLoadPromise018231 && ownerGlobalRuleLoadUserId018231 === userId) {
+    return ownerGlobalRuleLoadPromise018231
+  }
+  if (
+    options.force !== true &&
+    ownerGlobalRuleCache018231 &&
+    ownerGlobalRuleLoadUserId018231 === userId &&
+    Date.now() - ownerGlobalRuleLoadedAt018231 < ONLINE_LOAD_DEDUPE_MS018231
+  ) {
+    return ownerGlobalRuleCache018231
+  }
+
+  ownerGlobalRuleLoadUserId018231 = userId
+  ownerGlobalRuleLoadPromise018231 = getOnlineOwnerGlobalRuleInternal018231()
+  try {
+    const result = await ownerGlobalRuleLoadPromise018231
+    if (result && typeof result === 'object') {
+      ownerGlobalRuleCache018231 = result
+      ownerGlobalRuleLoadedAt018231 = Date.now()
+    }
+    return result
+  } finally {
+    ownerGlobalRuleLoadPromise018231 = null
+  }
 }
 
 async function getOnlineOwnerRuleForCurrentRoom() {
@@ -16191,6 +16463,9 @@ async function saveOnlineOwnerGlobalRule(data) {
     throw new Error(`老闆全站公版重新讀回內容不同；差異欄位：${differenceFields.join('、')}。`)
   }
 
+  ownerGlobalRuleCache018231 = verifiedRule
+  ownerGlobalRuleLoadUserId018231 = String(authUser.value?.id || '')
+  ownerGlobalRuleLoadedAt018231 = Date.now()
   return verifiedRule
 }
 
@@ -16458,6 +16733,8 @@ async function saveCurrentScopeRules(options = {}) {
       const message = itemLabel
         ? `已在線上儲存並驗證老闆全站公版「${itemLabel}」；本機僅更新成功快取。`
         : '已在線上儲存並驗證老闆全站公版；本機僅更新成功快取。'
+      currentScopeRulesLoadKey018231 = getCurrentScopeLoadKey018231()
+      currentScopeRulesLoadedAt018231 = Date.now()
       setRoomRuleFeedback(message, 'success', { toast: true })
       return true
     }
@@ -16473,6 +16750,8 @@ async function saveCurrentScopeRules(options = {}) {
     const message = itemLabel
       ? `已在線上儲存並驗證我的機房補充「${itemLabel}」：${currentRuleScopeLabel.value}。`
       : `已在線上儲存並驗證員工機房補充：${currentRuleScopeLabel.value}。`
+    currentScopeRulesLoadKey018231 = getCurrentScopeLoadKey018231()
+    currentScopeRulesLoadedAt018231 = Date.now()
     setRoomRuleFeedback(message, 'success', { toast: true })
     return true
   } catch (error) {
@@ -16514,7 +16793,7 @@ async function getOnlineRuleForCurrentRoom() {
   return Array.isArray(data) && data.length > 0 ? data[0]?.rules || null : null
 }
 
-async function loadCurrentScopeRules(options = {}) {
+async function loadCurrentScopeRulesInternal018231(options = {}) {
   if (isLoadingScopeRules.value) return false
   if (isOwner.value) ruleScopeLevel.value = 'global'
   if (!validateCurrentRuleScope()) return false
@@ -16621,6 +16900,45 @@ async function loadCurrentScopeRules(options = {}) {
   }
 }
 
+
+function getCurrentScopeLoadKey018231() {
+  if (isOwner.value) return `${String(authUser.value?.id || '')}__owner__global`
+  return [
+    String(authUser.value?.id || ''),
+    cleanScopeText(ruleScopeCity.value),
+    cleanScopeText(ruleScopeDistrict.value),
+    cleanScopeText(ruleScopeType.value),
+    cleanScopeText(ruleScopeRoom.value)
+  ].join('__')
+}
+
+async function loadCurrentScopeRules(options = {}) {
+  const key = getCurrentScopeLoadKey018231()
+
+  if (currentScopeRulesLoadPromise018231) {
+    if (currentScopeRulesLoadKey018231 === key) return currentScopeRulesLoadPromise018231
+    try { await currentScopeRulesLoadPromise018231 } catch {}
+  }
+
+  const mayUseRecent = options.force !== true && (options.silent || options.auto || options.preferOnline)
+  if (
+    mayUseRecent &&
+    currentScopeRulesLoadKey018231 === key &&
+    Date.now() - currentScopeRulesLoadedAt018231 < ONLINE_LOAD_DEDUPE_MS018231
+  ) {
+    return true
+  }
+
+  currentScopeRulesLoadKey018231 = key
+  currentScopeRulesLoadPromise018231 = loadCurrentScopeRulesInternal018231(options)
+  try {
+    const result = await currentScopeRulesLoadPromise018231
+    currentScopeRulesLoadedAt018231 = Date.now()
+    return result
+  } finally {
+    currentScopeRulesLoadPromise018231 = null
+  }
+}
 
 function copyGlobalRulesToCurrentScope() {
   if (ruleScopeLevel.value === 'global') {
