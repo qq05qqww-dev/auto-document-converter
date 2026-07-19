@@ -1,3 +1,4 @@
+<!-- batch018-226-unit-body-and-thai-bath-service-header-guard-fix -->
 <!-- 第 018-225 批：機房刪除線上確認＋中央同步不再自動補回修正版 -->
 <!-- batch018-225-room-delete-online-confirm-hidden-central-readd-fix -->
 <!-- 第 018-224 批：小姐卡片媒體累積加入＋全部縮圖檢視＋待刪除批次儲存版 -->
@@ -11316,9 +11317,45 @@ function isStrictHeaderNameCandidate(value) {
   return /^[\u4e00-\u9fa5A-Za-z0-9]+$/.test(name)
 }
 
+// 第 018-226 批：服務文字如果剛好以國籍字開頭，不可被切成新小姐。
+// 例：「泰國浴」中的「泰國」是服務名稱的一部分，不是國籍；舊版會誤切成【泰妹 浴】。
+// 這裡只使用內建服務詞與目前已儲存的服務同義詞／排序／保留關鍵字，
+// 不讀取「不要誤判成小姐名」自訂清單，避免回退第 018-169 批的標題保底能力。
+function isConfiguredServiceOnlyLine018226(line = '') {
+  const normalizedLine = normalizeServiceAliasMatchText(line)
+  if (!normalizedLine) return false
+
+  const exactServices = new Set([
+    '泰國浴',
+    '泰式浴',
+    '泰浴'
+  ].map(item => normalizeServiceAliasMatchText(item)))
+
+  parseAliasRules(aliasRulesText.value).forEach(([from, to]) => {
+    const fromKey = normalizeServiceAliasMatchText(from)
+    if (fromKey) exactServices.add(fromKey)
+
+    String(to || '').split(/\s+/).filter(Boolean).forEach(item => {
+      const toKey = normalizeServiceAliasMatchText(item)
+      if (toKey) exactServices.add(toKey)
+    })
+  })
+
+  ;[
+    ...parseList(serviceOrderText.value),
+    ...parseList(extraKeepText.value)
+  ].forEach(item => {
+    const key = normalizeServiceAliasMatchText(item)
+    if (key) exactServices.add(key)
+  })
+
+  return exactServices.has(normalizedLine)
+}
+
 function parseStrictNameCountryHeaderLine(line) {
   const cleaned = normalizeHeaderText(line)
   if (!cleaned) return null
+  if (isConfiguredServiceOnlyLine018226(line)) return null
 
   const aliases = getStrictBuiltInCountryAliases()
   const countries = Array.from(aliases.keys()).sort((a, b) => b.length - a.length)
@@ -11453,6 +11490,13 @@ function removeHeaderNoise(text) {
   value = value.replace(/(?:^|\s)(\d{2})\s*(?:歲|y|Y)\s*$/g, '')
   value = value.replace(/(\D)(\d{2})\s*(?:歲|y|Y)\s*$/g, '$1')
 
+  // 第 018-226 批：標題與單位身材寫在同一行時，也要先把身材尾碼移出姓名。
+  // 例：「泰妹 顧欣 158cm/44kg/真C奶」應解析為姓名顧欣＋158／44／C。
+  value = value.replace(
+    /\d{3}\s*(?:cm|公分|厘米)\s*[\/.．。·・,，:：_-]?\s*\d{2,3}\s*(?:kg|公斤)\s*[\/.．。·・,，:：_-]?\s*(?:(?:真奶|天然|真|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)\s*)?(?:奶|罩杯|胸)?\s*(?:\d{2,3}\s*)?[A-Ka-k]\s*(?:奶|杯)?(?:\s*[\/.．。·・,，:：_-]?\s*\d{2}\s*(?:歲|y|Y)?)?\s*$/giu,
+    ''
+  )
+
   // 標題同一行可能長這樣：
   // 越南妹妹 京香 157/44/D
   // 需要先把身材片段切掉，避免小姐名變成「京香15744D」或「16244E」。
@@ -11501,6 +11545,9 @@ function normalizeHeaderText(line) {
 function isNotHeaderLine(line) {
   const value = String(line || '')
   const serviceAliasValue = normalizeServiceAliasMatchText(value)
+
+  // 第 018-226 批：目前服務規則明確存在的完整服務行，禁止再解析成國籍＋姓名。
+  if (isConfiguredServiceOnlyLine018226(value)) return true
 
   // 第 018-172 批：「泰國洗+500元」中的「泰國」是服務名稱的一部分，
   // 不是國籍標題。必須在國籍＋姓名解析前先排除，避免被切成假小姐「洗500元」。
@@ -11578,6 +11625,28 @@ function parseSeparatedDigitBodyLine(line) {
   })
 }
 
+// 第 018-226 批：支援身高／體重帶單位的常見格式。
+// 例：158cm/44kg/真C奶、158 CM／44 KG／C、158公分 44公斤 真C奶 23y。
+// cm／kg 只是欄位單位，文件2仍統一輸出「身高 體重 罩杯 年齡」。
+function parseUnitBodyLine018226(line) {
+  const source = normalizeDigits(String(line || '')).normalize('NFKC').trim()
+  if (!source) return null
+
+  const match = source.match(
+    /(?:^|[^0-9])(\d{3})\s*(?:cm|公分|厘米)\s*(?:[\/.．。·・,，:：_-]\s*)?(\d{2,3})\s*(?:kg|公斤)\s*(?:[\/.．。·・,，:：_-]\s*)?(?:(?:真奶|天然|真|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)\s*)?(?:奶|罩杯|胸)?\s*(?:\d{2,3}\s*)?([A-Ka-k])\s*(?:奶|杯)?(?:\s*(?:[\/.．。·・,，:：_-]\s*|\s+)(\d{2})\s*(?:歲|y|Y)?)?(?=$|\s|[^0-9A-Za-z])/iu
+  )
+  if (!match) return null
+
+  const parsed = validateParsedBodyResult({
+    height: match[1],
+    weight: match[2],
+    cup: match[3],
+    age: match[4] || ''
+  })
+
+  return parsed ? { ...parsed, matchedRule: '身高cm／體重kg／罩杯' } : null
+}
+
 function parseOutsideDeliveryBodyWithoutWeight018218(line) {
   // 第 018-218 批：外送妹可省略體重，來源格式例如「161/H/21」。
   // 只有目前工作區為外送時才啟用，避免改變定點既有身材判斷。
@@ -11619,6 +11688,9 @@ function parseBody(text) {
     .filter(Boolean)
 
   for (const line of rawLines) {
+    const unitBody018226 = parseUnitBodyLine018226(line)
+    if (unitBody018226) return unitBody018226
+
     const separatedDigitBody = parseSeparatedDigitBodyLine(line)
     if (separatedDigitBody) return separatedDigitBody
 
