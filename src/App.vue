@@ -1,3 +1,5 @@
+<!-- 第 018-225 批：機房刪除線上確認＋中央同步不再自動補回修正版 -->
+<!-- batch018-225-room-delete-online-confirm-hidden-central-readd-fix -->
 <!-- 第 018-224 批：小姐卡片媒體累積加入＋全部縮圖檢視＋待刪除批次儲存版 -->
 <!-- batch018-224-preview-media-stack-thumbnails-pending-delete-batch-save -->
 <!-- 第 018-222 批：機房下拉單行三欄固定對齊＋固定高度捲動版 -->
@@ -756,7 +758,14 @@
                 <div class="option-current-text">目前：{{ currentManagedRoom || '請從上方清單選擇機房' }}</div>
                 <div class="option-action-row">
                   <button type="button" :disabled="!currentManagedRoom" @click="renameLocationRoom(currentManagedRoom)">修改目前機房</button>
-                  <button type="button" class="danger-mini" :disabled="!currentManagedRoom" @click="removeLocationRoom(currentManagedRoom)">刪除目前機房</button>
+                  <button
+                    type="button"
+                    class="danger-mini"
+                    :disabled="!currentManagedRoom || isDeletingLocationRoom018225"
+                    @click="removeLocationRoom(currentManagedRoom)"
+                  >
+                    {{ isDeletingLocationRoom018225 ? '刪除中...' : '刪除目前機房' }}
+                  </button>
                 </div>
               </div>
             
@@ -4120,6 +4129,7 @@ const newCityName = ref('')
 const newDistrictName = ref('')
 const newLocationTypeName = ref('')
 const newRoomName = ref('')
+const isDeletingLocationRoom018225 = ref(false)
 const managerSelectedCity = ref('')
 const managerSelectedDistrict = ref('')
 const managerSelectedType = ref(DEFAULT_MANAGER_SCOPE_TYPE)
@@ -7149,6 +7159,9 @@ function mergeCentralLocationRoomsIntoPersonalOptions018200() {
       Array.isArray(rooms) ? [...rooms] : [],
     ]),
   )
+  const hiddenRooms = locationOptions.value?.hiddenRooms && typeof locationOptions.value.hiddenRooms === 'object'
+    ? locationOptions.value.hiddenRooms
+    : {}
   let changed = false
 
   snapshots.forEach(snapshot => {
@@ -7158,6 +7171,9 @@ function mergeCentralLocationRoomsIntoPersonalOptions018200() {
     const room = cleanScopeText(snapshot.room)
     if (!city || !district || !mode || !room) return
     const key = `${city}__${district}__${mode}`
+    const hiddenList = Array.isArray(hiddenRooms[key]) ? hiddenRooms[key] : []
+    if (hiddenList.includes(room)) return
+
     const list = Array.isArray(nextRooms[key]) ? nextRooms[key] : []
     if (!list.includes(room)) {
       nextRooms[key] = [...list, room]
@@ -14153,6 +14169,16 @@ const defaultLocationOptions = {
 function normalizeLocationOptions(options = {}) {
   const hiddenCities = Array.isArray(options.hiddenCities) ? options.hiddenCities.map(cleanScopeText).filter(Boolean) : []
   const hiddenDistricts = options.hiddenDistricts && typeof options.hiddenDistricts === 'object' ? options.hiddenDistricts : {}
+  const storedHiddenRooms = options.hiddenRooms && typeof options.hiddenRooms === 'object' ? options.hiddenRooms : {}
+  const hiddenRooms = {}
+
+  Object.entries(storedHiddenRooms).forEach(([key, list]) => {
+    const normalizedKey = cleanScopeText(key)
+    const normalizedList = [...new Set(
+      (Array.isArray(list) ? list : []).map(cleanScopeText).filter(Boolean)
+    )]
+    if (normalizedKey && normalizedList.length) hiddenRooms[normalizedKey] = normalizedList
+  })
 
   const storedCities = Array.isArray(options.cities) ? options.cities : []
   // 第 018-60 批：公版縣市預設全部顯示。
@@ -14176,13 +14202,26 @@ function normalizeLocationOptions(options = {}) {
       .filter(district => !hiddenList.includes(district))
   })
 
+  const storedRooms = options.rooms && typeof options.rooms === 'object' ? options.rooms : {}
+  const rooms = {}
+  Object.entries(storedRooms).forEach(([key, list]) => {
+    const normalizedKey = cleanScopeText(key)
+    if (!normalizedKey) return
+
+    const hiddenList = Array.isArray(hiddenRooms[normalizedKey]) ? hiddenRooms[normalizedKey] : []
+    rooms[normalizedKey] = [...new Set(
+      (Array.isArray(list) ? list : []).map(cleanScopeText).filter(Boolean)
+    )].filter(room => !hiddenList.includes(room))
+  })
+
   return {
     cities,
     districts,
     hiddenCities,
     hiddenDistricts,
+    hiddenRooms,
     types: defaultLocationOptions.types,
-    rooms: options.rooms && typeof options.rooms === 'object' ? options.rooms : {}
+    rooms
   }
 }
 function readLocationOptions() {
@@ -15007,6 +15046,9 @@ function removeLocationCity(city) {
   Object.keys(locationOptions.value.rooms || {}).forEach(key => {
     if (key.startsWith(`${targetCity}__`)) delete locationOptions.value.rooms[key]
   })
+  Object.keys(locationOptions.value.hiddenRooms || {}).forEach(key => {
+    if (key.startsWith(`${targetCity}__`)) delete locationOptions.value.hiddenRooms[key]
+  })
   if (locationOptions.value.hiddenDistricts) delete locationOptions.value.hiddenDistricts[targetCity]
 
   if (managerSelectedCity.value === targetCity) {
@@ -15055,6 +15097,9 @@ function removeLocationDistrict(district) {
   Object.keys(locationOptions.value.rooms || {}).forEach(key => {
     if (key.startsWith(`${city}__${targetDistrict}__`)) delete locationOptions.value.rooms[key]
   })
+  Object.keys(locationOptions.value.hiddenRooms || {}).forEach(key => {
+    if (key.startsWith(`${city}__${targetDistrict}__`)) delete locationOptions.value.hiddenRooms[key]
+  })
   if (managerSelectedDistrict.value === targetDistrict) managerSelectedDistrict.value = ''
   if (roomManagerSelectedCity.value === city && roomManagerSelectedDistrict.value === targetDistrict) {
     roomManagerSelectedDistrict.value = ''
@@ -15086,6 +15131,9 @@ function removeLocationType(type) {
   locationOptions.value.types = removeFromList(locationOptions.value.types, type)
   Object.keys(locationOptions.value.rooms || {}).forEach(key => {
     if (key.endsWith(`__${type}`)) delete locationOptions.value.rooms[key]
+  })
+  Object.keys(locationOptions.value.hiddenRooms || {}).forEach(key => {
+    if (key.endsWith(`__${type}`)) delete locationOptions.value.hiddenRooms[key]
   })
   if (managerSelectedType.value === type) managerSelectedType.value = ''
   if (ruleScopeType.value === type) {
@@ -15129,6 +15177,11 @@ function addLocationRoom() {
     return
   }
   const key = `${city}__${district}__${type}`
+  if (!locationOptions.value.hiddenRooms || typeof locationOptions.value.hiddenRooms !== 'object') {
+    locationOptions.value.hiddenRooms = {}
+  }
+  locationOptions.value.hiddenRooms[key] = removeHiddenValue(locationOptions.value.hiddenRooms[key], room)
+  if (!locationOptions.value.hiddenRooms[key].length) delete locationOptions.value.hiddenRooms[key]
   locationOptions.value.rooms[key] = addUniqueToList(locationOptions.value.rooms[key], room)
   newRoomName.value = ''
   saveLocationOptions()
@@ -15136,7 +15189,9 @@ function addLocationRoom() {
   statusMessage.value = `已新增並選取機房/店家：${city} / ${getScopeDistrictDisplay(district, type)} / ${type} / ${room}`
 }
 
-function removeLocationRoom(room) {
+async function removeLocationRoom(room) {
+  if (isDeletingLocationRoom018225.value) return
+
   const city = cleanScopeText(roomManagerSelectedCity.value)
   const type = cleanScopeText(roomManagerSelectedType.value)
   const district = resolveScopeDistrictForType(roomManagerSelectedDistrict.value, type)
@@ -15148,12 +15203,73 @@ function removeLocationRoom(room) {
     return
   }
 
-  locationOptions.value.rooms[key] = removeFromList(locationOptions.value.rooms[key], targetRoom)
-  if (cleanScopeText(ruleScopeCity.value) === city && cleanScopeText(ruleScopeDistrict.value) === district && cleanScopeText(ruleScopeType.value) === type && cleanScopeText(ruleScopeRoom.value) === targetRoom) {
-    ruleScopeRoom.value = ''
+  const scopeLabel = `${city} / ${getScopeDistrictDisplay(district, type)} / ${type}`
+  const confirmed = window.confirm(
+    `確定要從目前登入帳號的工作區刪除「${targetRoom}」嗎？\n\n範圍：${scopeLabel}\n此操作會儲存到線上；不會刪除中央網站的小姐資料或媒體。`
+  )
+  if (!confirmed) return
+
+  const previousOptions = normalizeLocationOptions(JSON.parse(JSON.stringify(locationOptions.value || {})))
+  const previousRuleScope = {
+    city: ruleScopeCity.value,
+    district: ruleScopeDistrict.value,
+    type: ruleScopeType.value,
+    room: ruleScopeRoom.value
   }
-  saveLocationOptions()
-  statusMessage.value = `已刪除機房/店家：${targetRoom}`
+
+  if (!locationOptions.value.hiddenRooms || typeof locationOptions.value.hiddenRooms !== 'object') {
+    locationOptions.value.hiddenRooms = {}
+  }
+  locationOptions.value.hiddenRooms[key] = addHiddenValue(locationOptions.value.hiddenRooms[key], targetRoom)
+  locationOptions.value.rooms[key] = removeFromList(locationOptions.value.rooms[key], targetRoom)
+
+  const isCurrentRuleRoom = (
+    cleanScopeText(ruleScopeCity.value) === city &&
+    resolveScopeDistrictForType(ruleScopeDistrict.value, ruleScopeType.value) === district &&
+    cleanScopeText(ruleScopeType.value) === type &&
+    cleanScopeText(ruleScopeRoom.value) === targetRoom
+  )
+  if (isCurrentRuleRoom) {
+    ruleScopeRoom.value = ''
+    writeLastScopeSelection({ city, district, type, room: '' })
+  }
+
+  isDeletingLocationRoom018225.value = true
+  statusMessage.value = `正在從線上刪除機房/店家：${targetRoom}...`
+
+  try {
+    const saved = await saveLocationOptions(locationOptions.value)
+    if (!saved) {
+      const failureMessage = statusMessage.value
+      locationOptions.value = previousOptions
+      ruleScopeCity.value = previousRuleScope.city
+      ruleScopeDistrict.value = previousRuleScope.district
+      ruleScopeType.value = previousRuleScope.type
+      ruleScopeRoom.value = previousRuleScope.room
+      if (previousRuleScope.room) {
+        writeLastScopeSelection(previousRuleScope)
+      }
+      statusMessage.value = `${failureMessage}；畫面已恢復刪除前狀態。`
+      return
+    }
+
+    statusMessage.value = `已在線上刪除機房/店家：${targetRoom}。中央網站重新整理時也不會再自動補回此帳號清單。`
+    showActionToast(`已刪除機房：${targetRoom}`, 'success')
+  } catch (error) {
+    locationOptions.value = previousOptions
+    ruleScopeCity.value = previousRuleScope.city
+    ruleScopeDistrict.value = previousRuleScope.district
+    ruleScopeType.value = previousRuleScope.type
+    ruleScopeRoom.value = previousRuleScope.room
+    if (previousRuleScope.room) {
+      writeLastScopeSelection(previousRuleScope)
+    }
+    const message = `刪除機房失敗，畫面已恢復：${error.message || error}`
+    statusMessage.value = message
+    showActionToast(message, 'error')
+  } finally {
+    isDeletingLocationRoom018225.value = false
+  }
 }
 
 function replaceInList(list, oldValue, newValue) {
@@ -15180,6 +15296,12 @@ function renameLocationCity(city) {
   })
   locationOptions.value.rooms = nextRooms
 
+  const nextHiddenRooms = {}
+  Object.entries(locationOptions.value.hiddenRooms || {}).forEach(([key, list]) => {
+    nextHiddenRooms[key.startsWith(`${city}__`) ? key.replace(`${city}__`, `${next}__`) : key] = list
+  })
+  locationOptions.value.hiddenRooms = nextHiddenRooms
+
   if (managerSelectedCity.value === city) managerSelectedCity.value = next
   if (ruleScopeCity.value === city) ruleScopeCity.value = next
 
@@ -15201,6 +15323,13 @@ function renameLocationDistrict(district) {
   })
   locationOptions.value.rooms = nextRooms
 
+  const nextHiddenRooms = {}
+  Object.entries(locationOptions.value.hiddenRooms || {}).forEach(([key, list]) => {
+    const prefix = `${city}__${district}__`
+    nextHiddenRooms[key.startsWith(prefix) ? key.replace(prefix, `${city}__${next}__`) : key] = list
+  })
+  locationOptions.value.hiddenRooms = nextHiddenRooms
+
   if (managerSelectedDistrict.value === district) managerSelectedDistrict.value = next
   if (ruleScopeCity.value === city && ruleScopeDistrict.value === district) ruleScopeDistrict.value = next
 
@@ -15219,6 +15348,12 @@ function renameLocationType(type) {
     nextRooms[key.endsWith(`__${type}`) ? key.replace(`__${type}`, `__${next}`) : key] = list
   })
   locationOptions.value.rooms = nextRooms
+
+  const nextHiddenRooms = {}
+  Object.entries(locationOptions.value.hiddenRooms || {}).forEach(([key, list]) => {
+    nextHiddenRooms[key.endsWith(`__${type}`) ? key.replace(`__${type}`, `__${next}`) : key] = list
+  })
+  locationOptions.value.hiddenRooms = nextHiddenRooms
 
   if (managerSelectedType.value === type) managerSelectedType.value = next
   if (ruleScopeType.value === type) ruleScopeType.value = next
@@ -15241,6 +15376,12 @@ function renameLocationRoom(room) {
 
   const next = askRenameValue('機房', targetRoom)
   if (!next) return
+
+  if (!locationOptions.value.hiddenRooms || typeof locationOptions.value.hiddenRooms !== 'object') {
+    locationOptions.value.hiddenRooms = {}
+  }
+  locationOptions.value.hiddenRooms[key] = removeHiddenValue(locationOptions.value.hiddenRooms[key], next)
+  if (!locationOptions.value.hiddenRooms[key].length) delete locationOptions.value.hiddenRooms[key]
 
   locationOptions.value.rooms[key] = addUniqueToList(
     removeFromList(locationOptions.value.rooms[key], targetRoom),
