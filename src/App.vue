@@ -1,3 +1,5 @@
+<!-- 第 018-228 批：攝影冒號露臉／不露臉加價解析修正版 -->
+<!-- batch018-228-photography-colon-face-amount-parse-fix -->
 <!-- batch018-227-location-manager-overflow-click-layer-layout-fix -->
 <!-- 第 018-225 批：機房刪除線上確認＋中央同步不再自動補回修正版 -->
 <!-- batch018-225-room-delete-online-confirm-hidden-central-readd-fix -->
@@ -13163,19 +13165,21 @@ function hasExplicitPaidAmountForService(sourceText, outputToken) {
   // 第 018-153 批：攝影文字常寫成「攝影+1000 不露臉」。
   // 金額與「不露臉」之間可能有空格或換行，不能因此把 +1000 判定成不存在。
   if (normalizedBase === normalizeServiceAliasMatchText('攝影不露臉')) {
+    const separator = getPhotographySeparatorPattern018228()
     const photographyNoFacePatterns = [
-      new RegExp(`攝影\\s*(?:\\+|加)?\\s*${amount}\\s*不露臉`),
-      new RegExp(`不露臉\\s*攝影\\s*(?:\\+|加)?\\s*${amount}`),
-      new RegExp(`攝影\\s*不露臉\\s*(?:\\+|加)?\\s*${amount}`)
+      new RegExp(`攝影${separator}(?:\\+|加)?${separator}${amount}${separator}不露臉`),
+      new RegExp(`不露臉${separator}攝影${separator}(?:\\+|加)?${separator}${amount}`),
+      new RegExp(`攝影${separator}不露臉${separator}(?:\\+|加)?${separator}${amount}`)
     ]
     return photographyNoFacePatterns.some(pattern => pattern.test(source))
   }
 
   if (normalizedBase === normalizeServiceAliasMatchText('攝影露臉')) {
+    const separator = getPhotographySeparatorPattern018228()
     const photographyFacePatterns = [
-      new RegExp(`攝影\\s*露臉\\s*(?:\\+|加)?\\s*${amount}`),
-      new RegExp(`攝影\\s*(?:\\+|加)?\\s*${amount}\\s*露臉`),
-      new RegExp(`露臉\\s*攝影\\s*(?:\\+|加)?\\s*${amount}`)
+      new RegExp(`攝影${separator}露臉${separator}(?:\\+|加)?${separator}${amount}`),
+      new RegExp(`攝影${separator}(?:\\+|加)?${separator}${amount}${separator}露臉`),
+      new RegExp(`露臉${separator}攝影${separator}(?:\\+|加)?${separator}${amount}`)
     ]
     return photographyFacePatterns.some(pattern => pattern.test(source))
   }
@@ -13796,8 +13800,23 @@ function collapseSpacedSingleDigitAmounts(text) {
   )
 }
 
+// 第 018-228 批：店家常把攝影條件寫成「攝影:露臉 +2000」或
+// 「攝影：不露臉 +1000」。冒號、破折號、括號只屬於排版分隔，
+// 不應阻斷露臉／不露臉與金額的辨識。
+function getPhotographySeparatorPattern018228() {
+  return String.raw`[\s:：﹕\-－—–_()（）【】\[\]]*`
+}
+
+function normalizePhotographyDescriptorText018228(text) {
+  return normalizeServiceAliasMatchText(text)
+    .replace(/[：:﹕]/g, '')
+    .replace(/[－—–_\-]/g, '')
+    .replace(/[（(【\[]/g, '')
+    .replace(/[）)】\]]/g, '')
+}
+
 function shouldPreferNoFacePhotography(text) {
-  const value = normalizeServiceAliasMatchText(text)
+  const value = normalizePhotographyDescriptorText018228(text)
   if (!value) return false
 
   return /攝影(?:\+?\d+)?不露臉/.test(value)
@@ -13806,8 +13825,11 @@ function shouldPreferNoFacePhotography(text) {
 }
 
 function shouldPreferFacePhotography(text) {
-  const value = normalizeServiceAliasMatchText(text)
+  const value = normalizePhotographyDescriptorText018228(text)
   if (!value) return false
+
+  // 「不露臉」內含「露臉」兩字，必須先排除，避免誤判成露臉攝影。
+  if (/不露臉/.test(value)) return false
 
   return /攝影(?:\+?\d+)?露臉/.test(value)
     || /攝影露臉(?:\+?\d+)?/.test(value)
@@ -13818,19 +13840,16 @@ function findExplicitPhotographyAmount(text, mode = 'generic') {
   const source = normalizeServiceAmountMatchText(text)
   if (!source) return ''
 
-  const patterns = mode === 'no-face'
-    ? [
-        /攝影\s*(?:\+|加)?\s*(\d{1,5})\s*不露臉/,
-        /攝影\s*不露臉\s*(?:\+|加)\s*(\d{1,5})/,
-        /不露臉\s*攝影\s*(?:\+|加)\s*(\d{1,5})/
-      ]
-    : mode === 'face'
-      ? [
-          /攝影\s*(?:\+|加)?\s*(\d{1,5})\s*露臉/,
-          /攝影\s*露臉\s*(?:\+|加)\s*(\d{1,5})/,
-          /露臉\s*攝影\s*(?:\+|加)\s*(\d{1,5})/
-        ]
-      : []
+  // 允許攝影與露臉條件之間存在冒號、破折號、括號或空格。
+  const separator = getPhotographySeparatorPattern018228()
+  const qualifier = mode === 'no-face' ? '不露臉' : mode === 'face' ? '露臉' : ''
+  if (!qualifier) return ''
+
+  const patterns = [
+    new RegExp(`攝影${separator}(?:\\+|加)?${separator}(\\d{1,5})${separator}${qualifier}`),
+    new RegExp(`攝影${separator}${qualifier}${separator}(?:\\+|加)${separator}(\\d{1,5})`),
+    new RegExp(`${qualifier}${separator}攝影${separator}(?:\\+|加)${separator}(\\d{1,5})`)
+  ]
 
   for (const pattern of patterns) {
     const match = source.match(pattern)
