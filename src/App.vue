@@ -30,6 +30,8 @@
 <!-- 第 018-207 批：來源小姐價格支援 K／完整金額雙格式＋精準價格／區間加價 K 寫法通用版 -->
 <!-- batch018-207-source-k-amount-and-mapping-k-flex-fix -->
 <!-- 第 018-206 批：金額設定新增區間加價規則＋即時預覽版 -->
+<!-- 第 018-223 批：前台預覽卡片媒體暫存佇列＋全部小姐批次上傳版 -->
+<!-- batch018-223-preview-card-media-queue-batch-upload -->
 <!-- batch018-206-price-range-markup-rules-live-preview -->
 <!-- 第 018-205 批：純金額價格列＋外送精準價格對照＋文件1斜線保留修正版 -->
 <!-- batch018-205-standalone-amount-price-mapping-and-source-slash-preserve-fix -->
@@ -1862,6 +1864,17 @@
           <span class="database-submit-feedback preview-sync-summary" :class="`is-${databaseSubmitStatusType}`">
             {{ databaseSubmitStatusText }}
           </span>
+
+          <div class="batch-media-toolbar018223" :class="{ 'has-pending': batchMediaPendingFileCount018223 > 0 }">
+            <span>{{ batchMediaToolbarSummary018223 }}</span>
+            <button
+              type="button"
+              class="primary-btn batch-media-save-all-btn018223"
+              :disabled="!batchMediaCanOpenOrUpload018223"
+              @click="handleBatchMediaToolbarAction018223"
+            >{{ batchMediaToolbarButtonText018223 }}</button>
+          </div>
+
           <button
             type="button"
             class="primary-btn preview-consistency-open-btn"
@@ -1887,7 +1900,10 @@
               v-for="lady in filteredFrontendLadies"
               :key="lady.id"
               class="lady-card compact-right-lady-card"
-              :class="{ 'is-selected-upload-lady': isSelectedUploadLady(lady) }"
+              :class="{
+                'is-selected-upload-lady': isSelectedUploadLady(lady),
+                'has-batch-media-pending018223': getBatchMediaPendingCountForLady018223(lady) > 0
+              }"
               :data-preview-lady-id="String(lady.id || '')"
               role="button"
               tabindex="0"
@@ -1897,9 +1913,32 @@
               @keydown.space.prevent="openMediaUploadModalForLady(lady)"
             >
               <span v-if="isSelectedUploadLady(lady)" class="selected-upload-lady-badge">目前選擇</span>
-              <span class="lady-card-upload-hint-badge">點卡片上傳媒體</span>
-              <div class="lady-cover-box">
-                <template v-if="getLadyCoverMedia(lady)">
+              <span class="lady-card-upload-hint-badge">點卡片單筆管理</span>
+              <div
+                class="lady-cover-box batch-media-card-drop-zone018223"
+                :class="{ 'is-dragging018223': isBatchMediaDraggingForLady018223(lady) }"
+                @dragenter.stop.prevent="setBatchMediaDraggingLady018223(lady, true)"
+                @dragover.stop.prevent="setBatchMediaDraggingLady018223(lady, true)"
+                @dragleave.stop.prevent="setBatchMediaDraggingLady018223(lady, false)"
+                @drop.stop.prevent="handleBatchMediaCardDrop018223(lady, $event)"
+              >
+                <template v-if="getBatchMediaFirstQueuedItem018223(lady)">
+                  <img
+                    v-if="String(getBatchMediaFirstQueuedItem018223(lady).file?.type || '').startsWith('image/')"
+                    :src="getBatchMediaFirstQueuedItem018223(lady).previewUrl"
+                    :alt="`${getBatchMediaLadyLabel018223(lady)} 待上傳預覽`"
+                    class="lady-cover-media batch-media-local-preview018223"
+                  />
+                  <video
+                    v-else
+                    :src="getBatchMediaFirstQueuedItem018223(lady).previewUrl"
+                    class="lady-cover-media batch-media-local-preview018223"
+                    muted
+                    playsinline
+                  ></video>
+                  <span class="batch-media-local-preview-label018223">待上傳預覽</span>
+                </template>
+                <template v-else-if="getLadyCoverMedia(lady)">
                   <button
                     type="button"
                     class="lady-media-open-btn lady-cover-trigger"
@@ -1928,13 +1967,37 @@
                     刪除
                   </button>
                 </template>
-                <div v-else class="lady-cover-empty">
-                  尚未上傳照片
+                <div v-else class="lady-cover-empty batch-media-cover-empty018223">
+                  <strong>拖曳圖片／影片到這裡</strong>
+                  <span>或點下方選擇檔案</span>
                 </div>
 
                 <span v-if="getLadyMediaCount(lady)" class="media-count-badge">
                   {{ getLadyMediaCount(lady) }} 個媒體
                 </span>
+
+                <div v-if="getBatchMediaPendingCountForLady018223(lady)" class="batch-media-card-pending-badge018223">
+                  待上傳 {{ getBatchMediaPendingCountForLady018223(lady) }}
+                </div>
+
+                <div class="batch-media-card-actions018223">
+                  <label class="batch-media-card-file-label018223" @click.stop>
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*,video/*"
+                      @click.stop
+                      @change="handleBatchMediaCardFileChange018223(lady, $event)"
+                    />
+                    {{ getBatchMediaPendingCountForLady018223(lady) ? '繼續加入' : '放入圖片影片' }}
+                  </label>
+                  <button
+                    v-if="getBatchMediaPendingCountForLady018223(lady)"
+                    type="button"
+                    class="batch-media-card-clear018223"
+                    @click.stop="clearBatchMediaLadyQueue018223(lady)"
+                  >清除</button>
+                </div>
               </div>
 
               <div class="lady-card-title compact-right-title">
@@ -2002,6 +2065,64 @@
           </div>
         </div>
       </div>
+
+      <teleport to="body">
+        <div v-if="isBatchMediaUploadModalOpen018223" class="batch-media-upload-mask018223" @click.self="closeBatchMediaUploadModal018223">
+          <section class="batch-media-upload-dialog018223" role="dialog" aria-modal="true" aria-label="全部小姐媒體批次上傳">
+            <header class="batch-media-upload-head018223">
+              <div>
+                <span>第 018-223 批</span>
+                <h3>全部小姐媒體批次上傳</h3>
+                <p>畫面只需按一次；底層會以 2 個檔案並行的安全佇列逐筆上傳，成功項目不會重傳。</p>
+              </div>
+              <button type="button" @click="closeBatchMediaUploadModal018223">{{ isBatchMediaUploading018223 ? '背景繼續' : '關閉' }}</button>
+            </header>
+
+            <div class="batch-media-upload-overall018223">
+              <div>
+                <strong>{{ batchMediaUploadStatusText018223 }}</strong>
+                <span>總進度 {{ batchMediaUploadCompletedTaskCount018223 + batchMediaUploadSkippedTaskCount018223 + batchMediaUploadFailedTaskCount018223 }} / {{ batchMediaUploadTotalTaskCount018223 }}</span>
+              </div>
+              <div class="batch-media-upload-track018223"><i :style="{ width: `${batchMediaUploadOverallPercent018223}%` }"></i></div>
+              <small>成功 {{ batchMediaUploadCompletedTaskCount018223 }}｜略過重複 {{ batchMediaUploadSkippedTaskCount018223 }}｜失敗 {{ batchMediaUploadFailedTaskCount018223 }}</small>
+            </div>
+
+            <div class="batch-media-upload-list018223">
+              <article v-for="row in batchMediaUploadDisplayRows018223" :key="row.key" class="batch-media-upload-row018223" :class="`is-${row.status}`">
+                <div class="batch-media-upload-row-title018223">
+                  <strong>{{ row.label }}</strong>
+                  <span>{{ row.summary }}</span>
+                </div>
+                <div class="batch-media-upload-row-files018223">
+                  <div v-for="item in row.files" :key="item.id" class="batch-media-upload-file018223" :class="`is-${item.status}`">
+                    <span class="batch-media-upload-file-name018223">{{ item.file.name }}</span>
+                    <span>{{ item.statusLabel }}</span>
+                    <div><i :style="{ width: `${item.percent || 0}%` }"></i></div>
+                    <button
+                      v-if="!isBatchMediaUploading018223 && ['waiting', 'failed'].includes(item.status)"
+                      type="button"
+                      @click="removeBatchMediaQueuedFile018223(row.key, item.id)"
+                    >移除</button>
+                  </div>
+                </div>
+              </article>
+              <div v-if="!batchMediaUploadDisplayRows018223.length" class="batch-media-upload-empty018223">
+                尚未在小姐卡片放入圖片或影片。
+              </div>
+            </div>
+
+            <footer class="batch-media-upload-actions018223">
+              <button type="button" class="ghost-btn" :disabled="isBatchMediaUploading018223" @click="clearAllBatchMediaQueue018223">清空待上傳</button>
+              <button
+                type="button"
+                class="primary-btn"
+                :disabled="isBatchMediaUploading018223 || !batchMediaPendingFileCount018223"
+                @click="startBatchMediaUpload018223"
+              >{{ batchMediaUploadFailedTaskCount018223 ? '重試失敗項目' : '開始儲存全部媒體' }}</button>
+            </footer>
+          </section>
+        </div>
+      </teleport>
 
       <teleport to="body">
         <div v-if="isConsistencyCheckModalOpen" class="consistency-check-modal-mask" @click.self="closeConsistencyCheckModal">
@@ -2543,6 +2664,20 @@ const mediaUploadCurrentFileName = ref('')
 const mediaUploadCompletedCount = ref(0)
 const mediaUploadFailedCount = ref(0)
 const isSingleLadyCentralSyncing = ref(false)
+
+// 第 018-223 批：每張前台預覽卡片可先暫存媒體，最後由同一顆按鈕批次上傳。
+// File 物件只存在目前頁面記憶體；正式資料仍逐檔寫入 01 Worker、R2 與 listing_media。
+const batchMediaQueueByLadyKey018223 = ref({})
+const batchMediaDraggingLadyKey018223 = ref('')
+const isBatchMediaUploadModalOpen018223 = ref(false)
+const isBatchMediaUploading018223 = ref(false)
+const batchMediaUploadStatusText018223 = ref('尚未開始批次上傳。')
+const batchMediaUploadTotalTaskCount018223 = ref(0)
+const batchMediaUploadCompletedTaskCount018223 = ref(0)
+const batchMediaUploadSkippedTaskCount018223 = ref(0)
+const batchMediaUploadFailedTaskCount018223 = ref(0)
+const batchMediaLastRunRows018223 = ref([])
+
 const mediaViewerItem = ref(null)
 const mediaViewerItems = ref([])
 const mediaViewerIndex = ref(0)
@@ -2555,6 +2690,436 @@ const mediaViewerPositionText = computed(() => {
   if (!mediaViewerItem.value || !mediaViewerTotal.value) return ''
   return `${mediaViewerIndex.value + 1} / ${mediaViewerTotal.value}`
 })
+
+function getBatchMediaLadyKey018223(lady) {
+  return getMediaUploadSessionLadyKey(lady, lady) || `strict:${makeLadyStrictIdentityKey(lady)}`
+}
+
+function getBatchMediaLadyLabel018223(lady) {
+  const country = String(lady?.country || '').trim()
+  const name = String(lady?.name || '').trim()
+  return `【${[country, name].filter(Boolean).join(' ')}】`
+}
+
+function getBatchMediaQueueEntry018223(ladyOrKey) {
+  const key = typeof ladyOrKey === 'string' ? ladyOrKey : getBatchMediaLadyKey018223(ladyOrKey)
+  return key ? batchMediaQueueByLadyKey018223.value[key] || null : null
+}
+
+function isBatchMediaItemPending018223(item) {
+  return ['waiting', 'failed'].includes(String(item?.status || 'waiting'))
+}
+
+function getBatchMediaPendingCountForLady018223(lady) {
+  const entry = getBatchMediaQueueEntry018223(lady)
+  return Array.isArray(entry?.files) ? entry.files.filter(isBatchMediaItemPending018223).length : 0
+}
+
+function getBatchMediaFirstQueuedItem018223(lady) {
+  const entry = getBatchMediaQueueEntry018223(lady)
+  return (entry?.files || []).find(isBatchMediaItemPending018223) || null
+}
+
+function makeBatchMediaFileId018223(file) {
+  return `${file?.name || 'file'}-${file?.size || 0}-${file?.lastModified || 0}`
+}
+
+function makeBatchMediaQueuedItem018223(file, index = 0) {
+  return {
+    id: `${makeBatchMediaFileId018223(file)}-${Date.now()}-${index}`,
+    signature: makeBatchMediaFileId018223(file),
+    file,
+    status: 'waiting',
+    statusLabel: '等待上傳',
+    percent: 0,
+    error: '',
+    previewUrl: URL.createObjectURL(file)
+  }
+}
+
+function revokeBatchMediaItemPreview018223(item) {
+  const url = String(item?.previewUrl || '')
+  if (url && url.startsWith('blob:')) URL.revokeObjectURL(url)
+}
+
+function addBatchMediaFilesForLady018223(lady, fileList) {
+  if (!lady || isBatchMediaUploading018223.value) return 0
+  const incoming = Array.from(fileList || []).filter(file => {
+    const type = String(file?.type || '')
+    return file && (type.startsWith('image/') || type.startsWith('video/'))
+  })
+  if (!incoming.length) {
+    showActionToast('只接受圖片或影片檔案。', 'warning')
+    return 0
+  }
+
+  const key = getBatchMediaLadyKey018223(lady)
+  if (!key) {
+    showActionToast('無法建立這位小姐的穩定身分鍵，已停止加入媒體。', 'warning')
+    return 0
+  }
+
+  const current = getBatchMediaQueueEntry018223(key)
+  const existingFiles = Array.isArray(current?.files) ? current.files : []
+  const signatures = new Set(existingFiles.map(item => item.signature))
+  const nextItems = []
+  incoming.forEach((file, index) => {
+    const signature = makeBatchMediaFileId018223(file)
+    if (signatures.has(signature)) return
+    signatures.add(signature)
+    nextItems.push(makeBatchMediaQueuedItem018223(file, index))
+  })
+
+  if (!nextItems.length) {
+    showActionToast(`${getBatchMediaLadyLabel018223(lady)} 沒有新增檔案；重複檔案已略過。`, 'info')
+    return 0
+  }
+
+  batchMediaQueueByLadyKey018223.value = {
+    ...batchMediaQueueByLadyKey018223.value,
+    [key]: {
+      key,
+      lady: { ...lady },
+      label: getBatchMediaLadyLabel018223(lady),
+      files: [...existingFiles, ...nextItems]
+    }
+  }
+  batchMediaLastRunRows018223.value = []
+  batchMediaUploadStatusText018223.value = `已準備 ${batchMediaPendingFileCount018223.value} 個檔案；確認全部小姐後可按「儲存全部媒體」。`
+  showActionToast(`${getBatchMediaLadyLabel018223(lady)} 已加入 ${nextItems.length} 個待上傳媒體。`)
+  return nextItems.length
+}
+
+function handleBatchMediaCardFileChange018223(lady, event) {
+  addBatchMediaFilesForLady018223(lady, event?.target?.files || [])
+  if (event?.target) event.target.value = ''
+}
+
+function handleBatchMediaCardDrop018223(lady, event) {
+  setBatchMediaDraggingLady018223(lady, false)
+  addBatchMediaFilesForLady018223(lady, event?.dataTransfer?.files || [])
+}
+
+function setBatchMediaDraggingLady018223(lady, active) {
+  const key = getBatchMediaLadyKey018223(lady)
+  batchMediaDraggingLadyKey018223.value = active ? key : ''
+}
+
+function isBatchMediaDraggingForLady018223(lady) {
+  return batchMediaDraggingLadyKey018223.value === getBatchMediaLadyKey018223(lady)
+}
+
+function removeBatchMediaQueuedFile018223(ladyKey, itemId) {
+  if (isBatchMediaUploading018223.value) return
+  const entry = getBatchMediaQueueEntry018223(ladyKey)
+  if (!entry) return
+  const target = entry.files.find(item => item.id === itemId)
+  if (target) revokeBatchMediaItemPreview018223(target)
+  const files = entry.files.filter(item => item.id !== itemId)
+  const next = { ...batchMediaQueueByLadyKey018223.value }
+  if (files.length) next[ladyKey] = { ...entry, files }
+  else delete next[ladyKey]
+  batchMediaQueueByLadyKey018223.value = next
+}
+
+function clearBatchMediaLadyQueue018223(lady) {
+  if (isBatchMediaUploading018223.value) return
+  const key = getBatchMediaLadyKey018223(lady)
+  const entry = getBatchMediaQueueEntry018223(key)
+  ;(entry?.files || []).forEach(revokeBatchMediaItemPreview018223)
+  const next = { ...batchMediaQueueByLadyKey018223.value }
+  delete next[key]
+  batchMediaQueueByLadyKey018223.value = next
+}
+
+function clearAllBatchMediaQueue018223() {
+  if (isBatchMediaUploading018223.value) return
+  Object.values(batchMediaQueueByLadyKey018223.value || {}).forEach(entry => {
+    ;(entry?.files || []).forEach(revokeBatchMediaItemPreview018223)
+  })
+  batchMediaQueueByLadyKey018223.value = {}
+  batchMediaLastRunRows018223.value = []
+  batchMediaUploadStatusText018223.value = '待上傳佇列已清空。'
+}
+
+const batchMediaQueueEntries018223 = computed(() => {
+  const rows = Object.values(batchMediaQueueByLadyKey018223.value || {})
+  const order = new Map(currentDocumentPreviewLadies.value.map((lady, index) => [getBatchMediaLadyKey018223(lady), index]))
+  return rows.sort((a, b) => (order.get(a.key) ?? 9999) - (order.get(b.key) ?? 9999))
+})
+
+const batchMediaPendingFileCount018223 = computed(() => batchMediaQueueEntries018223.value.reduce((total, entry) => {
+  return total + (entry.files || []).filter(isBatchMediaItemPending018223).length
+}, 0))
+
+const batchMediaPendingLadyCount018223 = computed(() => batchMediaQueueEntries018223.value.filter(entry => {
+  return (entry.files || []).some(isBatchMediaItemPending018223)
+}).length)
+
+const batchMediaPendingImageCount018223 = computed(() => batchMediaQueueEntries018223.value.reduce((total, entry) => {
+  return total + (entry.files || []).filter(item => isBatchMediaItemPending018223(item) && String(item.file?.type || '').startsWith('image/')).length
+}, 0))
+
+const batchMediaPendingVideoCount018223 = computed(() => batchMediaQueueEntries018223.value.reduce((total, entry) => {
+  return total + (entry.files || []).filter(item => isBatchMediaItemPending018223(item) && String(item.file?.type || '').startsWith('video/')).length
+}, 0))
+
+const batchMediaToolbarSummary018223 = computed(() => {
+  if (isBatchMediaUploading018223.value) {
+    return `批次上傳中：${batchMediaUploadCompletedTaskCount018223.value + batchMediaUploadSkippedTaskCount018223.value + batchMediaUploadFailedTaskCount018223.value}/${batchMediaUploadTotalTaskCount018223.value}`
+  }
+  if (batchMediaPendingFileCount018223.value) {
+    return `已準備 ${batchMediaPendingLadyCount018223.value} 位｜圖片 ${batchMediaPendingImageCount018223.value}｜影片 ${batchMediaPendingVideoCount018223.value}`
+  }
+  if (batchMediaLastRunRows018223.value.length) return batchMediaUploadStatusText018223.value
+  return '可直接拖曳圖片／影片到各小姐卡片'
+})
+
+const batchMediaToolbarButtonText018223 = computed(() => {
+  if (isBatchMediaUploading018223.value) return '查看上傳進度'
+  if (batchMediaPendingFileCount018223.value) return `儲存全部媒體（${batchMediaPendingFileCount018223.value}）`
+  if (batchMediaLastRunRows018223.value.length) return '查看上傳結果'
+  return '儲存全部媒體'
+})
+
+const batchMediaCanOpenOrUpload018223 = computed(() => {
+  return isBatchMediaUploading018223.value || batchMediaPendingFileCount018223.value > 0 || batchMediaLastRunRows018223.value.length > 0
+})
+
+const batchMediaUploadOverallPercent018223 = computed(() => {
+  const total = Number(batchMediaUploadTotalTaskCount018223.value || 0)
+  if (!total) return 0
+  const finished = batchMediaUploadCompletedTaskCount018223.value + batchMediaUploadSkippedTaskCount018223.value + batchMediaUploadFailedTaskCount018223.value
+  const activePercents = batchMediaQueueEntries018223.value.flatMap(entry => entry.files || [])
+    .filter(item => item.status === 'uploading')
+    .reduce((sum, item) => sum + Number(item.percent || 0) / 100, 0)
+  return Math.max(0, Math.min(100, Math.round(((finished + activePercents) / total) * 100)))
+})
+
+function summarizeBatchMediaRow018223(entry) {
+  const files = Array.isArray(entry?.files) ? entry.files : []
+  const count = status => files.filter(item => item.status === status).length
+  const done = count('done')
+  const skipped = count('skipped')
+  const failed = count('failed')
+  const uploading = count('uploading')
+  const waiting = count('waiting')
+  if (uploading) return `上傳中 ${uploading}｜成功 ${done}｜失敗 ${failed}`
+  if (failed) return `成功 ${done}｜失敗 ${failed}｜可重試`
+  if (waiting) return `等待 ${waiting}｜已完成 ${done + skipped}`
+  return `成功 ${done}｜略過重複 ${skipped}`
+}
+
+const batchMediaUploadDisplayRows018223 = computed(() => {
+  if (!isBatchMediaUploading018223.value && batchMediaLastRunRows018223.value.length) {
+    return batchMediaLastRunRows018223.value
+  }
+  if (batchMediaQueueEntries018223.value.length) {
+    return batchMediaQueueEntries018223.value.map(entry => {
+      const statuses = (entry.files || []).map(item => item.status)
+      const status = statuses.includes('failed') ? 'failed' : statuses.includes('uploading') ? 'uploading' : statuses.includes('waiting') ? 'waiting' : 'done'
+      return { ...entry, status, summary: summarizeBatchMediaRow018223(entry) }
+    })
+  }
+  return batchMediaLastRunRows018223.value
+})
+
+function handleBatchMediaToolbarAction018223() {
+  isBatchMediaUploadModalOpen018223.value = true
+  if (!isBatchMediaUploading018223.value && batchMediaPendingFileCount018223.value) {
+    startBatchMediaUpload018223()
+  }
+}
+
+function closeBatchMediaUploadModal018223() {
+  isBatchMediaUploadModalOpen018223.value = false
+}
+
+async function ensureBatchMediaCentralContext018223(entry) {
+  const lady = entry?.lady
+  if (!lady) throw new Error('缺少小姐資料。')
+
+  await fetchCentralWebsiteMediaForLady(lady, {
+    previewLady: lady,
+    allowMissing: true,
+    timeoutMs: 12000
+  }).catch(() => null)
+
+  let centralListingId = getCentralListingIdHint(lady)
+  if (!centralListingId) {
+    const syncItem = buildCentralWebsiteSyncItem(lady, lady)
+    const centralSync = await postCentralWebsiteSyncItems([syncItem], {
+      maxAttempts: 2,
+      timeoutMs: CENTRAL_WEBSITE_SYNC_TIMEOUT_MS
+    })
+    applyCentralListingIdHintsFromResponse(centralSync, { items: [syncItem] })
+    centralListingId = getCentralListingIdHint(lady) || extractCentralListingId(centralSync)
+  }
+
+  if (!centralListingId) {
+    throw new Error('無法取得中央網站正式 ID，已停止以避免綁到同名小姐。')
+  }
+
+  const resolvedLadyId = isCurrentDocumentPreviewLadyId(lady.id)
+    ? (await resolvePreviewLadyToDatabaseId(String(lady.id || '')).catch(() => 0))
+    : lady.id
+
+  const context = await prepareCentralMediaUploadContext(resolvedLadyId || lady.id, {
+    ...lady,
+    centralListingId,
+    listingId: centralListingId
+  })
+  context.centralListingId = centralListingId
+  context.syncItem.centralListingId = centralListingId
+  context.syncItem.listingId = centralListingId
+  return context
+}
+
+function updateBatchMediaQueuedItem018223(ladyKey, itemId, patch) {
+  const entry = getBatchMediaQueueEntry018223(ladyKey)
+  if (!entry) return
+  const files = entry.files.map(item => item.id === itemId ? { ...item, ...patch } : item)
+  batchMediaQueueByLadyKey018223.value = {
+    ...batchMediaQueueByLadyKey018223.value,
+    [ladyKey]: { ...entry, files }
+  }
+}
+
+async function runBatchMediaTask018223(task, contextPromise) {
+  const { entry, item, sortIndex } = task
+  const lady = entry.lady
+  try {
+    if (isMediaUploadFileAlreadyBoundToLady(item.file, lady)) {
+      updateBatchMediaQueuedItem018223(entry.key, item.id, {
+        status: 'skipped', statusLabel: '略過重複', percent: 100, error: ''
+      })
+      batchMediaUploadSkippedTaskCount018223.value += 1
+      return
+    }
+
+    updateBatchMediaQueuedItem018223(entry.key, item.id, {
+      status: 'uploading', statusLabel: '上傳中 0%', percent: 0, error: ''
+    })
+    const context = await contextPromise
+    const uploadResult = await uploadMediaFileToCentralWebsiteWithProgress(item.file, context, percent => {
+      updateBatchMediaQueuedItem018223(entry.key, item.id, {
+        status: 'uploading', statusLabel: `上傳中 ${percent}%`, percent
+      })
+    }, sortIndex)
+    const uploadedItems = buildFallbackUploadedMediaFromResponse(uploadResult, item.file, sortIndex)
+    if (uploadedItems.length) {
+      mergeUploadedMediaIntoLocalPreview(lady.id, uploadedItems, lady)
+    }
+    updateBatchMediaQueuedItem018223(entry.key, item.id, {
+      status: 'done', statusLabel: '已完成', percent: 100, error: ''
+    })
+    batchMediaUploadCompletedTaskCount018223.value += 1
+  } catch (error) {
+    updateBatchMediaQueuedItem018223(entry.key, item.id, {
+      status: 'failed', statusLabel: '上傳失敗', error: String(error?.message || error || '上傳失敗')
+    })
+    batchMediaUploadFailedTaskCount018223.value += 1
+  }
+}
+
+async function startBatchMediaUpload018223() {
+  if (isBatchMediaUploading018223.value) {
+    isBatchMediaUploadModalOpen018223.value = true
+    return
+  }
+
+  const tasks = []
+  batchMediaQueueEntries018223.value.forEach(entry => {
+    const baseSortIndex = getLadyMediaCount(entry.lady)
+    ;(entry.files || []).forEach((item, itemIndex) => {
+      if (!isBatchMediaItemPending018223(item)) return
+      tasks.push({ entry, item, sortIndex: baseSortIndex + itemIndex })
+    })
+  })
+
+  if (!tasks.length) {
+    isBatchMediaUploadModalOpen018223.value = true
+    batchMediaUploadStatusText018223.value = '沒有等待上傳或失敗待重試的檔案。'
+    return
+  }
+
+  isBatchMediaUploadModalOpen018223.value = true
+  isBatchMediaUploading018223.value = true
+  batchMediaLastRunRows018223.value = []
+  batchMediaUploadTotalTaskCount018223.value = tasks.length
+  batchMediaUploadCompletedTaskCount018223.value = 0
+  batchMediaUploadSkippedTaskCount018223.value = 0
+  batchMediaUploadFailedTaskCount018223.value = 0
+  batchMediaUploadStatusText018223.value = `正在上傳 ${tasks.length} 個媒體；可關閉視窗讓它在背景繼續。`
+
+  const contextPromiseByKey = new Map()
+  tasks.forEach(task => {
+    if (!contextPromiseByKey.has(task.entry.key)) {
+      contextPromiseByKey.set(task.entry.key, ensureBatchMediaCentralContext018223(task.entry))
+    }
+  })
+
+  let cursor = 0
+  const worker = async () => {
+    while (cursor < tasks.length) {
+      const taskIndex = cursor
+      cursor += 1
+      const task = tasks[taskIndex]
+      await runBatchMediaTask018223(task, contextPromiseByKey.get(task.entry.key))
+    }
+  }
+
+  await Promise.all([worker(), worker()])
+  isBatchMediaUploading018223.value = false
+
+  const finishedRows = batchMediaQueueEntries018223.value.map(entry => ({
+    ...entry,
+    files: (entry.files || []).map(item => ({ ...item })),
+    status: (entry.files || []).some(item => item.status === 'failed') ? 'failed' : 'done',
+    summary: summarizeBatchMediaRow018223(entry)
+  }))
+  batchMediaLastRunRows018223.value = finishedRows
+
+  const nextQueue = {}
+  batchMediaQueueEntries018223.value.forEach(entry => {
+    const files = (entry.files || []).filter(item => {
+      if (['done', 'skipped'].includes(item.status)) {
+        revokeBatchMediaItemPreview018223(item)
+        return false
+      }
+      return true
+    })
+    if (files.length) nextQueue[entry.key] = { ...entry, files }
+  })
+  batchMediaQueueByLadyKey018223.value = nextQueue
+
+  const uniqueLadies = Array.from(new Map(tasks.map(task => [task.entry.key, task.entry.lady])).values())
+  await Promise.allSettled(uniqueLadies.map(lady => fetchCentralWebsiteMediaForLady(lady, {
+    previewLady: lady,
+    allowMissing: true,
+    refresh: true,
+    timeoutMs: 15000
+  })))
+  await loadFrontendLadies({ refresh: true }).catch(() => null)
+
+  if (batchMediaUploadCompletedTaskCount018223.value || batchMediaUploadSkippedTaskCount018223.value) {
+    markCurrentRoomMediaChecked({ uploadSucceeded: true })
+  }
+
+  if (batchMediaUploadFailedTaskCount018223.value) {
+    batchMediaUploadStatusText018223.value = `批次上傳完成：成功 ${batchMediaUploadCompletedTaskCount018223.value}、略過重複 ${batchMediaUploadSkippedTaskCount018223.value}、失敗 ${batchMediaUploadFailedTaskCount018223.value}。失敗項目已保留，可直接重試。`
+    showActionToast(batchMediaUploadStatusText018223.value, 'warning')
+  } else {
+    batchMediaUploadStatusText018223.value = `批次上傳完成：成功 ${batchMediaUploadCompletedTaskCount018223.value}、略過重複 ${batchMediaUploadSkippedTaskCount018223.value}、失敗 0。`
+    showActionToast(batchMediaUploadStatusText018223.value, 'success')
+  }
+}
+
+function handleBatchMediaBeforeUnload018223(event) {
+  if (!isBatchMediaUploading018223.value && !batchMediaPendingFileCount018223.value) return
+  event.preventDefault()
+  event.returnValue = ''
+}
 
 const mediaUploadTotalCount = computed(() => mediaUploadFiles.value.length)
 const mediaUploadOverallPercent = computed(() => {
@@ -4610,6 +5175,7 @@ function closeAllTopPanelsForCleanStart() {
 
 onMounted(async () => {
   window.addEventListener('keydown', handleMediaViewerKeydown)
+  window.addEventListener('beforeunload', handleBatchMediaBeforeUnload018223)
   window.addEventListener('keydown', handleRoomStatusDropdownKeydown018222)
   document.addEventListener('click', handleRoomStatusDropdownOutsideClick018222)
   await refreshAuthState()
@@ -4625,7 +5191,11 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleMediaViewerKeydown)
+  window.removeEventListener('beforeunload', handleBatchMediaBeforeUnload018223)
   window.removeEventListener('keydown', handleRoomStatusDropdownKeydown018222)
+  Object.values(batchMediaQueueByLadyKey018223.value || {}).forEach(entry => {
+    ;(entry?.files || []).forEach(revokeBatchMediaItemPreview018223)
+  })
   document.removeEventListener('click', handleRoomStatusDropdownOutsideClick018222)
 })
 
@@ -24189,6 +24759,422 @@ button:disabled {
 
   .panel-header-actions018219 button {
     flex: 1 1 0;
+  }
+}
+
+
+/* 第 018-223 批：前台預覽卡片媒體暫存佇列＋全部小姐批次上傳 */
+.batch-media-toolbar018223 {
+  display: grid;
+  grid-template-columns: minmax(190px, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 410px;
+  padding: 8px 9px 8px 14px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 18px;
+  background: rgba(248, 250, 252, 0.9);
+}
+
+.batch-media-toolbar018223.has-pending {
+  border-color: rgba(14, 165, 233, 0.38);
+  background: linear-gradient(135deg, rgba(239, 246, 255, 0.96), rgba(236, 254, 255, 0.92));
+}
+
+.batch-media-toolbar018223 > span {
+  min-width: 0;
+  overflow: hidden;
+  color: #475569;
+  font-size: 0.84rem;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.batch-media-save-all-btn018223 {
+  min-height: 42px;
+  white-space: nowrap;
+  background: linear-gradient(135deg, #2563eb, #0891b2);
+  box-shadow: 0 14px 28px rgba(37, 99, 235, 0.22);
+}
+
+.batch-media-card-drop-zone018223 {
+  position: relative;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.batch-media-card-drop-zone018223.is-dragging018223 {
+  border-color: #0ea5e9 !important;
+  box-shadow: inset 0 0 0 3px rgba(14, 165, 233, 0.2), 0 12px 30px rgba(14, 165, 233, 0.22) !important;
+  transform: translateY(-2px);
+}
+
+.batch-media-cover-empty018223 {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  text-align: center;
+}
+
+.batch-media-cover-empty018223 strong {
+  color: #475569;
+  font-size: 0.83rem;
+}
+
+.batch-media-cover-empty018223 span {
+  color: #94a3b8;
+  font-size: 0.72rem;
+}
+
+
+.batch-media-local-preview018223 {
+  filter: saturate(0.94);
+}
+
+.batch-media-local-preview-label018223 {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 8;
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: rgba(15, 23, 42, 0.84);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 950;
+}
+
+.batch-media-card-actions018223 {
+  position: absolute;
+  right: 7px;
+  bottom: 7px;
+  left: 7px;
+  z-index: 6;
+  display: flex;
+  justify-content: center;
+  gap: 5px;
+}
+
+.batch-media-card-file-label018223,
+.batch-media-card-clear018223 {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  border: 0;
+  border-radius: 999px;
+  padding: 5px 9px;
+  cursor: pointer;
+  font-size: 0.7rem;
+  font-weight: 900;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.16);
+}
+
+.batch-media-card-file-label018223 {
+  flex: 1 1 auto;
+  background: rgba(15, 23, 42, 0.82);
+  color: #fff;
+}
+
+.batch-media-card-file-label018223 input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.batch-media-card-clear018223 {
+  flex: 0 0 auto;
+  background: rgba(254, 226, 226, 0.96);
+  color: #b91c1c;
+}
+
+.batch-media-card-pending-badge018223 {
+  position: absolute;
+  top: 7px;
+  left: 7px;
+  z-index: 7;
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: linear-gradient(135deg, #0284c7, #0d9488);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 950;
+  box-shadow: 0 8px 18px rgba(2, 132, 199, 0.28);
+}
+
+.compact-right-lady-card.has-batch-media-pending018223 {
+  border-color: rgba(14, 165, 233, 0.45) !important;
+  box-shadow: 0 16px 34px rgba(14, 165, 233, 0.13) !important;
+}
+
+.batch-media-upload-mask018223 {
+  position: fixed;
+  inset: 0;
+  z-index: 14500;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  background: rgba(15, 23, 42, 0.62);
+  backdrop-filter: blur(10px);
+}
+
+.batch-media-upload-dialog018223 {
+  width: min(980px, calc(100vw - 36px));
+  max-height: calc(100vh - 44px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(148, 163, 184, 0.42);
+  border-radius: 28px;
+  background: linear-gradient(180deg, #fff, #f8fafc);
+  box-shadow: 0 34px 90px rgba(15, 23, 42, 0.4);
+}
+
+.batch-media-upload-head018223 {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 22px 24px 17px;
+  border-bottom: 1px solid rgba(203, 213, 225, 0.72);
+}
+
+.batch-media-upload-head018223 > div > span {
+  display: inline-flex;
+  margin-bottom: 7px;
+  border-radius: 999px;
+  padding: 4px 9px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 0.72rem;
+  font-weight: 950;
+}
+
+.batch-media-upload-head018223 h3 {
+  margin: 0 0 6px;
+  color: #0f172a;
+  font-size: 1.45rem;
+}
+
+.batch-media-upload-head018223 p {
+  margin: 0;
+  color: #64748b;
+  font-weight: 750;
+  line-height: 1.55;
+}
+
+.batch-media-upload-head018223 > button {
+  flex: 0 0 auto;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  border-radius: 999px;
+  padding: 10px 18px;
+  background: #fff;
+  color: #0f172a;
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.batch-media-upload-overall018223 {
+  padding: 16px 24px 14px;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.85);
+  background: rgba(239, 246, 255, 0.72);
+}
+
+.batch-media-upload-overall018223 > div:first-child,
+.batch-media-upload-overall018223 > small {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.batch-media-upload-overall018223 strong {
+  color: #0f172a;
+}
+
+.batch-media-upload-overall018223 span,
+.batch-media-upload-overall018223 small {
+  color: #64748b;
+  font-weight: 800;
+}
+
+.batch-media-upload-track018223,
+.batch-media-upload-file018223 > div {
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e2e8f0;
+}
+
+.batch-media-upload-track018223 {
+  height: 10px;
+  margin: 11px 0 8px;
+}
+
+.batch-media-upload-track018223 i,
+.batch-media-upload-file018223 > div i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2563eb, #06b6d4, #10b981);
+  transition: width 0.2s ease;
+}
+
+.batch-media-upload-list018223 {
+  overflow: auto;
+  display: grid;
+  gap: 12px;
+  padding: 18px 24px;
+}
+
+.batch-media-upload-row018223 {
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 18px;
+  padding: 13px;
+  background: #fff;
+}
+
+.batch-media-upload-row018223.is-failed {
+  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(254, 242, 242, 0.72);
+}
+
+.batch-media-upload-row-title018223 {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.batch-media-upload-row-title018223 strong {
+  color: #0f172a;
+}
+
+.batch-media-upload-row-title018223 span {
+  color: #64748b;
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+.batch-media-upload-row-files018223 {
+  display: grid;
+  gap: 7px;
+}
+
+.batch-media-upload-file018223 {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) 92px minmax(90px, 160px) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  border-radius: 12px;
+  padding: 8px 9px;
+  background: #f8fafc;
+}
+
+.batch-media-upload-file018223.is-failed {
+  background: #fee2e2;
+}
+
+.batch-media-upload-file018223.is-done,
+.batch-media-upload-file018223.is-skipped {
+  background: #ecfdf5;
+}
+
+.batch-media-upload-file-name018223 {
+  overflow: hidden;
+  color: #334155;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.batch-media-upload-file018223 > span:nth-child(2) {
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.batch-media-upload-file018223 > div {
+  height: 7px;
+}
+
+.batch-media-upload-file018223 > button {
+  border: 0;
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: #e2e8f0;
+  color: #475569;
+  cursor: pointer;
+  font-weight: 850;
+}
+
+.batch-media-upload-empty018223 {
+  padding: 28px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 18px;
+  color: #64748b;
+  text-align: center;
+  font-weight: 800;
+}
+
+.batch-media-upload-actions018223 {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 15px 24px 20px;
+  border-top: 1px solid rgba(226, 232, 240, 0.9);
+}
+
+@media (max-width: 980px) {
+  .batch-media-toolbar018223 {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .batch-media-toolbar018223 {
+    grid-template-columns: 1fr;
+  }
+
+  .batch-media-save-all-btn018223,
+  .batch-media-upload-actions018223 button {
+    width: 100%;
+  }
+
+  .batch-media-upload-mask018223 {
+    padding: 8px;
+  }
+
+  .batch-media-upload-dialog018223 {
+    width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+    border-radius: 22px;
+  }
+
+  .batch-media-upload-head018223,
+  .batch-media-upload-row-title018223,
+  .batch-media-upload-overall018223 > div:first-child,
+  .batch-media-upload-overall018223 > small,
+  .batch-media-upload-actions018223 {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .batch-media-upload-head018223 > button {
+    width: 100%;
+  }
+
+  .batch-media-upload-file018223 {
+    grid-template-columns: 1fr auto;
+  }
+
+  .batch-media-upload-file018223 > div {
+    grid-column: 1 / -1;
   }
 }
 
