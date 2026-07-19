@@ -1,3 +1,5 @@
+<!-- 第 018-230 批：複合優惠服務同義詞真正取代短規則避免重複版 -->
+<!-- batch018-230-composite-promotion-alias-replace-short-rule-no-duplicate-fix -->
 <!-- 第 018-229 批：同一小姐露臉／不露臉攝影並存保留修正版 -->
 <!-- batch018-229-photography-face-no-face-both-explicit-keep-fix -->
 <!-- 第 018-228 批：攝影冒號露臉／不露臉加價解析修正版 -->
@@ -12522,6 +12524,9 @@ function extractServices(block, currentLady = {}) {
           lineIndex,
           start,
           end,
+          from,
+          normalizedFrom: normalizeServiceAliasMatchText(from),
+          sourceLineSignature: normalizeServiceAliasMatchText(sourceLine),
           outputs: outputTokens.filter(isPromotionServiceToken)
         })
       }
@@ -12672,7 +12677,7 @@ function extractServices(block, currentLady = {}) {
   enforceExplicitPaidServices(found, block, explicitPaidAliasOutputs)
   reconcileExplicitServiceAmounts(found, block, aliases)
   normalizeOverlappingServices(found)
-  syncPromotionComboServicesWithSource(found, block, explicitPromotionAliasMatches)
+  syncPromotionComboServicesWithSource(found, block, explicitPromotionAliasMatches, aliases)
 
   const orderIndex = new Map(order.map((item, index) => [normalizeServiceOutputToken(item), index]))
   return Array.from(found).sort((a, b) => {
@@ -12827,10 +12832,13 @@ function applyBuiltInPromotionRules(found, sourceText) {
   })
 }
 
-function syncPromotionComboServicesWithSource(found, block, explicitAliasMatches = []) {
-  // 第 018-168 批：所有優惠組合先清空，再依「明確同義詞優先、內建規則補漏」重建。
-  // 同義詞有設定時，該段文字完全以使用者最後輸入的右側結果為準；
-  // 內建買送判斷只掃描未被同義詞覆蓋的文字，不再產生重複或把5S方案降成一般買5送3。
+function syncPromotionComboServicesWithSource(found, block, explicitAliasMatches = [], aliases = []) {
+  // 第 018-230 批：服務同義詞必須是真正「取代」，不能只額外新增右側結果。
+  // 例：「買2送1 100分3S=買2節送1s」命中後，該段來源只能輸出買2節送1s，
+  // 不可再被較短的內建「買2送1」規則重複抓出。
+  // 舊版雖然會記錄同義詞範圍，但在部分含空格／大小寫／複合文字的行上，
+  // 範圍遮罩可能沒有完整覆蓋短規則；現在會重新依當行同義詞比對結果建立遮罩，
+  // 並以正規化後的左側原文再次校正位置，確保員工最後輸入的複合規則優先。
   Array.from(found).forEach(item => {
     if (isPromotionServiceToken(item)) found.delete(item)
   })
@@ -12840,17 +12848,65 @@ function syncPromotionComboServicesWithSource(found, block, explicitAliasMatches
     .map(line => line.trim())
     .filter(Boolean)
 
-  const matchesByLine = new Map()
-  ;(Array.isArray(explicitAliasMatches) ? explicitAliasMatches : []).forEach(match => {
+  const resolvedMatches = []
+  const matchKeys = new Set()
+
+  const pushResolvedMatch = (match = {}) => {
     if (!match || !Number.isInteger(match.lineIndex)) return
+    const outputs = (Array.isArray(match.outputs) ? match.outputs : [])
+      .map(output => normalizeServiceOutputToken(output))
+      .filter(output => output && isPromotionServiceToken(output))
+    if (!outputs.length) return
+
+    const normalizedFrom = String(match.normalizedFrom || normalizeServiceAliasMatchText(match.from || '')).trim()
+    const key = [
+      match.lineIndex,
+      Number(match.start) || 0,
+      Number(match.end) || 0,
+      normalizedFrom,
+      outputs.join('|')
+    ].join('::')
+    if (matchKeys.has(key)) return
+    matchKeys.add(key)
+
+    resolvedMatches.push({
+      ...match,
+      normalizedFrom,
+      outputs
+    })
+  }
+
+  ;(Array.isArray(explicitAliasMatches) ? explicitAliasMatches : []).forEach(pushResolvedMatch)
+
+  // 重新從每一行與目前實際同義詞規則計算一次，避免先前紀錄因空白、大小寫或
+  // 複合詞正規化差異而遺漏。仍沿用最長且不重疊規則，短規則不會搶先命中。
+  sourceLines.forEach((sourceLine, lineIndex) => {
+    getLineAliasMatches(sourceLine, aliases).forEach(({ from, to, start, end, normalizedFrom }) => {
+      const outputs = String(to || '')
+        .split(/\s+/)
+        .map(output => normalizeServiceOutputToken(output))
+        .filter(output => output && isPromotionServiceToken(output))
+      if (!outputs.length) return
+
+      pushResolvedMatch({
+        lineIndex,
+        start,
+        end,
+        from,
+        normalizedFrom,
+        sourceLineSignature: normalizeServiceAliasMatchText(sourceLine),
+        outputs
+      })
+    })
+  })
+
+  const matchesByLine = new Map()
+  resolvedMatches.forEach(match => {
     const list = matchesByLine.get(match.lineIndex) || []
     list.push(match)
     matchesByLine.set(match.lineIndex, list)
 
-    ;(Array.isArray(match.outputs) ? match.outputs : []).forEach(output => {
-      const token = normalizeServiceOutputToken(output)
-      if (token) found.add(token)
-    })
+    match.outputs.forEach(output => found.add(output))
   })
 
   sourceLines.forEach((sourceLine, lineIndex) => {
@@ -12858,13 +12914,33 @@ function syncPromotionComboServicesWithSource(found, block, explicitAliasMatches
     if (!compact) return
 
     const masked = compact.split('')
-    const lineMatches = matchesByLine.get(lineIndex) || []
+    const lineMatches = (matchesByLine.get(lineIndex) || [])
+      .sort((a, b) => {
+        const aLength = String(a.normalizedFrom || '').length
+        const bLength = String(b.normalizedFrom || '').length
+        if (aLength !== bLength) return bLength - aLength
+        return (Number(a.start) || 0) - (Number(b.start) || 0)
+      })
+
     lineMatches.forEach(match => {
-      const start = Math.max(0, Number(match.start) || 0)
-      const end = Math.min(masked.length, Number(match.end) || 0)
+      const normalizedFrom = String(match.normalizedFrom || '').trim()
+      let start = Math.max(0, Number(match.start) || 0)
+      let end = Math.min(masked.length, Number(match.end) || 0)
+
+      // 若舊紀錄的索引與目前正規化文字不一致，直接用左側完整規則重新定位。
+      if (normalizedFrom) {
+        const recordedText = compact.slice(start, start + normalizedFrom.length)
+        if (recordedText !== normalizedFrom) {
+          const located = compact.indexOf(normalizedFrom)
+          if (located >= 0) start = located
+        }
+        end = Math.min(masked.length, start + normalizedFrom.length)
+      }
+
       for (let index = start; index < end; index += 1) masked[index] = ' '
     })
 
+    // 只掃描未被員工複合同義詞消耗的剩餘來源，因此不會再補出被取代的短方案。
     applyBuiltInPromotionRules(found, masked.join(''))
   })
 }
