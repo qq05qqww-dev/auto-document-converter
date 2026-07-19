@@ -1,3 +1,5 @@
+<!-- 第 018-221 批：服務同義詞千元縮寫金額依右側正式金額保留修正版 -->
+<!-- batch018-221-service-alias-thousand-shorthand-target-amount-fix -->
 <!-- 第 018-220 批：外送緊貼身高罩杯年齡解析＋姓名尾碼清理修正版 -->
 <!-- batch018-220-outside-delivery-compact-height-cup-age-parse-fix -->
 <!-- 第 018-219 批：文件2本批服務／加值項目拖曳排序＋目前範圍線上儲存版 -->
@@ -11739,14 +11741,23 @@ function reconcileExplicitServiceAmounts(found, sourceText, aliases = []) {
       || (normalizedFrom && searchableSource.includes(normalizedFrom))
     if (!isMatched) return
 
-    const amount = getExplicitAliasAmount(from, sourceText)
-    if (!amount) return
+    const explicitSourceAmount = getExplicitAliasAmount(from, sourceText)
 
     String(to || '').split(/\s+/).filter(Boolean).forEach(item => {
       const outputToken = normalizeServiceOutputToken(item)
       const outputBase = stripMonetaryServiceSuffix(outputToken)
       const outputKey = normalizeServiceAliasMatchText(outputBase)
-      if (outputKey) amountByOutputBase.set(outputKey, amount)
+      if (!outputKey) return
+
+      // 第 018-221 批：左側 +1／+3 是千元縮寫時，以右側 +1000／+3000 為正式金額。
+      // 這個已確認的同義詞金額優先於來源內的單位縮寫，避免後續被改回 +1／+3。
+      const targetAmount = getMonetaryServiceAmount(outputToken)
+      const shorthandTargetAmount = targetAmount
+        && aliasSourceCarriesTargetAmount(from, outputToken, sourceText)
+        ? targetAmount
+        : ''
+      const resolvedAmount = shorthandTargetAmount || explicitSourceAmount
+      if (resolvedAmount) amountByOutputBase.set(outputKey, resolvedAmount)
     })
   })
 
@@ -11755,7 +11766,11 @@ function reconcileExplicitServiceAmounts(found, sourceText, aliases = []) {
     const outputBase = stripMonetaryServiceSuffix(outputToken)
     const outputKey = normalizeServiceAliasMatchText(outputBase)
     const directAmount = findExplicitAmountForServiceName(sourceText, outputBase)
-    if (outputKey && directAmount) amountByOutputBase.set(outputKey, directAmount)
+    // 第 018-221 批：若同義詞已把 +1／+3 明確換成 +1000／+3000，
+    // 不可再被來源中的縮寫數字覆蓋回 +1／+3。
+    if (outputKey && directAmount && !amountByOutputBase.has(outputKey)) {
+      amountByOutputBase.set(outputKey, directAmount)
+    }
   })
 
   if (!amountByOutputBase.size) return
@@ -11919,10 +11934,37 @@ function getExplicitAliasAmount(fromText, sourceText = '') {
   return findExplicitAmountForServiceName(sourceText, stripMonetaryServiceSuffix(fromText))
 }
 
+// 第 018-221 批：服務同義詞左側可用千元縮寫，右側保留正式金額。
+// 例如「口+1=口爆+1000」、「無套內射+3=無套內射+3000」。
+// 只在右側本身是明確 +金額服務、且左側縮寫乘以 1000 後完全相等時成立，
+// 不會把 2+1、3+1、5+3 等優惠組合誤判成服務加價。
+function getExplicitAliasThousandShorthandAmount018221(fromText, outputToken) {
+  const targetAmountText = getMonetaryServiceAmount(outputToken)
+  const targetAmount = Number(targetAmountText)
+  if (!targetAmountText || !Number.isFinite(targetAmount) || targetAmount < 1000) return ''
+
+  const normalizedFrom = normalizeDigits(String(fromText || ''))
+    .normalize('NFKC')
+    .replace(/[＋]/g, '+')
+
+  const matches = Array.from(normalizedFrom.matchAll(
+    /(?:\+|加)\s*(\d{1,2}(?:\.\d+)?)(?=$|[\s，、,；;／/]|[^\d.])/g
+  ))
+
+  for (const match of matches) {
+    const shorthandValue = Number(match[1])
+    if (!Number.isFinite(shorthandValue) || shorthandValue <= 0) continue
+    if (Math.round(shorthandValue * 1000) === targetAmount) return targetAmountText
+  }
+
+  return ''
+}
+
 function aliasSourceCarriesTargetAmount(fromText, outputToken, sourceText = '') {
   const amount = getMonetaryServiceAmount(outputToken)
   if (!amount) return false
-  return getExplicitAliasAmount(fromText, sourceText) === amount
+  if (getExplicitAliasAmount(fromText, sourceText) === amount) return true
+  return getExplicitAliasThousandShorthandAmount018221(fromText, outputToken) === amount
 }
 
 function buildAliasOutputTokenWithExplicitAmount(fromText, toText, sourceText = '') {
