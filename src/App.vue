@@ -1,3 +1,5 @@
+<!-- 第 018-222 批：機房下拉單行三欄固定對齊＋固定高度捲動版 -->
+<!-- batch018-222-room-dropdown-single-line-fixed-columns-scroll -->
 <!-- 第 018-221 批：服務同義詞千元縮寫金額依右側正式金額保留修正版 -->
 <!-- batch018-221-service-alias-thousand-shorthand-target-amount-fix -->
 <!-- 第 018-220 批：外送緊貼身高罩杯年齡解析＋姓名尾碼清理修正版 -->
@@ -544,16 +546,99 @@
               </select>
             </label>
 
-            <label class="room-daily-status-select">
+            <div class="room-daily-status-select room-status-select018222">
               <span class="room-daily-status-heading">
                 <span>機房</span>
                 <em>{{ managerRoomDailyUpdatedSummary }}</em>
               </span>
-              <select v-model="ruleScopeRoom" :disabled="!isManagerScopeBaseReady">
-                <option value="">請選機房</option>
-                <option v-for="room in managerRooms" :key="room" :value="room">{{ getRoomOptionDisplayLabel(room) }}</option>
-              </select>
-            </label>
+
+              <div
+                class="room-status-dropdown018222"
+                :class="{ 'is-open': isRoomStatusDropdownOpen018222, 'is-disabled': !isManagerScopeBaseReady }"
+                data-room-status-dropdown018222
+              >
+                <button
+                  class="room-status-trigger018222"
+                  type="button"
+                  :disabled="!isManagerScopeBaseReady"
+                  :aria-expanded="isRoomStatusDropdownOpen018222 ? 'true' : 'false'"
+                  aria-haspopup="listbox"
+                  @click.stop="toggleRoomStatusDropdown018222"
+                >
+                  <span class="room-status-trigger-name018222" :title="ruleScopeRoom || '請選機房'">
+                    {{ ruleScopeRoom || '請選機房' }}
+                  </span>
+                  <template v-if="ruleScopeRoom">
+                    <span
+                      class="room-status-trigger-state018222"
+                      :class="`is-${currentRoomDailyStatus.state}`"
+                    >
+                      {{ currentRoomDailyStatus.documentSaved ? '✅ 已更新' : '○ 未更新' }}
+                    </span>
+                    <span class="room-status-trigger-media018222">
+                      媒體 {{ currentRoomDailyStatus.mediaReadyCount }}/{{ currentRoomDailyStatus.mediaTotalCount }}
+                    </span>
+                  </template>
+                  <span v-else class="room-status-trigger-placeholder018222">選擇</span>
+                  <span class="room-status-trigger-chevron018222" aria-hidden="true">⌄</span>
+                </button>
+
+                <div
+                  v-if="isRoomStatusDropdownOpen018222"
+                  class="room-status-menu018222"
+                  role="listbox"
+                  aria-label="機房今日更新與媒體狀態"
+                >
+                  <div class="room-status-menu-head018222" aria-hidden="true">
+                    <span>機房</span>
+                    <span>今日狀態</span>
+                    <span>媒體</span>
+                  </div>
+
+                  <div class="room-status-menu-list018222">
+                    <button
+                      class="room-status-option018222 is-clear"
+                      type="button"
+                      role="option"
+                      :aria-selected="!ruleScopeRoom"
+                      :class="{ 'is-active': !ruleScopeRoom }"
+                      @click="selectRoomStatusOption018222('')"
+                    >
+                      <span class="room-status-option-name018222">請選機房</span>
+                      <span class="room-status-option-state018222">—</span>
+                      <span class="room-status-option-media018222">—</span>
+                    </button>
+
+                    <button
+                      v-for="room in managerRooms"
+                      :key="`room-status-option018222-${room}`"
+                      class="room-status-option018222"
+                      type="button"
+                      role="option"
+                      :aria-selected="ruleScopeRoom === room"
+                      :class="{ 'is-active': ruleScopeRoom === room }"
+                      @click="selectRoomStatusOption018222(room)"
+                    >
+                      <span class="room-status-option-name018222" :title="room">{{ room }}</span>
+                      <span
+                        class="room-status-option-state018222"
+                        :class="`is-${getRoomDailyStatus(room).state}`"
+                      >
+                        <i aria-hidden="true">{{ getRoomDailyStatus(room).documentSaved ? '●' : '○' }}</i>
+                        {{ getRoomDailyStatus(room).documentSaved ? '已更新' : '未更新' }}
+                      </span>
+                      <span class="room-status-option-media018222">
+                        {{ getRoomDailyStatus(room).mediaReadyCount }}/{{ getRoomDailyStatus(room).mediaTotalCount }}
+                      </span>
+                    </button>
+
+                    <div v-if="!managerRooms.length" class="room-status-empty018222">
+                      目前範圍尚未建立機房
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
 
             <button class="primary-btn manager-crud-toggle" type="button" @click="showScopeCrudPanel = !showScopeCrudPanel">
               管理清單
@@ -3093,6 +3178,8 @@ const ruleScopeCity = ref('')
 const ruleScopeDistrict = ref('')
 const ruleScopeType = ref(DEFAULT_MANAGER_SCOPE_TYPE)
 const ruleScopeRoom = ref('')
+// 第 018-222 批：機房選單改為單行三欄固定對齊，清單固定高度並在 20～30 間機房時內部捲動。
+const isRoomStatusDropdownOpen018222 = ref(false)
 const showScopeManager = ref(true)
 const showEmployeeManager = ref(false)
 // 第 018-202 批：今日班表進度中央彈窗，只統計目前登入帳號已建立的機房。
@@ -4523,6 +4610,8 @@ function closeAllTopPanelsForCleanStart() {
 
 onMounted(async () => {
   window.addEventListener('keydown', handleMediaViewerKeydown)
+  window.addEventListener('keydown', handleRoomStatusDropdownKeydown018222)
+  document.addEventListener('click', handleRoomStatusDropdownOutsideClick018222)
   await refreshAuthState()
   if (!authUser.value) return
   repairProtectedGlobalRules()
@@ -4536,6 +4625,8 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleMediaViewerKeydown)
+  window.removeEventListener('keydown', handleRoomStatusDropdownKeydown018222)
+  document.removeEventListener('click', handleRoomStatusDropdownOutsideClick018222)
 })
 
 
@@ -8680,6 +8771,37 @@ function getRoomDailyStatus(room, scope = {}) {
     imageCount,
     videoCount,
   }
+}
+
+function closeRoomStatusDropdown018222() {
+  isRoomStatusDropdownOpen018222.value = false
+}
+
+async function toggleRoomStatusDropdown018222() {
+  if (!isManagerScopeBaseReady.value) return
+  isRoomStatusDropdownOpen018222.value = !isRoomStatusDropdownOpen018222.value
+  if (!isRoomStatusDropdownOpen018222.value) return
+
+  await nextTick()
+  const activeOption = document.querySelector('.room-status-option018222.is-active')
+  activeOption?.scrollIntoView({ block: 'nearest' })
+}
+
+function selectRoomStatusOption018222(room = '') {
+  ruleScopeRoom.value = cleanScopeText(room)
+  closeRoomStatusDropdown018222()
+}
+
+function handleRoomStatusDropdownOutsideClick018222(event) {
+  const target = event?.target
+  if (!(target instanceof Element)) return
+  if (target.closest('[data-room-status-dropdown018222]')) return
+  closeRoomStatusDropdown018222()
+}
+
+function handleRoomStatusDropdownKeydown018222(event) {
+  if (event?.key !== 'Escape') return
+  closeRoomStatusDropdown018222()
 }
 
 function getRoomOptionDisplayLabel(room) {
@@ -14216,6 +14338,7 @@ watch(accountWorkingDistricts018201, districts => {
 }, { deep: true })
 
 watch(managerSelectedCity, value => {
+  closeRoomStatusDropdown018222()
   if (isRestoringLastScopeSelection) return
   ruleScopeCity.value = value
   const nextType = managerSelectedType.value || getDefaultManagerScopeType()
@@ -14228,6 +14351,7 @@ watch(managerSelectedCity, value => {
 })
 
 watch(managerSelectedDistrict, value => {
+  closeRoomStatusDropdown018222()
   if (isRestoringLastScopeSelection) return
   const nextType = managerSelectedType.value || getDefaultManagerScopeType()
   ruleScopeDistrict.value = resolveScopeDistrictForType(value, nextType)
@@ -14237,6 +14361,7 @@ watch(managerSelectedDistrict, value => {
 })
 
 watch(managerSelectedType, value => {
+  closeRoomStatusDropdown018222()
   if (isRestoringLastScopeSelection) return
   const nextType = value || getDefaultManagerScopeType()
   if (!value && managerSelectedType.value !== nextType) {
@@ -19092,6 +19217,241 @@ select:focus, input:focus, textarea:focus {
   font-weight: 800;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+
+/* 第 018-222 批：大量機房使用單行三欄固定對齊，最多顯示約 8 間後在選單內捲動。 */
+.room-status-select018222 {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.room-status-dropdown018222 {
+  position: relative;
+  min-width: 0;
+}
+
+.room-status-trigger018222 {
+  width: 100%;
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: minmax(72px, 1fr) auto auto 18px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 0 14px;
+  border: 1px solid rgba(148, 163, 184, 0.42);
+  border-radius: 14px;
+  background: #fff;
+  color: #334155;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.room-status-trigger018222:hover:not(:disabled),
+.room-status-dropdown018222.is-open .room-status-trigger018222 {
+  border-color: rgba(14, 165, 233, 0.62);
+  background: #f8fcff;
+  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
+}
+
+.room-status-trigger018222:disabled {
+  cursor: not-allowed;
+  background: #f1f5f9;
+}
+
+.room-status-trigger-name018222 {
+  overflow: hidden;
+  min-width: 0;
+  color: #0f172a;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.room-status-trigger-state018222,
+.room-status-trigger-media018222,
+.room-status-trigger-placeholder018222 {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.room-status-trigger-state018222.is-complete {
+  color: #15803d;
+}
+
+.room-status-trigger-media018222 {
+  font-variant-numeric: tabular-nums;
+}
+
+.room-status-trigger-chevron018222 {
+  color: #64748b;
+  font-size: 16px;
+  line-height: 1;
+  transform: translateY(-1px);
+  transition: transform 0.18s ease;
+}
+
+.room-status-dropdown018222.is-open .room-status-trigger-chevron018222 {
+  transform: rotate(180deg) translateY(1px);
+}
+
+.room-status-menu018222 {
+  position: absolute;
+  z-index: 2180;
+  top: calc(100% + 8px);
+  right: 0;
+  width: max(100%, 390px);
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.99);
+  box-shadow: 0 22px 52px rgba(15, 23, 42, 0.2);
+}
+
+.room-status-menu-head018222,
+.room-status-option018222 {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 104px 68px;
+  align-items: center;
+  column-gap: 12px;
+}
+
+.room-status-menu-head018222 {
+  min-height: 38px;
+  padding: 0 14px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+  background: linear-gradient(180deg, #f8fafc, #f1f5f9);
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+}
+
+.room-status-menu-head018222 span:nth-child(2),
+.room-status-menu-head018222 span:nth-child(3) {
+  text-align: center;
+}
+
+.room-status-menu-list018222 {
+  max-height: 336px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.room-status-option018222 {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 14px;
+  border: 0;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+  background: #fff;
+  color: #334155;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.room-status-option018222:last-child {
+  border-bottom: 0;
+}
+
+.room-status-option018222:hover,
+.room-status-option018222:focus-visible {
+  outline: none;
+  background: #eff8ff;
+}
+
+.room-status-option018222.is-active {
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.14), rgba(14, 165, 233, 0.08));
+  box-shadow: inset 3px 0 0 #0ea5e9;
+}
+
+.room-status-option018222.is-clear {
+  color: #64748b;
+}
+
+.room-status-option-name018222 {
+  overflow: hidden;
+  min-width: 0;
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.room-status-option-state018222,
+.room-status-option-media018222 {
+  justify-self: stretch;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 850;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.room-status-option-state018222 i {
+  margin-right: 4px;
+  font-style: normal;
+}
+
+.room-status-option-state018222.is-complete {
+  color: #15803d;
+}
+
+.room-status-option-media018222 {
+  font-variant-numeric: tabular-nums;
+}
+
+.room-status-empty018222 {
+  padding: 18px 14px;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.room-status-menu-list018222::-webkit-scrollbar {
+  width: 10px;
+}
+
+.room-status-menu-list018222::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.42);
+  background-clip: padding-box;
+}
+
+@media (max-width: 640px) {
+  .room-status-menu018222 {
+    right: auto;
+    left: 0;
+    width: min(100%, calc(100vw - 54px));
+  }
+
+  .room-status-menu-head018222,
+  .room-status-option018222 {
+    grid-template-columns: minmax(92px, 1fr) 88px 58px;
+    column-gap: 8px;
+  }
+
+  .room-status-trigger018222 {
+    grid-template-columns: minmax(72px, 1fr) auto 18px;
+  }
+
+  .room-status-trigger-media018222 {
+    display: none;
+  }
 }
 
 .room-daily-current-status {
