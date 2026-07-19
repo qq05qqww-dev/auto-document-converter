@@ -1,3 +1,5 @@
+<!-- 第 018-217 批：標題年齡自動移出小姐名稱＋年齡僅保留身材尾端修正版 -->
+<!-- batch018-217-header-age-removed-from-name-single-body-age-fix -->
 <!-- 第 018-216 批：正式儲存全面線上成功判定＋本機僅快取修正版 -->
 <!-- batch018-216-formal-save-online-confirmed-local-cache-only-fix -->
 <!-- 第 018-215 批：員工常用規則綁定登入帳號雲端儲存修正版 -->
@@ -9751,7 +9753,10 @@ function extractAgeFromHeaderLines(block, header, country = '') {
     .filter(Boolean)
 
   for (const line of lines.slice(0, 12)) {
+    // 第 018-217 批：同時支援「台妹 筱崎 23y」與「台妹筱崎23y」。
+    // 緊黏格式只接受行尾帶 y／歲的兩位數，並仍須通過下方姓名／國籍／身材線檢查。
     const ageMatch = line.match(/(?:^|\s)(\d{2})\s*(?:歲|y|Y)(?=$|\s|[^A-Za-z0-9])/)
+      || line.match(/(\d{2})\s*(?:歲|y|Y)\s*$/)
     if (!ageMatch) continue
 
     const includesName = name && line.includes(name)
@@ -9953,6 +9958,12 @@ function isBodySuffixOnly(text) {
 
 function removeHeaderNoise(text) {
   let value = normalizeDigits(String(text || ''))
+
+  // 第 018-217 批：標題若寫成「台妹 筱崎 23y／23歲」，年齡是身材欄位，不是小姐名稱。
+  // 先移除姓名尾端具明確單位的年齡，後續仍由 extractAgeFromHeaderLines() 補到罩杯後方。
+  // 僅處理帶 y／歲的兩位數尾碼，不影響正常含數字姓名或沒有年齡單位的名稱。
+  value = value.replace(/(?:^|\s)(\d{2})\s*(?:歲|y|Y)\s*$/g, '')
+  value = value.replace(/(\D)(\d{2})\s*(?:歲|y|Y)\s*$/g, '$1')
 
   // 標題同一行可能長這樣：
   // 越南妹妹 京香 157/44/D
