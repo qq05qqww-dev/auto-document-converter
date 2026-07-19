@@ -1,3 +1,5 @@
+<!-- 第 018-232 批：地區機房選擇列微放大＋列高可讀性美化版 -->
+<!-- batch018-232-location-room-selector-readable-font-row-height-polish -->
 <!-- 第 018-230 批：複合優惠服務同義詞真正取代短規則避免重複版 -->
 <!-- batch018-230-composite-promotion-alias-replace-short-rule-no-duplicate-fix -->
 <!-- 第 018-229 批：同一小姐露臉／不露臉攝影並存保留修正版 -->
@@ -20798,19 +20800,22 @@ select:focus, input:focus, textarea:focus {
 
 .location-select-line label {
   display: grid;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: 800;
+  gap: 7px;
   color: #475569;
+  font-size: 15px;
+  font-weight: 850;
+  line-height: 1.25;
 }
 
 .location-select-line select {
-  min-height: 44px;
+  min-height: 48px;
   border-radius: 14px;
   border: 1px solid rgba(148, 163, 184, 0.42);
   background: #fff;
-  padding: 0 14px;
+  padding: 0 15px;
   font: inherit;
+  font-size: 16px;
+  font-weight: 750;
 }
 
 .room-daily-status-heading {
@@ -20824,9 +20829,10 @@ select:focus, input:focus, textarea:focus {
 .room-daily-status-heading em {
   overflow: hidden;
   color: #64748b;
-  font-size: 11px;
+  font-size: 12px;
   font-style: normal;
-  font-weight: 800;
+  font-weight: 850;
+  line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -20836,11 +20842,12 @@ select:focus, input:focus, textarea:focus {
 .room-status-select018222 {
   position: relative;
   display: grid;
-  gap: 6px;
+  gap: 7px;
   min-width: 0;
   color: #475569;
-  font-size: 13px;
-  font-weight: 800;
+  font-size: 15px;
+  font-weight: 850;
+  line-height: 1.25;
 }
 
 .room-status-dropdown018222 {
@@ -20850,12 +20857,12 @@ select:focus, input:focus, textarea:focus {
 
 .room-status-trigger018222 {
   width: 100%;
-  min-height: 44px;
+  min-height: 48px;
   display: grid;
   grid-template-columns: minmax(72px, 1fr) auto auto 18px;
   align-items: center;
-  gap: 8px;
-  padding: 0 12px 0 14px;
+  gap: 9px;
+  padding: 0 13px 0 15px;
   border: 1px solid rgba(148, 163, 184, 0.42);
   border-radius: 14px;
   background: #fff;
@@ -20882,6 +20889,8 @@ select:focus, input:focus, textarea:focus {
   overflow: hidden;
   min-width: 0;
   color: #0f172a;
+  font-size: 16px;
+  font-weight: 850;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -20890,8 +20899,9 @@ select:focus, input:focus, textarea:focus {
 .room-status-trigger-media018222,
 .room-status-trigger-placeholder018222 {
   color: #64748b;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 850;
+  line-height: 1.2;
   white-space: nowrap;
 }
 
@@ -20920,7 +20930,7 @@ select:focus, input:focus, textarea:focus {
   z-index: 2180;
   top: calc(100% + 8px);
   right: 0;
-  width: max(100%, 390px);
+  width: max(100%, 420px);
   overflow: hidden;
   border: 1px solid rgba(148, 163, 184, 0.3);
   border-radius: 16px;
@@ -20931,18 +20941,18 @@ select:focus, input:focus, textarea:focus {
 .room-status-menu-head018222,
 .room-status-option018222 {
   display: grid;
-  grid-template-columns: minmax(120px, 1fr) 104px 68px;
+  grid-template-columns: minmax(132px, 1fr) 112px 72px;
   align-items: center;
   column-gap: 12px;
 }
 
 .room-status-menu-head018222 {
-  min-height: 38px;
-  padding: 0 14px;
+  min-height: 42px;
+  padding: 0 15px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.22);
   background: linear-gradient(180deg, #f8fafc, #f1f5f9);
   color: #64748b;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 900;
   letter-spacing: 0.02em;
 }
@@ -20953,7 +20963,7 @@ select:focus, input:focus, textarea:focus {
 }
 
 .room-status-menu-list018222 {
-  max-height: 336px;
+  max-height: 368px;
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -20962,8 +20972,8 @@ select:focus, input:focus, textarea:focus {
 
 .room-status-option018222 {
   width: 100%;
-  min-height: 42px;
-  padding: 0 14px;
+  min-height: 46px;
+  padding: 0 15px;
   border: 0;
   border-bottom: 1px solid rgba(226, 232, 240, 0.8);
   background: #fff;
@@ -20996,7 +21006,7 @@ select:focus, input:focus, textarea:focus {
   overflow: hidden;
   min-width: 0;
   color: #0f172a;
-  font-size: 12px;
+  font-size: 15px;
   font-weight: 900;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -21006,8 +21016,9 @@ select:focus, input:focus, textarea:focus {
 .room-status-option-media018222 {
   justify-self: stretch;
   color: #64748b;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 850;
+  line-height: 1.2;
   text-align: center;
   white-space: nowrap;
 }
@@ -21026,9 +21037,9 @@ select:focus, input:focus, textarea:focus {
 }
 
 .room-status-empty018222 {
-  padding: 18px 14px;
+  padding: 20px 15px;
   color: #94a3b8;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 800;
   text-align: center;
 }
@@ -21044,6 +21055,8 @@ select:focus, input:focus, textarea:focus {
   background-clip: padding-box;
 }
 
+
+/* 第 018-232 批：方案 A。只微放大主要字級與列高，保留單行三欄、約 8 筆固定高度捲動，不改任何資料或選取邏輯。 */
 @media (max-width: 640px) {
   .room-status-menu018222 {
     right: auto;
@@ -21063,6 +21076,25 @@ select:focus, input:focus, textarea:focus {
 
   .room-status-trigger-media018222 {
     display: none;
+  }
+
+  .location-select-line label,
+  .room-status-select018222 {
+    font-size: 14px;
+  }
+
+  .location-select-line select,
+  .room-status-trigger-name018222 {
+    font-size: 15px;
+  }
+
+  .room-status-option-name018222 {
+    font-size: 14px;
+  }
+
+  .room-status-option-state018222,
+  .room-status-option-media018222 {
+    font-size: 12px;
   }
 }
 
