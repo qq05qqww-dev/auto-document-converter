@@ -1,3 +1,7 @@
+<!-- 第 018-216 批：正式儲存全面線上成功判定＋本機僅快取修正版 -->
+<!-- batch018-216-formal-save-online-confirmed-local-cache-only-fix -->
+<!-- 第 018-215 批：員工常用規則綁定登入帳號雲端儲存修正版 -->
+<!-- batch018-215-employee-common-rules-account-cloud-save-fix -->
 <!-- 第 018-214 批：外送無國籍小姐自動顯示台妹修正版 -->
 <!-- batch018-214-outside-delivery-missing-country-default-taiwan-fix -->
 <!-- 第 018-213 批：老闆公版服務同義詞專屬恢復＋版面完整修正版 -->
@@ -557,6 +561,7 @@
             <div class="room-rule-current">
               <div>目前規則範圍：<strong>{{ currentRuleScopeLabel }}</strong></div>
               <span>有效來源：{{ effectiveRuleSourceLabel }}</span>
+              <small class="formal-save-online-hint018216">正式儲存以線上資料為準；本機只保留成功同步後的快取。</small>
             </div>
             <div class="room-rule-buttons">
               <button
@@ -1196,10 +1201,10 @@
         <div class="quick-rule-header top-settings-modal-head">
           <div>
             <h3>簡單模式｜常用規則</h3>
-            <p>{{ ruleLayerHelpText }}</p>
+            <p>{{ quickRuleLayerHelpText }}</p>
           </div>
           <div class="top-settings-modal-head-actions single-save-head-actions">
-            <button class="ghost-btn" type="button" :disabled="isSavingScopeRules" @click="saveRuleFields('常用規則', ['aliasRulesText', 'removeWordsText'])">{{ isSavingScopeRules ? '儲存中...' : '儲存' }}</button>
+            <button class="ghost-btn" type="button" :disabled="isSavingScopeRules" @click="saveQuickCommonRules018215">{{ isSavingScopeRules ? '儲存中...' : '儲存' }}</button>
             <button class="top-settings-modal-close" type="button" @click="closeTopSettingModal">關閉</button>
           </div>
         </div>
@@ -1505,7 +1510,7 @@
         <section class="api-action-card">
           <h3>API 基本操作</h3>
           <div class="api-action-buttons">
-            <button class="ghost-btn" type="button" @click="saveApiBaseUrl">儲存API位置</button>
+            <button class="ghost-btn" type="button" @click="saveApiBaseUrl">儲存此裝置API位置</button>
             <button class="ghost-btn" type="button" @click="useOnlineApiBaseUrl">套用線上API</button>
             <button class="ghost-btn" type="button" @click="testApiConnection">測試API</button>
             <button class="ghost-btn" type="button" @click="testDatabaseConnection">測試資料庫</button>
@@ -1627,11 +1632,11 @@
         ></textarea>
 
         <div class="button-row">
-          <button class="ghost-btn" type="button" @click="saveConfirmedText">儲存文件3</button>
+          <button class="ghost-btn" type="button" :disabled="isDatabaseSubmitting" @click="saveConfirmedText">{{ isDatabaseSubmitting ? '線上儲存中...' : '儲存文件3到線上' }}</button>
           <button class="danger-btn" type="button" @click="clearConfirmedText">清空文件3</button>
         </div>
 
-        <p class="hint">文件3會自動讀取上次儲存內容。</p>
+        <p class="hint">文件3會保留此裝置草稿；按「儲存文件3到線上」且資料庫寫入成功後，才算正式儲存。</p>
       </article>
 
       <article class="panel json-panel">
@@ -2231,6 +2236,11 @@ const STAFF_PROFILE_STORAGE_KEY = 'auto-document-converter-current-staff-profile
 const STAFF_DEFAULT_NAME = '未登入使用者'
 const ONLINE_OPTIONS_SCOPE = { city: '__OPTIONS__', district: '__OPTIONS__', mode: '定點', room: '__OPTIONS__' }
 const ONLINE_OPTIONS_KIND = 'employee_location_options_v1'
+// 第 018-215 批：員工「簡單模式｜常用規則」使用 employee_rules 的帳號專屬保留列。
+// mode 固定使用既有合法值「定點」，避免修改資料庫 schema 或既有 mode 約束。
+const EMPLOYEE_COMMON_RULE_SCOPE018215 = { city: '__ACCOUNT__', district: '__COMMON_RULES__', mode: '定點', room: '__COMMON_RULES__' }
+const EMPLOYEE_COMMON_RULE_KIND018215 = 'employee_account_common_rules_v1'
+const EMPLOYEE_COMMON_RULE_STORAGE_KEY018215 = 'auto-document-converter-employee-account-common-rules-current'
 
 
 // 第 018-205 批：文件1是原始資料編輯區，不能在輸入階段把 / 或 ／ 改成空格。
@@ -2464,8 +2474,14 @@ const currentRoleLabel = computed(() => isOwner.value ? '老闆' : '員工')
 const ruleLayerHelpText = computed(() => isOwner.value
   ? '第一層公司全站公版：不分縣市、地區、定點或機房，所有員工轉換時都會先套用。'
   : '第二層個人地區補充：欄位預設空白，只新增目前地區需要的內容；實際轉換固定先套老闆全站公版，再套目前員工補充。')
+const quickRuleLayerHelpText = computed(() => isOwner.value
+  ? '第一層公司全站公版：老闆在此儲存會更新所有員工共用的服務同義詞與清理文字。'
+  : '登入帳號個人常用規則：儲存在 Supabase 並綁定目前員工帳號，換電腦或瀏覽器重新登入仍會跟著帳號讀回；不會修改老闆公版。')
 const ownerBaseRuleData = ref(null)
 const employeeSupplementLoaded = ref(false)
+const employeeAccountCommonRules018215 = ref(null)
+const quickRuleRoomFieldSnapshot018215 = ref(null)
+const quickRuleEditingAccountCommon018215 = ref(false)
 const OWNER_BASE_RULE_KIND = 'owner_base_rules_v1'
 const EMPLOYEE_SUPPLEMENT_RULE_KIND = 'employee_supplement_rules_v1'
 // 第 018-147 批起：老闆全站公版改存 converter_global_rules，不再塞進 employee_rules。
@@ -2485,6 +2501,9 @@ function applyAuthenticatedProfile(user, profile = null) {
   staffLoginInput.value = nextName
   localStorage.setItem(STAFF_PROFILE_STORAGE_KEY, nextName)
   roomDailyStatusByScope.value = readRoomDailyStatusStore()
+  employeeAccountCommonRules018215.value = buildEmptyEmployeeAccountCommonRules018215()
+  quickRuleRoomFieldSnapshot018215.value = null
+  quickRuleEditingAccountCommon018215.value = false
 
   if (profile?.role === 'owner') {
     ruleScopeLevel.value = 'global'
@@ -2890,6 +2909,9 @@ async function logoutFromSupabase() {
   employeeManageStatus.value = '老闆可在此建立員工帳號。'
   employeeManageStatusType.value = ''
   resetEmployeeEditForm()
+  employeeAccountCommonRules018215.value = buildEmptyEmployeeAccountCommonRules018215()
+  quickRuleRoomFieldSnapshot018215.value = null
+  quickRuleEditingAccountCommon018215.value = false
   loginStatus.value = '已登出，請重新登入。'
   loginStatusType.value = ''
 }
@@ -2981,6 +3003,7 @@ function toggleAdvancedPanel(panel) {
 }
 
 function closeTopSettingModal() {
+  restoreQuickRuleRoomFields018215()
   activeTopPanel.value = ''
   showPriceSettings.value = false
   showFormatSettings.value = false
@@ -3006,6 +3029,8 @@ function toggleTopPanel(panel) {
     if (isOwner.value) {
       ruleScopeLevel.value = 'global'
       void loadCurrentScopeRules({ silent: true, preferOnline: true })
+    } else if (nextPanel === 'quick') {
+      void openEmployeeAccountCommonQuickRules018215()
     } else if (ruleScopeLevel.value === 'room') {
       void loadCurrentScopeRules({ silent: true, preferOnline: true })
     }
@@ -4362,6 +4387,7 @@ const sampleText = `💢超性感搖搖馬💢
 
 
 function closeAllTopPanelsForCleanStart() {
+  restoreQuickRuleRoomFields018215()
   // 第 018-107 批：登入後預設固定展開地區機房管理；選擇欄位由最後機房範圍 / 定點預設帶入。
   // 其他設定彈窗仍維持收合；若使用者手動按「關閉」，只會暫時收合目前畫面。
   activeTopPanel.value = ''
@@ -7550,7 +7576,7 @@ function saveApiBaseUrl() {
   const value = String(apiBaseUrl.value || '').trim().replace(/\/+$/, '')
   apiBaseUrl.value = value || DEFAULT_ONLINE_API_BASE_URL
   localStorage.setItem('auto-document-converter-api-base-url', apiBaseUrl.value)
-  apiStatusText.value = `API 位置已儲存：${apiBaseUrl.value}`
+  apiStatusText.value = `此裝置 API 位置已儲存在目前瀏覽器：${apiBaseUrl.value}`
 }
 
 
@@ -12836,10 +12862,36 @@ function applyLastScopeSelection(options = {}) {
   return resolved
 }
 
-function saveLocationOptions(options = locationOptions.value) {
-  locationOptions.value = normalizeLocationOptions(options)
-  writeLocationOptions(locationOptions.value)
-  void saveLocationOptionsOnline(locationOptions.value, { silent: true })
+let locationOptionsSaveSequence018216 = 0
+
+function areLocationOptionsEquivalent018216(left, right) {
+  return stableRuleStringify(normalizeLocationOptions(left)) === stableRuleStringify(normalizeLocationOptions(right))
+}
+
+async function saveLocationOptions(options = locationOptions.value) {
+  const normalized = normalizeLocationOptions(options)
+  locationOptions.value = normalized
+  const sequence = ++locationOptionsSaveSequence018216
+
+  if (!isOnlineWorkspaceReady()) {
+    statusMessage.value = '管理清單目前只停留在畫面草稿，尚未儲存；請先登入並確認線上連線。'
+    return false
+  }
+
+  try {
+    const verifiedOptions = await saveLocationOptionsOnline(normalized, { silent: true, verify: true, throwOnError: true })
+    if (!verifiedOptions) throw new Error('線上寫入後沒有讀回管理清單。')
+
+    // 只讓最後一筆操作更新本機成功快取，避免快速操作時舊請求覆蓋新狀態。
+    if (sequence === locationOptionsSaveSequence018216) {
+      locationOptions.value = normalizeLocationOptions(verifiedOptions)
+      writeLocationOptions(locationOptions.value)
+    }
+    return true
+  } catch (error) {
+    statusMessage.value = `線上儲存縣市／地區／機房管理清單失敗；正式資料未變更，畫面草稿仍保留：${error.message || error}`
+    return false
+  }
 }
 
 function isOnlineWorkspaceReady() {
@@ -12857,27 +12909,63 @@ function buildOnlineOptionsPayload(options = locationOptions.value) {
 }
 
 async function saveLocationOptionsOnline(options = locationOptions.value, opts = {}) {
-  if (!isOnlineWorkspaceReady()) return false
-
-  const payload = buildOnlineOptionsPayload(options)
-  const { error } = await supabase
-    .from('employee_rules')
-    .upsert({
-      user_id: authUser.value.id,
-      city: ONLINE_OPTIONS_SCOPE.city,
-      district: ONLINE_OPTIONS_SCOPE.district,
-      mode: ONLINE_OPTIONS_SCOPE.mode,
-      room: ONLINE_OPTIONS_SCOPE.room,
-      rules: payload
-    }, { onConflict: 'user_id,city,district,mode,room' })
-
-  if (error) {
-    if (!opts.silent) statusMessage.value = `線上儲存管理清單失敗：${error.message}`
+  if (!isOnlineWorkspaceReady()) {
+    const error = new Error('尚未登入，無法把管理清單儲存到線上。')
+    if (!opts.silent) statusMessage.value = error.message
+    if (opts.throwOnError) throw error
     return false
   }
 
-  if (!opts.silent) statusMessage.value = '已把目前縣市 / 地區 / 機房清單儲存到線上。'
-  return true
+  try {
+    const payload = buildOnlineOptionsPayload(options)
+    const { data: savedRows, error } = await supabase
+      .from('employee_rules')
+      .upsert({
+        user_id: authUser.value.id,
+        city: ONLINE_OPTIONS_SCOPE.city,
+        district: ONLINE_OPTIONS_SCOPE.district,
+        mode: ONLINE_OPTIONS_SCOPE.mode,
+        room: ONLINE_OPTIONS_SCOPE.room,
+        rules: payload
+      }, { onConflict: 'user_id,city,district,mode,room' })
+      .select('rules')
+
+    if (error) throw error
+
+    const savedRule = Array.isArray(savedRows) ? savedRows[0]?.rules : null
+    if (!savedRule?.options) {
+      throw new Error('Supabase 回傳寫入 0 筆或沒有管理清單內容。')
+    }
+
+    let verifiedOptions = normalizeLocationOptions(savedRule.options)
+    if (opts.verify !== false) {
+      const { data: verifiedRow, error: verifyError } = await supabase
+        .from('employee_rules')
+        .select('rules')
+        .eq('user_id', authUser.value.id)
+        .eq('city', ONLINE_OPTIONS_SCOPE.city)
+        .eq('district', ONLINE_OPTIONS_SCOPE.district)
+        .eq('mode', ONLINE_OPTIONS_SCOPE.mode)
+        .eq('room', ONLINE_OPTIONS_SCOPE.room)
+        .maybeSingle()
+
+      if (verifyError) throw verifyError
+      if (!verifiedRow?.rules?.options) throw new Error('管理清單送出後未能重新讀回。')
+      verifiedOptions = normalizeLocationOptions(verifiedRow.rules.options)
+    }
+
+    if (!areLocationOptionsEquivalent018216(verifiedOptions, payload.options)) {
+      throw new Error('線上重新讀回的管理清單與本次修改不同。')
+    }
+
+    if (!opts.silent) statusMessage.value = '已在線上儲存並驗證目前縣市／地區／機房清單。'
+    return verifiedOptions
+  } catch (error) {
+    if (!opts.silent) statusMessage.value = `線上儲存管理清單失敗：${error.message || error}`
+    if (opts.throwOnError) throw error
+    console.warn('線上儲存管理清單失敗：', error)
+    return false
+  }
 }
 
 async function loadLocationOptionsOnline(opts = {}) {
@@ -12898,7 +12986,7 @@ async function loadLocationOptionsOnline(opts = {}) {
 
   if (error) {
     locationOptions.value = readLocationOptions()
-    if (!opts.silent) statusMessage.value = `讀取線上管理清單失敗：${error.message}`
+    if (!opts.silent) statusMessage.value = `讀取線上管理清單失敗，暫時顯示此裝置快取；正式資料仍以線上為準：${error.message}`
     return false
   }
 
@@ -12921,16 +13009,166 @@ async function loadLocationOptionsOnline(opts = {}) {
   }
 
   locationOptions.value = readLocationOptions()
-  if (!opts.silent) statusMessage.value = '線上尚未建立個人管理清單，已使用本機目前清單。'
+  if (!opts.silent) statusMessage.value = '線上尚未建立個人管理清單；目前顯示此裝置快取，按管理操作後會正式寫入線上。'
   return false
+}
+
+async function getOnlineEmployeeAccountCommonRules018215() {
+  if (!isOnlineWorkspaceReady() || isOwner.value) return null
+
+  const { data, error } = await supabase
+    .from('employee_rules')
+    .select('rules')
+    .eq('user_id', authUser.value.id)
+    .eq('city', EMPLOYEE_COMMON_RULE_SCOPE018215.city)
+    .eq('district', EMPLOYEE_COMMON_RULE_SCOPE018215.district)
+    .eq('mode', EMPLOYEE_COMMON_RULE_SCOPE018215.mode)
+    .eq('room', EMPLOYEE_COMMON_RULE_SCOPE018215.room)
+    .maybeSingle()
+
+  if (error) throw error
+  if (!data?.rules || typeof data.rules !== 'object') return null
+  return normalizeEmployeeAccountCommonRules018215(data.rules)
+}
+
+async function saveOnlineEmployeeAccountCommonRules018215(data) {
+  if (!isOnlineWorkspaceReady() || isOwner.value) {
+    throw new Error('請先使用員工帳號登入後再儲存個人常用規則。')
+  }
+
+  const payload = normalizeEmployeeAccountCommonRules018215(data)
+  const { data: savedRows, error } = await supabase
+    .from('employee_rules')
+    .upsert({
+      user_id: authUser.value.id,
+      city: EMPLOYEE_COMMON_RULE_SCOPE018215.city,
+      district: EMPLOYEE_COMMON_RULE_SCOPE018215.district,
+      mode: EMPLOYEE_COMMON_RULE_SCOPE018215.mode,
+      room: EMPLOYEE_COMMON_RULE_SCOPE018215.room,
+      rules: payload
+    }, { onConflict: 'user_id,city,district,mode,room' })
+    .select('rules')
+
+  if (error) throw error
+  if (!Array.isArray(savedRows) || !savedRows.length) {
+    throw new Error('Supabase 回傳寫入 0 筆；請確認 employee_rules 的登入帳號寫入權限。')
+  }
+
+  const verified = await getOnlineEmployeeAccountCommonRules018215()
+  if (!verified) throw new Error('帳號常用規則送出後未能重新讀回。')
+
+  const different = [
+    normalizeRuleTextForCompare(verified.aliasRulesText) !== normalizeRuleTextForCompare(payload.aliasRulesText) ? '服務同義詞' : '',
+    normalizeRuleTextForCompare(verified.removeWordsText) !== normalizeRuleTextForCompare(payload.removeWordsText) ? '不想出現文字' : ''
+  ].filter(Boolean)
+  if (different.length) {
+    throw new Error(`線上重新讀回內容不同；差異欄位：${different.join('、')}。`)
+  }
+
+  return verified
+}
+
+async function loadEmployeeAccountCommonRules018215(opts = {}) {
+  if (isOwner.value) {
+    employeeAccountCommonRules018215.value = buildEmptyEmployeeAccountCommonRules018215()
+    return employeeAccountCommonRules018215.value
+  }
+
+  let resolved = readEmployeeAccountCommonCache018215()
+
+  if (isOnlineWorkspaceReady()) {
+    try {
+      const online = await getOnlineEmployeeAccountCommonRules018215()
+      if (online) resolved = online
+    } catch (error) {
+      if (!opts.silent) {
+        setRoomRuleFeedback(`讀取登入帳號常用規則失敗：${error.message || error}`, 'warning', { toast: true })
+      }
+    }
+  }
+
+  employeeAccountCommonRules018215.value = normalizeEmployeeAccountCommonRules018215(resolved)
+  writeEmployeeAccountCommonCache018215(employeeAccountCommonRules018215.value)
+  return employeeAccountCommonRules018215.value
+}
+
+function restoreQuickRuleRoomFields018215() {
+  if (!quickRuleEditingAccountCommon018215.value) return
+
+  const snapshot = quickRuleRoomFieldSnapshot018215.value
+  if (snapshot && typeof snapshot === 'object') {
+    aliasRulesText.value = String(snapshot.aliasRulesText || '')
+    removeWordsText.value = String(snapshot.removeWordsText || '')
+  }
+
+  quickRuleRoomFieldSnapshot018215.value = null
+  quickRuleEditingAccountCommon018215.value = false
+}
+
+async function openEmployeeAccountCommonQuickRules018215() {
+  if (isOwner.value || quickRuleEditingAccountCommon018215.value) return
+
+  quickRuleRoomFieldSnapshot018215.value = {
+    aliasRulesText: aliasRulesText.value,
+    removeWordsText: removeWordsText.value
+  }
+  quickRuleEditingAccountCommon018215.value = true
+
+  const data = await loadEmployeeAccountCommonRules018215({ silent: true })
+  if (!quickRuleEditingAccountCommon018215.value) return
+
+  const hasSavedAccountCommon = Boolean(
+    String(data.aliasRulesText || '').trim() || String(data.removeWordsText || '').trim()
+  )
+  const draft = hasSavedAccountCommon
+    ? data
+    : (quickRuleRoomFieldSnapshot018215.value || data)
+
+  // 尚未建立帳號雲端列時，先帶入更新前畫面已有內容供確認；
+  // 只有使用者按下「儲存」後才正式寫入登入帳號，避免自動搬錯機房資料。
+  aliasRulesText.value = String(draft.aliasRulesText || '')
+  removeWordsText.value = String(draft.removeWordsText || '')
+}
+
+async function saveQuickCommonRules018215() {
+  if (isOwner.value) {
+    return saveRuleFields('常用規則', ['aliasRulesText', 'removeWordsText'])
+  }
+  if (isSavingScopeRules.value) return false
+
+  if (!isOnlineWorkspaceReady()) {
+    setRoomRuleFeedback('請先登入員工帳號再儲存；此按鈕不會只存瀏覽器，也不會寫入老闆公版。', 'warning', { toast: true })
+    return false
+  }
+
+  cleanupAliasRulesBeforeSave()
+  isSavingScopeRules.value = true
+  setRoomRuleFeedback('正在儲存目前登入帳號的個人常用規則...', 'pending', { silent: true })
+
+  try {
+    const verified = await saveOnlineEmployeeAccountCommonRules018215({
+      aliasRulesText: aliasRulesText.value,
+      removeWordsText: removeWordsText.value
+    })
+    employeeAccountCommonRules018215.value = verified
+    writeEmployeeAccountCommonCache018215(verified)
+    setRoomRuleFeedback('已儲存到目前登入員工帳號；換電腦或瀏覽器重新登入仍會讀回，不會修改老闆公版或其他員工。', 'success', { toast: true })
+    return true
+  } catch (error) {
+    setRoomRuleFeedback(`登入帳號常用規則儲存失敗，未改寫老闆公版：${error.message || error}`, 'error', { toast: true })
+    return false
+  } finally {
+    isSavingScopeRules.value = false
+  }
 }
 
 async function loadOnlineWorkspace(opts = {}) {
   await loadLocationOptionsOnline({ silent: true })
+  await loadEmployeeAccountCommonRules018215({ silent: true })
   applyLastScopeSelection({ silent: true })
   repairProtectedGlobalRules()
   await loadCurrentScopeRules({ silent: true, preferOnline: true })
-  if (!opts.silent) statusMessage.value = '已同步線上個人工作區。'
+  if (!opts.silent) statusMessage.value = '已同步線上個人工作區與登入帳號常用規則。'
 }
 
 const BACKUP_STORAGE_KEYS = [
@@ -13732,8 +13970,66 @@ const currentRuleScopeLabel = computed(() => {
 const effectiveRuleSourceLabel = computed(() => {
   if (isOwner.value) return '老闆全站公版規則'
   const supplementLabel = getEffectiveScopedRuleData().label
-  return `老闆全站公版＋${supplementLabel}個人補充`
+  return `老闆全站公版＋登入帳號常用規則＋${supplementLabel}個人補充`
 })
+
+// 第 018-215 批：員工常用規則是獨立的登入帳號層，不隸屬任何縣市／地區／機房。
+function buildEmptyEmployeeAccountCommonRules018215() {
+  return {
+    kind: EMPLOYEE_COMMON_RULE_KIND018215,
+    aliasRulesText: '',
+    removeWordsText: ''
+  }
+}
+
+function normalizeEmployeeAccountCommonRules018215(data = {}) {
+  return {
+    kind: EMPLOYEE_COMMON_RULE_KIND018215,
+    aliasRulesText: String(data?.aliasRulesText || ''),
+    removeWordsText: String(data?.removeWordsText || '')
+  }
+}
+
+function getEmployeeAccountCommonCacheKey018215() {
+  const accountKey = String(authUser.value?.id || getStaffStorageSuffix() || 'anonymous')
+  return `${EMPLOYEE_COMMON_RULE_STORAGE_KEY018215}__account__${encodeURIComponent(accountKey)}`
+}
+
+function readEmployeeAccountCommonCache018215() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(getEmployeeAccountCommonCacheKey018215()) || '{}')
+    return normalizeEmployeeAccountCommonRules018215(parsed)
+  } catch {
+    return buildEmptyEmployeeAccountCommonRules018215()
+  }
+}
+
+function writeEmployeeAccountCommonCache018215(data) {
+  try {
+    localStorage.setItem(
+      getEmployeeAccountCommonCacheKey018215(),
+      JSON.stringify(normalizeEmployeeAccountCommonRules018215(data))
+    )
+  } catch (error) {
+    console.warn('員工帳號常用規則本機快取失敗，但線上資料不受影響：', error)
+  }
+}
+
+function mergeEmployeeAccountAndRoomSupplement018215(accountData = {}, roomData = {}) {
+  const account = normalizeEmployeeAccountCommonRules018215(accountData)
+  const room = normalizeSupplementRuleData(roomData)
+
+  return {
+    ...room,
+    kind: EMPLOYEE_SUPPLEMENT_RULE_KIND,
+    aliasRulesText: mergeRuleTextWithSupplementOverride(
+      account.aliasRulesText,
+      room.aliasRulesText,
+      value => normalizeServiceAliasMatchText(value)
+    ),
+    removeWordsText: appendRuleText(account.removeWordsText, room.removeWordsText)
+  }
+}
 
 function buildEmptyEmployeeSupplementData() {
   return {
@@ -13989,7 +14285,15 @@ function applyEmployeeSupplementData(data, options = {}) {
 async function withEffectiveRulesForEmployee(callback) {
   if (isOwner.value) return callback()
 
-  const supplement = normalizeSupplementRuleData(collectRuleData())
+  const collected = collectRuleData()
+  if (quickRuleEditingAccountCommon018215.value && quickRuleRoomFieldSnapshot018215.value) {
+    collected.aliasRulesText = quickRuleRoomFieldSnapshot018215.value.aliasRulesText
+    collected.removeWordsText = quickRuleRoomFieldSnapshot018215.value.removeWordsText
+  }
+  const roomSupplement = normalizeSupplementRuleData(collected)
+  const accountCommon = employeeAccountCommonRules018215.value
+    || await loadEmployeeAccountCommonRules018215({ silent: true })
+  const supplement = mergeEmployeeAccountAndRoomSupplement018215(accountCommon, roomSupplement)
   let onlineOwnerRule = null
 
   try {
@@ -14010,7 +14314,12 @@ async function withEffectiveRulesForEmployee(callback) {
   try {
     return await callback()
   } finally {
-    applyEmployeeSupplementData(supplement, { keepPanelsOpen: true })
+    applyEmployeeSupplementData(roomSupplement, { keepPanelsOpen: true })
+    if (quickRuleEditingAccountCommon018215.value) {
+      const personal = normalizeEmployeeAccountCommonRules018215(employeeAccountCommonRules018215.value)
+      aliasRulesText.value = personal.aliasRulesText
+      removeWordsText.value = personal.removeWordsText
+    }
   }
 }
 
@@ -14161,83 +14470,78 @@ async function saveCurrentScopeRules(options = {}) {
   const itemLabel = cleanScopeText(options.itemLabel || '')
   const { key } = getScopeBucketAndKey()
   if (!key) {
-    const message = '請先把目前範圍填完整再儲存。'
-    setRoomRuleFeedback(message, 'warning', { toast: true })
+    setRoomRuleFeedback('請先把目前範圍填完整再儲存。', 'warning', { toast: true })
+    return false
+  }
+
+  if (!isOnlineWorkspaceReady()) {
+    setRoomRuleFeedback(
+      '目前沒有可用的登入連線，正式設定未儲存。請重新登入或確認網路後再按儲存；瀏覽器不再作為正式儲存位置。',
+      'error',
+      { toast: true }
+    )
+    return false
+  }
+
+  if (!isOwner.value && ruleScopeLevel.value !== 'room') {
+    setRoomRuleFeedback(
+      '員工的金額設定、輸出格式與進階設定必須先選完整縣市／地區／定點外送／機房；帳號共用內容請使用「常用規則」。',
+      'warning',
+      { toast: true }
+    )
     return false
   }
 
   isSavingScopeRules.value = true
-  setRoomRuleFeedback(`正在儲存「${currentRuleScopeLabel.value}」規則...`, 'pending', { silent: true })
+  setRoomRuleFeedback(`正在寫入線上並重新讀回驗證「${currentRuleScopeLabel.value}」規則...`, 'pending', { silent: true })
 
   try {
     const data = options.dataOverride && typeof options.dataOverride === 'object'
       ? options.dataOverride
       : collectRuleData()
-    const store = setRuleDataToScope(readScopeRuleStore(), ruleScopeLevel.value, key, data)
-    writeScopeRuleStore(store)
 
     if (ruleScopeLevel.value === 'global') {
-      localStorage.setItem(getStaffScopedStorageKey(RULE_STORAGE_KEY), JSON.stringify(data))
-
       if (!isOwner.value) {
-        setRoomRuleFeedback('員工不能修改老闆全站公版；請選完整地區與機房後儲存自己的補充規則。', 'warning', { toast: true })
+        setRoomRuleFeedback('員工不能修改老闆全站公版。', 'warning', { toast: true })
         return false
-      }
-
-      if (!isOnlineWorkspaceReady()) {
-        setRoomRuleFeedback('老闆全站公版已保留在本機，但目前未連線登入，尚未同步給所有員工。', 'warning', { toast: true })
-        return true
       }
 
       const verifiedRule = await saveOnlineOwnerGlobalRule(data)
       ownerBaseRuleData.value = verifiedRule
+
+      // 第 018-216 批：只有線上寫入並讀回驗證成功後，才更新本機快取。
       const verifiedStore = setRuleDataToScope(readScopeRuleStore(), 'global', 'global', verifiedRule)
       writeScopeRuleStore(verifiedStore)
       localStorage.setItem(getStaffScopedStorageKey(RULE_STORAGE_KEY), JSON.stringify(verifiedRule))
 
       const message = itemLabel
-        ? `已儲存老闆全站公版「${itemLabel}」；所有縣市與所有員工轉換時都會先套用。`
-        : '已儲存老闆全站公版；所有縣市與所有員工轉換時都會先套用。'
+        ? `已在線上儲存並驗證老闆全站公版「${itemLabel}」；本機僅更新成功快取。`
+        : '已在線上儲存並驗證老闆全站公版；本機僅更新成功快取。'
       setRoomRuleFeedback(message, 'success', { toast: true })
-      return true
-    }
-
-    repairProtectedGlobalRules()
-
-    if (ruleScopeLevel.value !== 'room') {
-      const message = itemLabel
-        ? `已個別儲存「${itemLabel}」到「${currentRuleScopeLabel.value}」；線上同步以完整機房為主。`
-        : `已儲存「${currentRuleScopeLabel.value}」本機專屬規則。線上同步以完整機房為主。`
-      setRoomRuleFeedback(message, 'success', { toast: true })
-      return true
-    }
-
-    if (!isOnlineWorkspaceReady()) {
-      rememberCurrentScopeSelection()
-      const message = itemLabel
-        ? `已個別儲存「${itemLabel}」到本機；尚未登入線上帳號，無法同步。`
-        : `已儲存「${currentRuleScopeLabel.value}」本機規則；尚未登入線上帳號，無法同步。`
-      setRoomRuleFeedback(message, 'warning', { toast: true })
       return true
     }
 
     const verifiedRule = await saveOnlineRuleForCurrentRoom(data)
+
+    // 第 018-216 批：員工機房規則同樣在線上成功後才寫入快取。
     const verifiedStore = setRuleDataToScope(readScopeRuleStore(), 'room', key, verifiedRule)
     writeScopeRuleStore(verifiedStore)
+    repairProtectedGlobalRules()
     rememberCurrentScopeSelection({ syncOnline: true })
 
     const message = itemLabel
-      ? `已儲存我的地區補充「${itemLabel}」：${currentRuleScopeLabel.value}；轉換時會接在老闆全站公版後套用。`
-      : `已儲存員工地區補充規則：${currentRuleScopeLabel.value}；轉換時會接在老闆全站公版後套用。`
+      ? `已在線上儲存並驗證我的機房補充「${itemLabel}」：${currentRuleScopeLabel.value}。`
+      : `已在線上儲存並驗證員工機房補充：${currentRuleScopeLabel.value}。`
     setRoomRuleFeedback(message, 'success', { toast: true })
     return true
   } catch (error) {
-    const message = isOwner.value
-      ? `老闆全站公版已保留在本機，但線上儲存失敗：${error.message || error}`
-      : (itemLabel
-        ? `「${itemLabel}」已保留在本機，但線上個別儲存失敗：${error.message || error}`
-        : `本機已保留，但線上儲存機房規則失敗：${error.message || error}`)
-    setRoomRuleFeedback(message, 'error', { toast: true })
+    const target = isOwner.value ? '老闆全站公版' : currentRuleScopeLabel.value
+    const label = itemLabel ? `「${itemLabel}」` : '目前規則'
+    setRoomRuleFeedback(
+      `${target}${label}線上儲存失敗，正式資料未變更；畫面輸入仍保留，可修正連線後再次儲存：${error.message || error}`,
+      'error',
+      { toast: true }
+    )
     return false
   } finally {
     isSavingScopeRules.value = false
@@ -14466,6 +14770,7 @@ function applyRuleData(data, options = {}) {
   // 第 018-42 批：從舊規則備份恢復時維持乾淨首頁。
   // 第 018-73 批：機房規則讀取時保留目前面板，避免一讀取就把設定畫面關掉。
   if (!options.keepPanelsOpen) {
+    restoreQuickRuleRoomFields018215()
     activeTopPanel.value = ''
     showAdvancedSettings.value = false
     showPriceSettings.value = false
@@ -14583,26 +14888,26 @@ function cloneRuleFieldValue(value) {
 }
 
 async function getCurrentSavedLayerForPartialSave() {
-  const ownerFallback = getEffectiveScopedRuleData().data || ownerBaseRuleData.value || buildDefaultRuleData()
-  const fallback = isOwner.value
-    ? { ...ownerFallback, kind: OWNER_BASE_RULE_KIND }
-    : buildEmptyEmployeeSupplementData()
-
-  if (ruleScopeLevel.value === 'room' && isOnlineWorkspaceReady()) {
-    const onlineRule = await getOnlineRuleForCurrentRoom()
-    if (onlineRule && typeof onlineRule === 'object') {
-      if (isOwner.value || onlineRule.kind === EMPLOYEE_SUPPLEMENT_RULE_KIND) {
-        return onlineRule
-      }
-    }
-    return fallback
+  if (!isOnlineWorkspaceReady()) {
+    throw new Error('請先登入並確認線上連線正常；正式設定不再只從瀏覽器快取合併儲存。')
   }
 
-  const { key } = getScopeBucketAndKey()
-  const saved = getRuleDataFromScope(readScopeRuleStore(), ruleScopeLevel.value, key)
-  if (!saved || typeof saved !== 'object') return fallback
-  if (!isOwner.value && saved.kind !== EMPLOYEE_SUPPLEMENT_RULE_KIND) return fallback
-  return saved
+  if (isOwner.value) {
+    const onlineOwnerRule = await getOnlineOwnerGlobalRule()
+    return onlineOwnerRule && typeof onlineOwnerRule === 'object'
+      ? { ...onlineOwnerRule, kind: OWNER_BASE_RULE_KIND }
+      : { ...buildDefaultRuleData(), kind: OWNER_BASE_RULE_KIND }
+  }
+
+  if (ruleScopeLevel.value !== 'room') {
+    throw new Error('員工的金額設定、輸出格式與進階設定必須先選完整縣市／地區／定點外送／機房，才能儲存到線上。')
+  }
+
+  const onlineRule = await getOnlineRuleForCurrentRoom()
+  if (onlineRule && typeof onlineRule === 'object' && onlineRule.kind === EMPLOYEE_SUPPLEMENT_RULE_KIND) {
+    return onlineRule
+  }
+  return buildEmptyEmployeeSupplementData()
 }
 
 async function saveRuleFields(itemLabel, fieldNames = []) {
@@ -14764,35 +15069,70 @@ function appendResultToConfirmed() {
   saveConfirmedText({ silent: true })
   clearResultText({ silent: true })
   updateJsonPreview()
-  statusMessage.value = '已把文件2加入文件3，文件4 JSON 已同步更新。'
+  statusMessage.value = '已把文件2加入文件3草稿，文件4 JSON 已同步更新；尚未按儲存文件3到線上。'
 }
 
 
 
 
 
+function cacheConfirmedDocumentDraft018216() {
+  try {
+    localStorage.setItem(CONFIRMED_STORAGE_KEY, confirmedText.value)
+  } catch (error) {
+    console.warn('文件3草稿快取失敗，但不影響目前畫面：', error)
+  }
+}
+
 async function saveConfirmedText(options = {}) {
   normalizeDocument3Text()
-  localStorage.setItem(CONFIRMED_STORAGE_KEY, confirmedText.value)
   updateJsonPreview()
-  if (!options.silent) {
-    statusMessage.value = '文件3已儲存；資料庫寫入與中央站同步會在背景處理。'
-    setDatabaseSubmitFeedback('文件3已快速儲存，正在背景寫入資料庫...', 'pending')
 
-    window.setTimeout(() => {
-      submitDocument4ToDatabase({ clearDocuments: false, reloadFrontendLadies: true })
-        .then(savedToDatabase => {
-          statusMessage.value = savedToDatabase
-            ? '文件3已儲存；資料庫已保存，中央站同步狀態請看下方提示。'
-            : '文件3已儲存，但自動送出資料庫失敗，請查看 API 狀態訊息。'
-        })
-        .catch(error => {
-          const message = formatNetworkError(error, '背景送出失敗')
-          statusMessage.value = message
-          setDatabaseSubmitFeedback(message, 'error', { toast: true })
-          isDatabaseSubmitting.value = false
-        })
-    }, 0)
+  // 加入文件3時只保留此裝置草稿，不宣告正式儲存。
+  if (options.silent) {
+    cacheConfirmedDocumentDraft018216()
+    return true
+  }
+
+  if (!isOnlineWorkspaceReady()) {
+    const message = '請先登入並確認線上連線；文件3目前只有畫面草稿，尚未正式儲存。'
+    statusMessage.value = message
+    setDatabaseSubmitFeedback(message, 'error', { toast: true })
+    return false
+  }
+
+  if (isDatabaseSubmitting.value) {
+    const message = '文件3仍在線上儲存中，請稍候。'
+    statusMessage.value = message
+    setDatabaseSubmitFeedback(message, 'warning', { toast: true })
+    return false
+  }
+
+  statusMessage.value = '正在把文件3寫入線上資料庫並驗證...'
+  setDatabaseSubmitFeedback('正在把文件3正式儲存到線上...', 'pending')
+
+  try {
+    const savedToDatabase = await submitDocument4ToDatabase({
+      clearDocuments: false,
+      reloadFrontendLadies: true
+    })
+
+    if (!savedToDatabase) {
+      statusMessage.value = '文件3線上儲存失敗；正式資料未變更，畫面草稿仍保留。'
+      return false
+    }
+
+    // 線上資料庫確認成功後，才更新此裝置草稿快取。
+    cacheConfirmedDocumentDraft018216()
+    statusMessage.value = centralWebsiteSyncNeedsRetry.value
+      ? '文件3已正式儲存到線上資料庫；中央網站尚待重新同步，請依下方提示操作。'
+      : '文件3已正式儲存到線上資料庫並完成同步；本機只更新成功後的草稿快取。'
+    return true
+  } catch (error) {
+    const message = `文件3線上儲存失敗；正式資料未變更，畫面草稿仍保留：${error.message || error}`
+    statusMessage.value = message
+    setDatabaseSubmitFeedback(message, 'error', { toast: true })
+    return false
   }
 }
 
