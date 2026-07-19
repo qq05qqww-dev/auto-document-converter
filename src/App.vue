@@ -1,3 +1,5 @@
+<!-- 第 018-220 批：外送緊貼身高罩杯年齡解析＋姓名尾碼清理修正版 -->
+<!-- batch018-220-outside-delivery-compact-height-cup-age-parse-fix -->
 <!-- 第 018-219 批：文件2本批服務／加值項目拖曳排序＋目前範圍線上儲存版 -->
 <!-- batch018-219-document2-batch-service-drag-order-online-scope-save -->
 <!-- 第 018-217 批：標題年齡自動移出小姐名稱＋年齡僅保留身材尾端修正版 -->
@@ -10249,7 +10251,7 @@ function parseStrictNameCountryHeaderLine(line) {
     if (exactIndex !== -1) {
       const before = tokens.slice(0, exactIndex).join('')
       const after = tokens.slice(exactIndex + 1).join('')
-      const candidates = [before, after]
+      const candidates = [before, after].map(candidate => removeHeaderNoise(candidate))
       for (const candidate of candidates) {
         if (isStrictHeaderNameCandidate(candidate)) {
           return { country: normalizeCountry(fixedCountry), name: cleanName(candidate) }
@@ -10258,14 +10260,14 @@ function parseStrictNameCountryHeaderLine(line) {
     }
 
     if (compact.startsWith(country)) {
-      const candidate = compact.slice(country.length)
+      const candidate = removeHeaderNoise(compact.slice(country.length))
       if (isStrictHeaderNameCandidate(candidate)) {
         return { country: normalizeCountry(fixedCountry), name: cleanName(candidate) }
       }
     }
 
     if (compact.endsWith(country)) {
-      const candidate = compact.slice(0, compact.length - country.length)
+      const candidate = removeHeaderNoise(compact.slice(0, compact.length - country.length))
       if (isStrictHeaderNameCandidate(candidate)) {
         return { country: normalizeCountry(fixedCountry), name: cleanName(candidate) }
       }
@@ -10378,6 +10380,13 @@ function removeHeaderNoise(text) {
   if (isOutsideDeliveryType(ruleScopeType.value || managerSelectedType.value)) {
     value = value.replace(
       /\d{3}\s*[\/.．。·・,，:：_-]\s*(?:(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)\s*)?(?:奶|罩杯|胸)?\s*([A-Ka-k])\s*(?:奶|杯)?\s*[\/.．。·・,，:：_-]\s*\d{2}\s*(?:歲|y|Y)?\s*$/giu,
+      ''
+    )
+
+    // 第 018-220 批：外送來源也可能完全不放分隔符，例如「雪碧164D21」。
+    // 164＝身高、D＝罩杯、21＝年齡；這段必須從姓名尾端移除，避免文件2變成「雪碧164D21」。
+    value = value.replace(
+      /\d{3}\s*(?:(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)\s*)?(?:奶|罩杯|胸)?\s*([A-Ka-k])\s*(?:奶|杯)?\s*\d{2}\s*(?:歲|y|Y)?\s*$/giu,
       ''
     )
   }
@@ -10497,9 +10506,13 @@ function parseOutsideDeliveryBodyWithoutWeight018218(line) {
   const source = normalizeDigits(String(line || '')).normalize('NFKC').trim()
   if (!source) return null
 
-  const match = source.match(
+  const separatedMatch = source.match(
     /(\d{3})\s*(?:[\/.．。·・,，:：_-]\s*|\s+)(?:(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)\s*)?(?:奶|罩杯|胸)?\s*([A-Ka-k])\s*(?:奶|杯)?\s*(?:[\/.．。·・,，:：_-]\s*|\s+)(\d{2})\s*(?:歲|y|Y)?(?=\s|$|[^0-9A-Za-z])/iu
   )
+  const compactMatch = source.match(
+    /(\d{3})\s*(?:(?:真|天然|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓)\s*)?(?:奶|罩杯|胸)?\s*([A-Ka-k])\s*(?:奶|杯)?\s*(\d{2})\s*(?:歲|y|Y)?(?=\s|$|[^0-9A-Za-z])/iu
+  )
+  const match = separatedMatch || compactMatch
   if (!match) return null
 
   const height = Number(match[1])
@@ -10514,7 +10527,7 @@ function parseOutsideDeliveryBodyWithoutWeight018218(line) {
     weight: '',
     cup,
     age: `${age}y`,
-    matchedRule: '外送無體重：身高／罩杯／年齡'
+    matchedRule: compactMatch ? '外送無體重：緊貼身高罩杯年齡' : '外送無體重：身高／罩杯／年齡'
   }
 }
 
