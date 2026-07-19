@@ -1,4 +1,4 @@
-<!-- batch018-226-unit-body-and-thai-bath-service-header-guard-fix -->
+<!-- batch018-227-location-manager-overflow-click-layer-layout-fix -->
 <!-- 第 018-225 批：機房刪除線上確認＋中央同步不再自動補回修正版 -->
 <!-- batch018-225-room-delete-online-confirm-hidden-central-readd-fix -->
 <!-- 第 018-224 批：小姐卡片媒體累積加入＋全部縮圖檢視＋待刪除批次儲存版 -->
@@ -26169,6 +26169,206 @@ button:disabled {
   .batch-media-manager-add018224 { margin-left: 0; }
   .batch-media-manager-body018224 { grid-template-columns: 1fr; padding: 14px; }
   .batch-media-manager-grid018224 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+
+
+/* 第 018-227 批：地區機房管理大量清單固定在內容區內捲動，避免清單溢出覆蓋底部按鈕造成畫面錯位與點擊失效。 */
+.location-manager-overlay {
+  padding: 14px 18px !important;
+  overflow: hidden !important;
+}
+
+.location-manager-overlay .location-manager-modal-card.option-modal-card,
+.option-modal-mask .location-manager-modal-card.option-modal-card {
+  width: min(1180px, calc(100vw - 36px)) !important;
+  max-width: min(1180px, calc(100vw - 36px)) !important;
+  height: min(86dvh, 820px) !important;
+  min-height: 0 !important;
+  max-height: calc(100dvh - 28px) !important;
+  display: grid !important;
+  grid-template-rows: auto minmax(0, 1fr) auto !important;
+  overflow: hidden !important;
+  isolation: isolate !important;
+}
+
+.location-manager-modal-card .option-modal-head {
+  position: relative !important;
+  z-index: 3 !important;
+  min-height: 0 !important;
+}
+
+.location-manager-modal-card .location-modal-grid,
+.location-manager-modal-card .location-modal-grid.location-modal-grid-room-first {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow: hidden !important;
+  align-items: stretch !important;
+  box-sizing: border-box !important;
+}
+
+.location-manager-modal-card .option-manager-panel {
+  position: relative !important;
+  z-index: 1 !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+
+/* 機房清單只在自己的清單框內捲動，修改／刪除按鈕固定留在面板底部。 */
+.location-manager-modal-card .managed-room-list-shell {
+  flex: 1 1 auto !important;
+  min-height: 112px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+
+.location-manager-modal-card .managed-room-chip-list {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain !important;
+  scrollbar-gutter: stable !important;
+}
+
+/* 縣市與地區很多時，各自在面板中央捲動，不再往下蓋住 footer。 */
+.location-manager-modal-card .option-manager-panel:nth-child(2) > .modal-inline-label {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+.location-manager-modal-card .city-button-list,
+.location-manager-modal-card .district-button-list {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  align-content: flex-start !important;
+  overscroll-behavior: contain !important;
+  scrollbar-gutter: stable !important;
+  padding-right: 4px !important;
+}
+
+.location-manager-modal-card .option-manager-panel:nth-child(3) .district-button-list {
+  min-height: 90px !important;
+}
+
+.location-manager-modal-card .option-current-text,
+.location-manager-modal-card .option-action-row,
+.location-manager-modal-card .option-inline-input {
+  flex: 0 0 auto !important;
+}
+
+/* footer 成為真正獨立的最後一列，不能再覆蓋上方操作按鈕。 */
+.location-manager-modal-card .location-modal-bottom {
+  position: relative !important;
+  z-index: 6 !important;
+  width: 100% !important;
+  min-height: 62px !important;
+  margin: 0 !important;
+  padding: 10px 28px 16px !important;
+  display: flex !important;
+  justify-content: flex-end !important;
+  align-items: center !important;
+  overflow: visible !important;
+  pointer-events: auto !important;
+  box-sizing: border-box !important;
+  border-top: 1px solid rgba(148, 163, 184, 0.2) !important;
+  background: rgba(15, 23, 42, 0.98) !important;
+}
+
+.location-manager-modal-card .location-modal-bottom .restore-btn,
+.location-manager-modal-card .option-action-row button,
+.location-manager-modal-card .managed-room-chip,
+.location-manager-modal-card .modal-select-button {
+  position: relative !important;
+  z-index: 2 !important;
+  pointer-events: auto !important;
+}
+
+@media (max-height: 760px) and (min-width: 921px) {
+  .location-manager-overlay .location-manager-modal-card.option-modal-card,
+  .option-modal-mask .location-manager-modal-card.option-modal-card {
+    height: calc(100dvh - 20px) !important;
+    max-height: calc(100dvh - 20px) !important;
+  }
+
+  .location-manager-modal-card .option-modal-head {
+    padding-top: 16px !important;
+    padding-bottom: 10px !important;
+  }
+
+  .location-manager-modal-card .location-modal-grid,
+  .location-manager-modal-card .location-modal-grid.location-modal-grid-room-first {
+    padding-top: 8px !important;
+    padding-bottom: 8px !important;
+  }
+
+  .location-manager-modal-card .location-modal-bottom {
+    min-height: 54px !important;
+    padding-top: 7px !important;
+    padding-bottom: 10px !important;
+  }
+}
+
+@media (max-width: 920px) {
+  .location-manager-overlay {
+    padding: 10px !important;
+    overflow: hidden !important;
+  }
+
+  .location-manager-overlay .location-manager-modal-card.option-modal-card,
+  .option-modal-mask .location-manager-modal-card.option-modal-card {
+    width: calc(100vw - 20px) !important;
+    max-width: calc(100vw - 20px) !important;
+    height: calc(100dvh - 20px) !important;
+    max-height: calc(100dvh - 20px) !important;
+    display: grid !important;
+    grid-template-rows: auto minmax(0, 1fr) auto !important;
+    overflow: hidden !important;
+  }
+
+  .location-manager-modal-card .location-modal-grid,
+  .location-manager-modal-card .location-modal-grid.location-modal-grid-room-first {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain !important;
+  }
+
+  .location-manager-modal-card .option-manager-panel {
+    height: auto !important;
+    max-height: none !important;
+    min-height: 360px !important;
+    overflow: hidden !important;
+  }
+
+  .location-manager-modal-card .city-button-list,
+  .location-manager-modal-card .district-button-list,
+  .location-manager-modal-card .managed-room-chip-list {
+    max-height: 220px !important;
+  }
+
+  .location-manager-modal-card .location-modal-bottom {
+    position: relative !important;
+    min-height: 58px !important;
+    padding: 9px 14px 12px !important;
+  }
 }
 
 </style>
