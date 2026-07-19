@@ -1,3 +1,5 @@
+<!-- 第 018-219 批：文件2本批服務／加值項目拖曳排序＋目前範圍線上儲存版 -->
+<!-- batch018-219-document2-batch-service-drag-order-online-scope-save -->
 <!-- 第 018-217 批：標題年齡自動移出小姐名稱＋年齡僅保留身材尾端修正版 -->
 <!-- batch018-218-outside-delivery-no-weight-height-cup-age-parse-fix -->
 <!-- batch018-217-header-age-removed-from-name-single-body-age-fix -->
@@ -1597,7 +1599,15 @@
       <article class="panel">
         <div class="panel-header">
           <h2>文件2：本批固定格式結果</h2>
-          <button class="ghost-btn" type="button" @click="copyText(resultText, '文件2')">複製文件2</button>
+          <div class="panel-header-actions018219">
+            <button
+              class="ghost-btn batch-order-open-btn018219"
+              type="button"
+              :disabled="!String(resultText || '').trim()"
+              @click="openBatchServiceOrderModal018219"
+            >排列本批項目</button>
+            <button class="ghost-btn" type="button" @click="copyText(resultText, '文件2')">複製文件2</button>
+          </div>
         </div>
 
         <textarea
@@ -1659,6 +1669,98 @@
       </article>
 
     </section>
+
+    <teleport to="body">
+      <div
+        v-if="isBatchServiceOrderModalOpen018219"
+        class="batch-service-order-mask018219"
+        @click.self="closeBatchServiceOrderModal018219"
+      >
+        <section
+          class="batch-service-order-dialog018219"
+          role="dialog"
+          aria-modal="true"
+          aria-label="文件2本批項目排序"
+        >
+          <div class="batch-service-order-head018219">
+            <div>
+              <span>文件2快速整理</span>
+              <h3>排列本批服務項目與加值服務</h3>
+              <p>只列出目前文件2實際出現的項目。拖曳或按上下鍵調整後，每位小姐只會重新排列原本已有的項目，不會新增或刪除服務。</p>
+            </div>
+            <button type="button" class="ghost-btn" @click="closeBatchServiceOrderModal018219">關閉</button>
+          </div>
+
+          <div class="batch-service-order-scope018219">
+            <strong>目前儲存範圍</strong>
+            <span>{{ isOwner ? '老闆第一層公司全站公版' : currentRuleScopeLabel }}</span>
+          </div>
+
+          <div class="batch-service-order-help018219">
+            <span>☰ 可拖曳</span>
+            <span>↑↓ 可逐格移動</span>
+            <span>共 {{ batchServiceOrderDraft018219.length }} 個不重複項目</span>
+          </div>
+
+          <ol class="batch-service-order-list018219">
+            <li
+              v-for="(item, index) in batchServiceOrderDraft018219"
+              :key="`${item}-${index}`"
+              class="batch-service-order-item018219"
+              :class="{ dragging: batchServiceOrderDragIndex018219 === index }"
+              draggable="true"
+              @dragstart="handleBatchServiceOrderDragStart018219(index, $event)"
+              @dragover.prevent
+              @drop.prevent="handleBatchServiceOrderDrop018219(index)"
+              @dragend="clearBatchServiceOrderDrag018219"
+            >
+              <span class="batch-service-order-drag018219" title="拖曳排序">☰</span>
+              <b>{{ index + 1 }}</b>
+              <strong>{{ item }}</strong>
+              <div>
+                <button
+                  type="button"
+                  :disabled="index === 0"
+                  title="往上移"
+                  @click="moveBatchServiceOrderItem018219(index, -1)"
+                >↑</button>
+                <button
+                  type="button"
+                  :disabled="index === batchServiceOrderDraft018219.length - 1"
+                  title="往下移"
+                  @click="moveBatchServiceOrderItem018219(index, 1)"
+                >↓</button>
+              </div>
+            </li>
+          </ol>
+
+          <p class="batch-service-order-note018219">
+            「套用本次」只改目前文件2；「{{ isOwner ? '儲存老闆公版' : '儲存目前機房' }}」會在線上儲存並重新讀回驗證。未出現在本批的既有排序項目會保留原相對順序，接在本批項目後方。
+          </p>
+
+          <div class="batch-service-order-actions018219">
+            <button
+              type="button"
+              class="ghost-btn"
+              :disabled="isSavingBatchServiceOrder018219"
+              @click="restoreBatchServiceOrderOriginal018219"
+            >恢復原本順序</button>
+            <button
+              type="button"
+              class="primary-btn"
+              :disabled="isSavingBatchServiceOrder018219 || !batchServiceOrderDraft018219.length"
+              @click="applyBatchServiceOrderOnce018219"
+            >套用本次</button>
+            <button
+              type="button"
+              class="primary-btn batch-service-order-save018219"
+              :disabled="isSavingBatchServiceOrder018219 || !batchServiceOrderDraft018219.length"
+              @click="saveBatchServiceOrderForScope018219"
+            >{{ isSavingBatchServiceOrder018219 ? '線上儲存中...' : (isOwner ? '儲存老闆公版' : '儲存目前機房') }}</button>
+          </div>
+        </section>
+      </div>
+    </teleport>
 
 <section class="frontend-preview-panel">
       <div class="preview-header preview-header-with-actions">
@@ -2296,6 +2398,16 @@ const resultCompleteCount = ref(0)
 const resultIncompleteCount = ref(0)
 const resultHasIncompleteRecords = computed(() => resultIncompleteCount.value > 0)
 const canAppendResultToConfirmed = computed(() => Boolean(String(resultText.value || '').trim()) && !resultHasIncompleteRecords.value)
+// 第 018-219 批：保留本次文件2的結構化紀錄，讓排序只移動服務／加值項目，
+// 不靠拆字串猜欄位，也不會改動小姐名稱、身材、價格或缺少欄位提示。
+const currentDocument2Records018219 = ref([])
+const currentDocument2EffectiveServiceOrder018219 = ref([])
+const currentDocument2OriginalBatchOrder018219 = ref([])
+const currentDocument2BatchOrder018219 = ref([])
+const isBatchServiceOrderModalOpen018219 = ref(false)
+const batchServiceOrderDraft018219 = ref([])
+const batchServiceOrderDragIndex018219 = ref(-1)
+const isSavingBatchServiceOrder018219 = ref(false)
 const jsonResultText = ref('')
 const REQUIRED_BACKEND_IMPORT_MODE = 'db_append_upsert_keep_existing_safety_checked'
 const REQUIRED_BACKEND_VERSION = '0.0.18-14-backend-version-guard'
@@ -8910,6 +9022,13 @@ function resetResultValidationState() {
 function clearResultText(options = {}) {
   resultText.value = ''
   resetResultValidationState()
+  currentDocument2Records018219.value = []
+  currentDocument2EffectiveServiceOrder018219.value = []
+  currentDocument2OriginalBatchOrder018219.value = []
+  currentDocument2BatchOrder018219.value = []
+  batchServiceOrderDraft018219.value = []
+  isBatchServiceOrderModalOpen018219.value = false
+  clearBatchServiceOrderDrag018219()
   if (!options.silent) statusMessage.value = '已清空文件2。'
 }
 
@@ -8935,7 +9054,16 @@ function convertText() {
 
   resultCompleteCount.value = completeRecords.length
   resultIncompleteCount.value = incompleteRecords.length
-  resultText.value = visibleRecords.map(item => item.preview).join('\n\n')
+  currentDocument2EffectiveServiceOrder018219.value = parseList(serviceOrderText.value)
+  currentDocument2Records018219.value = cloneDocument2Records018219(visibleRecords)
+  const batchItems018219 = collectDocument2BatchServices018219(currentDocument2Records018219.value)
+  const originalBatchOrder018219 = sortBatchServicesByRuleOrder018219(
+    batchItems018219,
+    currentDocument2EffectiveServiceOrder018219.value
+  )
+  currentDocument2OriginalBatchOrder018219.value = [...originalBatchOrder018219]
+  currentDocument2BatchOrder018219.value = [...originalBatchOrder018219]
+  resultText.value = renderDocument2Records018219(currentDocument2Records018219.value)
 
   if (!visibleRecords.length) {
     statusMessage.value = `沒有抓到可預覽資料。請確認文件1至少有可辨識的小姐名或國籍；目前已切出 ${blocks.length} 筆。`
@@ -9622,6 +9750,267 @@ function analyzeRecordForPreview(block) {
     missing,
     complete,
     preview: previewLines.filter(Boolean).join('\n')
+  }
+}
+
+function cloneDocument2Records018219(records = []) {
+  return (Array.isArray(records) ? records : []).map(record => ({
+    ...record,
+    header: record?.header ? { ...record.header } : record?.header,
+    body: record?.body ? { ...record.body } : record?.body,
+    prices: Array.isArray(record?.prices) ? [...record.prices] : [],
+    services: Array.isArray(record?.services) ? [...record.services] : [],
+    missing: Array.isArray(record?.missing) ? [...record.missing] : []
+  }))
+}
+
+function buildDocument2RecordPreview018219(record = {}) {
+  const title = buildPreviewHeaderTitle(record?.header?.name, record?.country)
+  const bodyText = record?.body ? formatBodyOutput(record.body) : ''
+  const prices = Array.isArray(record?.prices) ? record.prices : []
+  const services = Array.isArray(record?.services) ? record.services : []
+  const missing = Array.isArray(record?.missing) ? record.missing : []
+  const firstLine = [title, bodyText, prices.join('  ')].filter(Boolean).join('  ')
+  const previewLines = [firstLine]
+
+  if (!record?.complete && missing.length) previewLines.push(`⚠ 缺少：${missing.join('、')}`)
+  if (services.length) previewLines.push(services.join(' '))
+  return previewLines.filter(Boolean).join('\n')
+}
+
+function renderDocument2Records018219(records = []) {
+  return (Array.isArray(records) ? records : [])
+    .map(record => buildDocument2RecordPreview018219(record))
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+function normalizeBatchServiceOrderItem018219(value = '') {
+  return normalizeServiceOutputToken(String(value || '').trim())
+}
+
+function getBatchServiceOrderKey018219(value = '') {
+  return normalizeServiceAliasMatchText(normalizeBatchServiceOrderItem018219(value))
+}
+
+function getBatchServiceFamilyKey018219(value = '') {
+  const normalized = normalizeBatchServiceOrderItem018219(value)
+  if (!normalized) return ''
+  if (hasMonetaryServiceSuffix(normalized)) {
+    return `paid:${normalizeServiceAliasMatchText(stripMonetaryServiceSuffix(normalized))}`
+  }
+  return `exact:${normalizeServiceAliasMatchText(normalized)}`
+}
+
+function uniqueBatchServiceOrderItems018219(items = []) {
+  const result = []
+  const seen = new Set()
+  ;(Array.isArray(items) ? items : []).forEach(item => {
+    const normalized = normalizeBatchServiceOrderItem018219(item)
+    const key = getBatchServiceOrderKey018219(normalized)
+    if (!normalized || !key || seen.has(key)) return
+    seen.add(key)
+    result.push(normalized)
+  })
+  return result
+}
+
+function collectDocument2BatchServices018219(records = []) {
+  const items = []
+  ;(Array.isArray(records) ? records : []).forEach(record => {
+    ;(Array.isArray(record?.services) ? record.services : []).forEach(service => items.push(service))
+  })
+  return uniqueBatchServiceOrderItems018219(items)
+}
+
+function sortBatchServicesByRuleOrder018219(items = [], ruleOrder = []) {
+  const uniqueItems = uniqueBatchServiceOrderItems018219(items)
+  const orderIndex = new Map(
+    uniqueBatchServiceOrderItems018219(ruleOrder)
+      .map((item, index) => [normalizeBatchServiceOrderItem018219(item), index])
+  )
+  const originalIndex = new Map(uniqueItems.map((item, index) => [getBatchServiceOrderKey018219(item), index]))
+
+  return [...uniqueItems].sort((a, b) => {
+    const ai = getServiceOrderIndex(normalizeBatchServiceOrderItem018219(a), orderIndex)
+    const bi = getServiceOrderIndex(normalizeBatchServiceOrderItem018219(b), orderIndex)
+    if (ai !== bi) return ai - bi
+    return (originalIndex.get(getBatchServiceOrderKey018219(a)) ?? 0)
+      - (originalIndex.get(getBatchServiceOrderKey018219(b)) ?? 0)
+  })
+}
+
+function reorderDocument2Services018219(services = [], order = []) {
+  const normalizedOrder = uniqueBatchServiceOrderItems018219(order)
+  const indexMap = new Map(normalizedOrder.map((item, index) => [getBatchServiceOrderKey018219(item), index]))
+  const originalIndex = new Map(
+    (Array.isArray(services) ? services : []).map((item, index) => [getBatchServiceOrderKey018219(item), index])
+  )
+
+  return [...(Array.isArray(services) ? services : [])].sort((a, b) => {
+    const ai = indexMap.has(getBatchServiceOrderKey018219(a))
+      ? indexMap.get(getBatchServiceOrderKey018219(a))
+      : Number.MAX_SAFE_INTEGER
+    const bi = indexMap.has(getBatchServiceOrderKey018219(b))
+      ? indexMap.get(getBatchServiceOrderKey018219(b))
+      : Number.MAX_SAFE_INTEGER
+    if (ai !== bi) return ai - bi
+    return (originalIndex.get(getBatchServiceOrderKey018219(a)) ?? 0)
+      - (originalIndex.get(getBatchServiceOrderKey018219(b)) ?? 0)
+  })
+}
+
+function applyBatchServiceOrderToDocument2018219(order = [], options = {}) {
+  const normalizedOrder = uniqueBatchServiceOrderItems018219(order)
+  if (!normalizedOrder.length || !currentDocument2Records018219.value.length) return false
+
+  currentDocument2Records018219.value = currentDocument2Records018219.value.map(record => ({
+    ...record,
+    services: reorderDocument2Services018219(record.services, normalizedOrder)
+  }))
+  currentDocument2BatchOrder018219.value = [...normalizedOrder]
+  resultText.value = renderDocument2Records018219(currentDocument2Records018219.value)
+
+  if (!options.silent) {
+    statusMessage.value = `已依本批 ${normalizedOrder.length} 個服務／加值項目重新排列文件2；每位小姐只保留原有項目。`
+  }
+  return true
+}
+
+async function openBatchServiceOrderModal018219() {
+  if (!String(resultText.value || '').trim()) {
+    statusMessage.value = '文件2目前沒有內容，請先產生文件2。'
+    return
+  }
+
+  if (!currentDocument2Records018219.value.length && String(sourceText.value || '').trim()) {
+    await convertTextWithScopeGuard()
+  }
+
+  const batchItems = collectDocument2BatchServices018219(currentDocument2Records018219.value)
+  if (!batchItems.length) {
+    statusMessage.value = '目前文件2沒有可排列的服務項目或加值服務。'
+    setRoomRuleFeedback(statusMessage.value, 'warning', { toast: true })
+    return
+  }
+
+  const currentOrder = currentDocument2BatchOrder018219.value.length
+    ? currentDocument2BatchOrder018219.value
+    : sortBatchServicesByRuleOrder018219(batchItems, currentDocument2EffectiveServiceOrder018219.value)
+  const currentKeys = new Set(batchItems.map(item => getBatchServiceOrderKey018219(item)))
+  const filtered = currentOrder.filter(item => currentKeys.has(getBatchServiceOrderKey018219(item)))
+  const filteredKeys = new Set(filtered.map(item => getBatchServiceOrderKey018219(item)))
+  batchItems.forEach(item => {
+    if (!filteredKeys.has(getBatchServiceOrderKey018219(item))) filtered.push(item)
+  })
+
+  batchServiceOrderDraft018219.value = uniqueBatchServiceOrderItems018219(filtered)
+  isBatchServiceOrderModalOpen018219.value = true
+  clearBatchServiceOrderDrag018219()
+}
+
+function closeBatchServiceOrderModal018219() {
+  if (isSavingBatchServiceOrder018219.value) return
+  isBatchServiceOrderModalOpen018219.value = false
+  clearBatchServiceOrderDrag018219()
+}
+
+function moveBatchServiceOrderItem018219(index, delta) {
+  const target = Number(index) + Number(delta)
+  const list = [...batchServiceOrderDraft018219.value]
+  if (index < 0 || index >= list.length || target < 0 || target >= list.length) return
+  const [item] = list.splice(index, 1)
+  list.splice(target, 0, item)
+  batchServiceOrderDraft018219.value = list
+}
+
+function handleBatchServiceOrderDragStart018219(index, event) {
+  batchServiceOrderDragIndex018219.value = index
+  if (event?.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', String(index))
+  }
+}
+
+function handleBatchServiceOrderDrop018219(targetIndex) {
+  const sourceIndex = batchServiceOrderDragIndex018219.value
+  if (!Number.isInteger(sourceIndex) || sourceIndex < 0 || sourceIndex === targetIndex) {
+    clearBatchServiceOrderDrag018219()
+    return
+  }
+  const list = [...batchServiceOrderDraft018219.value]
+  const [item] = list.splice(sourceIndex, 1)
+  list.splice(targetIndex, 0, item)
+  batchServiceOrderDraft018219.value = list
+  clearBatchServiceOrderDrag018219()
+}
+
+function clearBatchServiceOrderDrag018219() {
+  batchServiceOrderDragIndex018219.value = -1
+}
+
+function restoreBatchServiceOrderOriginal018219() {
+  const currentItems = collectDocument2BatchServices018219(currentDocument2Records018219.value)
+  const currentKeys = new Set(currentItems.map(item => getBatchServiceOrderKey018219(item)))
+  const restored = currentDocument2OriginalBatchOrder018219.value
+    .filter(item => currentKeys.has(getBatchServiceOrderKey018219(item)))
+  const restoredKeys = new Set(restored.map(item => getBatchServiceOrderKey018219(item)))
+  currentItems.forEach(item => {
+    if (!restoredKeys.has(getBatchServiceOrderKey018219(item))) restored.push(item)
+  })
+  batchServiceOrderDraft018219.value = uniqueBatchServiceOrderItems018219(restored)
+  statusMessage.value = '已把排序視窗恢復為本次產生文件2時的原本順序；尚未套用或儲存。'
+}
+
+function applyBatchServiceOrderOnce018219() {
+  const applied = applyBatchServiceOrderToDocument2018219(batchServiceOrderDraft018219.value)
+  if (applied) isBatchServiceOrderModalOpen018219.value = false
+}
+
+function buildPersistedServiceOrderFromBatch018219(batchOrder = [], effectiveOrder = []) {
+  const selected = uniqueBatchServiceOrderItems018219(batchOrder)
+  const selectedFamilies = new Set(selected.map(item => getBatchServiceFamilyKey018219(item)).filter(Boolean))
+  const remaining = uniqueBatchServiceOrderItems018219(effectiveOrder).filter(item => (
+    !selectedFamilies.has(getBatchServiceFamilyKey018219(item))
+  ))
+  return uniqueBatchServiceOrderItems018219([...selected, ...remaining])
+}
+
+async function saveBatchServiceOrderForScope018219() {
+  if (isSavingBatchServiceOrder018219.value || !batchServiceOrderDraft018219.value.length) return
+  if (!isOwner.value && !isManagerScopeReadyForConvert.value) {
+    const message = buildManagerScopeRequiredMessage()
+    statusMessage.value = message
+    setRoomRuleFeedback(message, 'warning', { toast: true })
+    return
+  }
+
+  const selectedOrder = uniqueBatchServiceOrderItems018219(batchServiceOrderDraft018219.value)
+  const effectiveOrder = currentDocument2EffectiveServiceOrder018219.value.length
+    ? currentDocument2EffectiveServiceOrder018219.value
+    : parseList(serviceOrderText.value)
+  const persistedOrder = buildPersistedServiceOrderFromBatch018219(selectedOrder, effectiveOrder)
+  const previousServiceOrderText = serviceOrderText.value
+
+  isSavingBatchServiceOrder018219.value = true
+  serviceOrderText.value = persistedOrder.join('\n')
+
+  try {
+    const saved = await saveRuleFields('文件2本批項目排序', ['serviceOrderText'])
+    if (!saved) {
+      serviceOrderText.value = previousServiceOrderText
+      return
+    }
+
+    currentDocument2EffectiveServiceOrder018219.value = [...persistedOrder]
+    currentDocument2OriginalBatchOrder018219.value = [...selectedOrder]
+    applyBatchServiceOrderToDocument2018219(selectedOrder, { silent: true })
+    isBatchServiceOrderModalOpen018219.value = false
+    statusMessage.value = isOwner.value
+      ? `已在線上儲存並驗證老闆公版排序，文件2已依 ${selectedOrder.length} 個本批項目立即更新。`
+      : `已在線上儲存並驗證目前機房排序，文件2已依 ${selectedOrder.length} 個本批項目立即更新。`
+  } finally {
+    isSavingBatchServiceOrder018219.value = false
   }
 }
 
@@ -11179,6 +11568,15 @@ function getServiceOrderIndex(item, orderIndex) {
   if (stripMonetaryServiceSuffix(item) === '入珠客') {
     if (orderIndex.has('入珠客+500')) return orderIndex.get('入珠客+500')
     if (orderIndex.has('入珠+500')) return orderIndex.get('入珠+500') + 0.1
+  }
+
+  // 第 018-219 批：本批排序可能保存當下實際金額，例如「口爆+1000」。
+  // 後續同一服務即使金額不同，也應沿用同一服務家族的位置，而不是掉到最末端。
+  if (hasMonetaryServiceSuffix(item)) {
+    const paidBase018219 = stripMonetaryServiceSuffix(item)
+    for (const [orderedItem, index] of orderIndex.entries()) {
+      if (stripMonetaryServiceSuffix(orderedItem) === paidBase018219) return index
+    }
   }
 
   // 第 018-179 批：無套內／外射的金額可由來源動態決定，例如 +1500、+2000。
@@ -23130,6 +23528,252 @@ button:disabled {
 
   .price-range-preview-grid018206 {
     grid-template-columns: 1fr;
+  }
+}
+
+
+/* 第 018-219 批：文件2本批服務／加值項目拖曳排序視窗。 */
+.panel-header-actions018219 {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.batch-order-open-btn018219 {
+  border: 1px solid rgba(45, 126, 218, 0.24);
+  background: linear-gradient(135deg, rgba(232, 244, 255, 0.96), rgba(224, 248, 246, 0.96));
+  color: #215b96;
+}
+
+.batch-service-order-mask018219 {
+  position: fixed;
+  inset: 0;
+  z-index: 3600;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.48);
+  backdrop-filter: blur(8px);
+}
+
+.batch-service-order-dialog018219 {
+  width: min(760px, 96vw);
+  max-height: min(840px, 90vh);
+  overflow: auto;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 28px;
+  padding: 24px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 32px 90px rgba(15, 23, 42, 0.28);
+  color: #25344b;
+}
+
+.batch-service-order-head018219 {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.batch-service-order-head018219 > div {
+  min-width: 0;
+}
+
+.batch-service-order-head018219 span {
+  display: inline-flex;
+  margin-bottom: 6px;
+  color: #2f7fc4;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.batch-service-order-head018219 h3 {
+  margin: 0 0 8px;
+  color: #1f2f47;
+  font-size: 24px;
+}
+
+.batch-service-order-head018219 p,
+.batch-service-order-note018219 {
+  margin: 0;
+  color: #61718a;
+  line-height: 1.65;
+}
+
+.batch-service-order-scope018219 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0 10px;
+  padding: 11px 14px;
+  border: 1px solid rgba(54, 161, 122, 0.22);
+  border-radius: 15px;
+  background: rgba(231, 250, 241, 0.82);
+}
+
+.batch-service-order-scope018219 strong {
+  color: #216d53;
+}
+
+.batch-service-order-scope018219 span {
+  color: #42576e;
+  font-weight: 800;
+}
+
+.batch-service-order-help018219 {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.batch-service-order-help018219 span {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #edf4fb;
+  color: #4c6480;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.batch-service-order-list018219 {
+  display: grid;
+  gap: 8px;
+  max-height: 430px;
+  overflow: auto;
+  margin: 0;
+  padding: 4px 2px 4px 0;
+  list-style: none;
+}
+
+.batch-service-order-item018219 {
+  display: grid;
+  grid-template-columns: 32px 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 8px 10px;
+  border: 1px solid rgba(112, 138, 168, 0.2);
+  border-radius: 15px;
+  background: linear-gradient(135deg, #ffffff, #f7fbff);
+  box-shadow: 0 6px 16px rgba(57, 78, 102, 0.06);
+  cursor: grab;
+}
+
+.batch-service-order-item018219.dragging {
+  opacity: 0.55;
+  border-color: rgba(47, 127, 196, 0.55);
+  box-shadow: 0 0 0 3px rgba(47, 127, 196, 0.12);
+}
+
+.batch-service-order-drag018219 {
+  display: grid;
+  place-items: center;
+  color: #7391b2;
+  font-size: 20px;
+  user-select: none;
+}
+
+.batch-service-order-item018219 > b {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: #e8f2fc;
+  color: #2f6da8;
+  font-size: 13px;
+}
+
+.batch-service-order-item018219 > strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #2d3d53;
+}
+
+.batch-service-order-item018219 > div {
+  display: flex;
+  gap: 6px;
+}
+
+.batch-service-order-item018219 > div button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(95, 126, 160, 0.22);
+  border-radius: 10px;
+  background: #fff;
+  color: #456785;
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.batch-service-order-item018219 > div button:disabled {
+  opacity: 0.35;
+}
+
+.batch-service-order-note018219 {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #f6f8fb;
+}
+
+.batch-service-order-actions018219 {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.batch-service-order-save018219 {
+  background: linear-gradient(135deg, #3079df, #2e9ca6);
+}
+
+@media (max-width: 720px) {
+  .batch-service-order-mask018219 {
+    padding: 10px;
+  }
+
+  .batch-service-order-dialog018219 {
+    width: 100%;
+    max-height: 94vh;
+    padding: 18px;
+    border-radius: 22px;
+  }
+
+  .batch-service-order-head018219 {
+    flex-direction: column;
+  }
+
+  .batch-service-order-head018219 > button,
+  .batch-service-order-actions018219 button {
+    width: 100%;
+  }
+
+  .batch-service-order-item018219 {
+    grid-template-columns: 28px 30px minmax(0, 1fr);
+  }
+
+  .batch-service-order-item018219 > div {
+    grid-column: 2 / -1;
+    justify-content: flex-end;
+  }
+
+  .panel-header-actions018219 {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .panel-header-actions018219 button {
+    flex: 1 1 0;
   }
 }
 
