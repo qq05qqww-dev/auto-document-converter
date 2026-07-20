@@ -1,4 +1,6 @@
 <!-- 第 018-232 批：地區機房選擇列微放大＋列高可讀性美化版 -->
+<!-- 第 018-234 批：分鐘／金額／節數斜線價格格式解析修正版 -->
+<!-- batch018-234-minute-amount-session-slash-price-parse-fix -->
 <!-- batch018-233-central-media-batch-query-worker-auth-cache-request-dedupe -->
 <!-- 第 018-233 批：中央媒體批次查詢＋前端重複刷新合併＋Worker Auth 快取相容 -->
 <!-- batch018-232-location-room-selector-readable-font-row-height-polish -->
@@ -5721,12 +5723,91 @@ onBeforeUnmount(() => {
 })
 
 
+// 第 018-234 批：統一判斷斜線正式價格，避免「格式判斷」與「實際解析」各寫一套後不同步。
+// 支援既有金額／分鐘／節數：1500/20/1S、2.2/30/1S、6.6/90/NS。
+// 新增分鐘／金額／節數：20/1500/1S、30/1800/1S、50/2.3K/1S、90/3.8K/2S。
+// 只有第二欄具備明確價格特徵（>=1000、帶 K/千、或為小數）時，才判定為分鐘在前，
+// 因此 20/30/1S 仍延續舊規則解讀為 20K/30/1S，不會改變既有資料。
+function parseSlashPriceLine018234(line) {
+  const normalized = normalizeDigits(String(line || ''))
+    .normalize('NFKC')
+    .replace(/[：]/g, ':')
+    .replace(/[／]/g, '/')
+    .replace(/　/g, ' ')
+    .trim()
+
+  if (!normalized) {
+    return { valid: false, order: '', minutes: 0, amount: 0, sessionLabel: '' }
+  }
+
+  const sessionPattern = '(NS|N\\s*\\/?\\s*S|\\d+\\s*S?)'
+  const minuteFirstMatch = normalized.match(new RegExp(
+    `^(\\d{2,3})\\s*\\/\\s*([0-9]+(?:\\.[0-9]+)?)\\s*([kK千]?)\\s*\\/\\s*${sessionPattern}$`,
+    'i'
+  ))
+
+  if (minuteFirstMatch) {
+    const minutes = Number(minuteFirstMatch[1])
+    const rawAmountText = String(minuteFirstMatch[2] || '')
+    const rawAmount = Number(rawAmountText)
+    const explicitThousandUnit = Boolean(minuteFirstMatch[3])
+    const hasDecimal = rawAmountText.includes('.')
+    const hasMinuteFirstAmountSignal = explicitThousandUnit || hasDecimal || rawAmount >= 1000
+    const amount = explicitThousandUnit || rawAmount < 100
+      ? rawAmount * 1000
+      : rawAmount
+
+    if (
+      hasMinuteFirstAmountSignal &&
+      minutes >= 10 && minutes <= 180 &&
+      amount >= 1000 && amount <= 100000
+    ) {
+      return {
+        valid: true,
+        order: 'minute-first',
+        minutes,
+        amount,
+        sessionLabel: normalizePriceSessionLabel(minuteFirstMatch[4] || '1S')
+      }
+    }
+  }
+
+  const amountFirstMatch = normalized.match(new RegExp(
+    `^([0-9]+(?:\\.[0-9]+)?)\\s*([kK千]?)\\s*\\/\\s*(\\d{2,3})\\s*\\/\\s*${sessionPattern}$`,
+    'i'
+  ))
+
+  if (amountFirstMatch) {
+    const rawAmount = Number(amountFirstMatch[1])
+    const explicitThousandUnit = Boolean(amountFirstMatch[2])
+    const minutes = Number(amountFirstMatch[3])
+    const amount = explicitThousandUnit || rawAmount < 100
+      ? rawAmount * 1000
+      : rawAmount
+
+    if (
+      minutes >= 10 && minutes <= 180 &&
+      amount >= 1000 && amount <= 100000
+    ) {
+      return {
+        valid: true,
+        order: 'amount-first',
+        minutes,
+        amount,
+        sessionLabel: normalizePriceSessionLabel(amountFirstMatch[4] || '1S')
+      }
+    }
+  }
+
+  return { valid: false, order: '', minutes: 0, amount: 0, sessionLabel: '' }
+}
+
 function isPriceLine(line) {
   const value = normalizeDigits(String(line || '')).trim()
   if (!value) return false
 
-  // 2100/30/1S、2/30/1S、2.2/30/1S、3200/60/2S
-  if (/^[0-9]+(?:\.[0-9]+)?\s*\/\s*\d{2,3}\s*\/\s*\d+\s*S?$/i.test(value)) return true
+  // 第 018-234 批：金額／分鐘／節數與分鐘／金額／節數共用同一個正式解析器。
+  if (parseSlashPriceLine018234(value).valid) return true
 
   // 30分/1S 2.2K、60分鐘 回3200、短鐘30分/2.5底
   if (/\d{2,3}\s*(?:分鐘|分)/.test(value) && /([0-9]+(?:\.[0-9]+)?\s*[kK]|[0-9]{3,5}|[0-9]+(?:\.[0-9]+)?\s*底|回\s*[0-9]{3,5})/.test(value)) return true
@@ -12715,7 +12796,20 @@ function parsePrices(text, increase, priceContext = {}) {
       return
     }
 
-    // 支援 2/30/1S、2.2/30/1S、2200/40/1S、3300/60/2S、6.6/90/NS
+    // 第 018-234 批：支援兩種斜線正式方案順序，並共用 isPriceLine 的同一判斷器。
+    // 金額／分鐘／節數：1500/20/1S、2.2/30/1S。
+    // 分鐘／金額／節數：20/1500/1S、30/1800/1S、90/3.8K/2S。
+    const slashPriceLine018234 = parseSlashPriceLine018234(normalized)
+    if (slashPriceLine018234.valid) {
+      pushPrice(
+        slashPriceLine018234.minutes,
+        slashPriceLine018234.sessionLabel,
+        slashPriceLine018234.amount
+      )
+      return
+    }
+
+    // 舊版寬鬆解析保留作為相容備援。
     const compactAmountMatch = normalized.match(/^([0-9]+(?:\.[0-9]+)?)\s*\/\s*(\d{2,3})\s*\/\s*(NS|\d+\s*S?)/i)
     if (compactAmountMatch) {
       const rawAmountNumber = Number(compactAmountMatch[1])
