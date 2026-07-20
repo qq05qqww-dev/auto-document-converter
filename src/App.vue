@@ -1,3 +1,5 @@
+<!-- 第 018-236 批：印尼國籍同義詞＋姓名前後與尾端說明解析修正版 -->
+<!-- batch018-236-indonesia-country-alias-header-trailing-description-parse-fix -->
 <!-- 第 018-235 批：底價在前＋分鐘在後正式價格解析修正版 -->
 <!-- batch018-235-bottom-amount-first-minute-label-price-parse-fix -->
 <!-- 第 018-232 批：地區機房選擇列微放大＋列高可讀性美化版 -->
@@ -1487,6 +1489,7 @@
                 <option value="台妹">台妹</option>
                 <option value="越南">越南</option>
                 <option value="越妹">越妹</option>
+                <option value="印尼">印尼</option>
                 <option value="新加坡">新加坡</option>
                 <option value="泰妹">泰妹</option>
                 <option value="馬來">馬來</option>
@@ -5252,6 +5255,10 @@ const defaultCountryAliases = [
   '港澳=港澳',
   '越南=越南',
   '越妹=越妹',
+  '印尼=印尼',
+  '印尼妹=印尼',
+  '印尼妹妹=印尼',
+  '印度尼西亞=印尼',
   '新加坡=新加坡',
   '日本=日妹',
   '日本妹=日妹',
@@ -5582,6 +5589,8 @@ const defaultCountryFieldRules = [
   '馬來新妹=馬來',
   '越南新妹=越南',
   '越妹新妹=越妹',
+  '印尼新妹=印尼',
+  '印尼妹新妹=印尼',
   '新加坡新妹=新加坡',
   '台灣新妹=台妹',
   '台妹新妹=台妹',
@@ -11125,7 +11134,7 @@ function extractLooseCountryContext(line) {
   // 例：「泰國洗無水床+300」只是服務，不得把目前馬來小姐改成泰妹。
   if (isNotHeaderLine(cleaned)) return ''
 
-  const explicitMatch = cleaned.match(/(?:國家|國籍)\s*[:：]?\s*(馬來西亞|馬來|越南|越妹|新加坡|港澳|台灣|台妹|泰國|泰妹|日本|日妹|韓國|外籍)/)
+  const explicitMatch = cleaned.match(/(?:國家|國籍)\s*[:：]?\s*(馬來西亞|馬來|印度尼西亞|印尼妹妹|印尼妹|印尼|越南|越妹|新加坡|港澳|台灣|台妹|泰國|泰妹|日本|日妹|韓國|外籍)/)
   if (explicitMatch) return normalizeCountry(explicitMatch[1])
 
   const standaloneCountry = extractStandaloneCountryFromLine(cleaned)
@@ -11677,7 +11686,7 @@ function extractCountryFromBlock(block) {
   if (countryCodeHeader?.country) return normalizeCountry(countryCodeHeader.country)
 
   for (const line of lines) {
-    const labeledMatch = line.match(/(?:國家|國籍)\s*[:：]?\s*(馬來西亞|馬來|越南|越妹|新加坡|港澳|台灣|台妹|泰國|泰妹|日本|日妹|韓國|外籍)/)
+    const labeledMatch = line.match(/(?:國家|國籍)\s*[:：]?\s*(馬來西亞|馬來|印度尼西亞|印尼妹妹|印尼妹|印尼|越南|越妹|新加坡|港澳|台灣|台妹|泰國|泰妹|日本|日妹|韓國|外籍)/)
     if (labeledMatch) return normalizeCountry(labeledMatch[1])
   }
 
@@ -11808,6 +11817,10 @@ function getStrictBuiltInCountryAliases() {
     ['馬來', '馬來'],
     ['越南', '越南'],
     ['越妹', '越妹'],
+    ['印尼', '印尼'],
+    ['印尼妹', '印尼'],
+    ['印尼妹妹', '印尼'],
+    ['印度尼西亞', '印尼'],
     ['新加坡', '新加坡'],
     ['泰國', '泰妹'],
     ['泰妹', '泰妹'],
@@ -14100,7 +14113,7 @@ function priceMappingsToText018204(mappings) {
 const priceProfileCountryOptions018204 = computed(() => {
   const preferred = [
     '*', '台妹', '港澳', '日妹', '韓國', '俄羅斯',
-    '越妹', '越南', '泰妹', '馬來', '新加坡', '外籍'
+    '越妹', '越南', '印尼', '泰妹', '馬來', '新加坡', '外籍'
   ]
   const values = new Set(preferred)
 
