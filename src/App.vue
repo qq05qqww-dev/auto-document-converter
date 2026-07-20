@@ -1,4 +1,6 @@
 <!-- 第 018-236 批：印尼國籍同義詞＋姓名前後與尾端說明解析修正版 -->
+<!-- 第 018-237 批：分鐘底價標記在前＋金額在後同行多方案解析修正版 -->
+<!-- batch018-237-minute-bottom-marker-amount-after-multi-pair-price-parse-fix -->
 <!-- batch018-236-indonesia-country-alias-header-trailing-description-parse-fix -->
 <!-- 第 018-235 批：底價在前＋分鐘在後正式價格解析修正版 -->
 <!-- batch018-235-bottom-amount-first-minute-label-price-parse-fix -->
@@ -5869,12 +5871,75 @@ function parseBottomAmountFirstMinuteLine018235(line, priceContext = {}) {
   }
 }
 
+
+// 第 018-237 批：支援「分鐘底金額」且同一行可有多組方案。
+// 例：20底1.4 / 40底1.9、60底2.3 / 90底2.8 1S、20分底1400、40底1.9K/1S。
+// 「底」在分鐘與金額中間；金額仍交由 parseBottomPriceAmount()，保留國籍／類型底價與既有加價規則。
+function parseMinuteBottomAmountPairs018237(line, priceContext = {}) {
+  const normalized = normalizeDigits(String(line || ''))
+    .normalize('NFKC')
+    .replace(/[：]/g, ':')
+    .replace(/[／]/g, '/')
+    .replace(/　/g, ' ')
+    .trim()
+
+  if (!normalized) {
+    return { valid: false, pairs: [] }
+  }
+
+  const pairPattern = /(\d{2,3})\s*(?:分鐘|分)?\s*底(?:價)?\s*([0-9]+(?:\.[0-9]+)?)\s*([kK千]?)(?:\s*[/|,:：-]?\s*(NS|N\s*\/?\s*S|\d+\s*S))?/gi
+  const pairs = []
+  let matched
+
+  while ((matched = pairPattern.exec(normalized)) !== null) {
+    const minutes = Number(matched[1])
+    const rawAmount = Number(matched[2])
+    const explicitThousandUnit = Boolean(matched[3])
+    const amount = explicitThousandUnit
+      ? rawAmount * 1000
+      : parseBottomPriceAmount(matched[2], priceContext)
+    const sessionLabel = normalizePriceSessionLabel(matched[4] || '1S')
+
+    pairs.push({
+      fullText: matched[0],
+      minutes,
+      amount,
+      sessionLabel
+    })
+
+    if (pairPattern.lastIndex === matched.index) pairPattern.lastIndex += 1
+  }
+
+  pairPattern.lastIndex = 0
+  const unmatchedText = normalized
+    .replace(pairPattern, ' ')
+    .replace(/(?:快餐|短[鐘鍾]|長[鐘鍾])/gi, ' ')
+    .replace(/[\s/|、,，;；＋+]+/g, '')
+
+  const allPairsValid = pairs.length > 0 && pairs.every(pair => (
+    pair.minutes >= 10 &&
+    pair.minutes <= 180 &&
+    pair.amount >= 1000 &&
+    pair.amount <= 100000
+  ))
+
+  if (unmatchedText || !allPairsValid) {
+    return { valid: false, pairs: [] }
+  }
+
+  return { valid: true, pairs }
+}
+
 function isPriceLine(line) {
   const value = normalizeDigits(String(line || '')).trim()
   if (!value) return false
 
   // 第 018-234 批：金額／分鐘／節數與分鐘／金額／節數共用同一個正式解析器。
   if (parseSlashPriceLine018234(value).valid) return true
+
+  // 第 018-237 批：分鐘後直接寫「底＋金額」，同一行可有多組。
+  // 例：20底1.4 / 40底1.9、60底2.3 / 90底2.8 1S。
+  if (parseMinuteBottomAmountPairs018237(value).valid) return true
 
   // 第 018-235 批：底價在前＋分鐘在後，例如 2.6底 30分、2.9底/50分。
   if (parseBottomAmountFirstMinuteLine018235(value).valid) return true
@@ -12625,6 +12690,17 @@ function parsePrices(text, increase, priceContext = {}) {
       return
     }
 
+
+    // 第 018-237 批：支援「分鐘底金額」且同一行可有多組正式方案。
+    // 例：20底1.4 / 40底1.9、60底2.3 / 90底2.8 1S。
+    // 每組仍走既有 pushPrice()，保留精準價格、區間、國籍、固定及分鐘加價。
+    const minuteBottomAmountPairs018237 = parseMinuteBottomAmountPairs018237(normalized, priceContext)
+    if (minuteBottomAmountPairs018237.valid) {
+      minuteBottomAmountPairs018237.pairs.forEach(pair => {
+        pushPrice(pair.minutes, pair.sessionLabel, pair.amount)
+      })
+      return
+    }
 
     // 第 018-235 批：支援「底價在前＋分鐘在後」，並共用 isPriceLine 的同一解析器。
     // 例：2.6底 30分、2.9底 50分、2600底/30分鐘、底2.6 30分、2.6底 30分 1S。
