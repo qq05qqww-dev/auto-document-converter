@@ -1,4 +1,6 @@
 <!-- 第 018-232 批：地區機房選擇列微放大＋列高可讀性美化版 -->
+<!-- batch018-233-central-media-batch-query-worker-auth-cache-request-dedupe -->
+<!-- 第 018-233 批：中央媒體批次查詢＋前端重複刷新合併＋Worker Auth 快取相容 -->
 <!-- batch018-232-location-room-selector-readable-font-row-height-polish -->
 <!-- 第 018-230 批：複合優惠服務同義詞真正取代短規則避免重複版 -->
 <!-- batch018-230-composite-promotion-alias-replace-short-rule-no-duplicate-fix -->
@@ -2654,6 +2656,7 @@
 <!-- batch018-120-sync-id-backfill-media-upload-fix -->
 <!-- batch018-138-central-direct-media-upload-bind-fix -->
 <script setup>
+// batch018-233-central-media-batch-query-worker-auth-cache-request-dedupe
 // batch018-231-supabase-auth-load-single-flight-employee-rules-403-fix
 // batch018-175-age-before-cup-body-and-cup-whitelist-fix
 // batch018-176-structured-source-recognition-owner-regex-output-unification
@@ -3474,13 +3477,13 @@ async function startBatchMediaUpload018223() {
   batchMediaDeleteQueueByLadyKey018224.value = nextDeleteQueue
 
   const uniqueLadies = Array.from(new Map(tasks.map(task => [task.entry.key, task.entry.lady])).values())
-  await Promise.allSettled(uniqueLadies.map(lady => fetchCentralWebsiteMediaForLady(lady, {
-    previewLady: lady,
+  await loadFrontendLadies({ refresh: true, skipCentralMediaRefresh: true }).catch(() => null)
+  await fetchCentralWebsiteMediaBatch018233(uniqueLadies, {
     allowMissing: true,
-    refresh: true,
-    timeoutMs: 15000
-  })))
-  await loadFrontendLadies({ refresh: true }).catch(() => null)
+    forceRefresh: true,
+    timeoutMs: 15000,
+    silent: true
+  }).catch(() => null)
 
   if (batchMediaUploadCompletedTaskCount018223.value || batchMediaUploadSkippedTaskCount018223.value) {
     markCurrentRoomMediaChecked({ uploadSucceeded: true })
@@ -3624,6 +3627,20 @@ let ownerGlobalRuleLoadedAt018231 = 0
 let ownerGlobalRuleCache018231 = null
 let suppressScopeRuleAutoLoad018231 = false
 
+// 第 018-233 批：只合併目前分頁內相同資料範圍的重複讀取；不跨帳號、不跨瀏覽器共用。
+const FRONTEND_LADIES_LOAD_DEDUPE_MS018233 = 1200
+const CENTRAL_MEDIA_MEMORY_CACHE_MS018233 = 30 * 1000
+let frontendLadiesLoadPromise018233 = null
+let frontendLadiesLoadPromiseKey018233 = ''
+let frontendLadiesLastLoadedAt018233 = 0
+let frontendLadiesLastLoadKey018233 = ''
+let centralMediaRefreshPromise018233 = null
+let centralMediaRefreshPromiseKey018233 = ''
+let centralMediaRefreshLastAt018233 = 0
+let centralMediaRefreshLastKey018233 = ''
+let centralMediaRefreshLastResult018233 = { total: 0, refreshed: 0, failed: 0 }
+const centralMediaLookupCache018233 = new Map()
+
 function cacheAuthSession018231(session) {
   cachedAuthSession018231 = session || null
   cachedAuthSessionAt018231 = Date.now()
@@ -3652,6 +3669,16 @@ function resetOnlineRequestGuards018231() {
   ownerGlobalRuleLoadedAt018231 = 0
   ownerGlobalRuleCache018231 = null
   suppressScopeRuleAutoLoad018231 = false
+  frontendLadiesLoadPromise018233 = null
+  frontendLadiesLoadPromiseKey018233 = ''
+  frontendLadiesLastLoadedAt018233 = 0
+  frontendLadiesLastLoadKey018233 = ''
+  centralMediaRefreshPromise018233 = null
+  centralMediaRefreshPromiseKey018233 = ''
+  centralMediaRefreshLastAt018233 = 0
+  centralMediaRefreshLastKey018233 = ''
+  centralMediaRefreshLastResult018233 = { total: 0, refreshed: 0, failed: 0 }
+  centralMediaLookupCache018233.clear()
 }
 
 async function getAuthSession018231(options = {}) {
@@ -6597,7 +6624,7 @@ async function refreshFrontendLadiesUntilDocumentIdsReady(payload = null, option
   let lastSummary = countCurrentDocumentDatabaseIds(payload)
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    await loadFrontendLadies({ silent: true, refresh: true })
+    await loadFrontendLadies({ silent: true, refresh: true, skipCentralMediaRefresh: true })
     lastSummary = countCurrentDocumentDatabaseIds(payload)
     if (!lastSummary.missing) return lastSummary
 
@@ -7196,7 +7223,7 @@ async function bindUploadedMediaDirectlyToCentralWebsite(ladyId, mediaItems = []
     updateMediaForLocalPreview(id, serverMedia, previewLady, 'replace')
   } else {
     mergeUploadedMediaIntoLocalPreview(id, normalizedMedia, previewLady)
-    await fetchCentralWebsiteMediaForLady(previewLady || detail || { id }, { previewLady, allowMissing: true }).catch(() => null)
+    await fetchCentralWebsiteMediaForLady(previewLady || detail || { id }, { previewLady, allowMissing: true, forceRefresh: true }).catch(() => null)
   }
   return data
 }
@@ -7326,6 +7353,7 @@ async function refreshCentralRoomLocationStatus018200() {
       silent: true,
       refresh: true,
       skipCentralMediaRefresh: false,
+      forceCentralMediaRefresh: true,
     })
     if (!loaded) throw new Error(frontendStatusText.value || '中央資料讀取失敗')
     statusMessage.value = '已重新整理中央位置：後台調派後的縣市、地區、機房與媒體進度已同步；今日文件3紀錄仍保留在原儲存範圍。'
@@ -7341,10 +7369,79 @@ async function refreshCentralRoomLocationStatus018200() {
   }
 }
 
+function pruneCentralMediaLookupCache018233(now = Date.now()) {
+  for (const [key, entry] of centralMediaLookupCache018233.entries()) {
+    if (!entry || now - Number(entry.savedAt || 0) >= CENTRAL_MEDIA_MEMORY_CACHE_MS018233) {
+      centralMediaLookupCache018233.delete(key)
+    }
+  }
+  while (centralMediaLookupCache018233.size > 240) {
+    const oldestKey = centralMediaLookupCache018233.keys().next().value
+    if (!oldestKey) break
+    centralMediaLookupCache018233.delete(oldestKey)
+  }
+}
+
+function makeCentralMediaLookupKey018233(lady, previewLady = null) {
+  const target = previewLady || lady
+  const syncItem = buildCentralWebsiteSyncItem(lady, target)
+  return JSON.stringify([
+    syncItem.centralListingId || syncItem.listingId || getCentralListingIdHint(target || lady) || '',
+    syncItem.sourceIdentity || syncItem.sourceId || target?.sourceIdentity || target?.sourceId || '',
+    syncItem.nationality || syncItem.country || target?.country || '',
+    syncItem.name || target?.name || '',
+    syncItem.city || target?.city || target?.sourceCity || '',
+    syncItem.district || target?.district || target?.sourceDistrict || '',
+    syncItem.mode || syncItem.environment || target?.mode || target?.sourceMode || '',
+    syncItem.room || target?.room || target?.sourceRoom || '',
+  ])
+}
+
+function readCentralMediaLookupCache018233(key) {
+  if (!key) return null
+  pruneCentralMediaLookupCache018233()
+  const entry = centralMediaLookupCache018233.get(key)
+  return entry ? entry.responseData : null
+}
+
+function rememberCentralMediaLookupCache018233(key, responseData) {
+  if (!key || !responseData) return
+  centralMediaLookupCache018233.set(key, { savedAt: Date.now(), responseData })
+  pruneCentralMediaLookupCache018233()
+}
+
+function clearCentralMediaLookupCacheForLady018233(lady, previewLady = null) {
+  const key = makeCentralMediaLookupKey018233(lady, previewLady)
+  if (key) centralMediaLookupCache018233.delete(key)
+}
+
+function applyCentralWebsiteMediaLookupData018233(lady, previewLady, responseData, cacheKey = '') {
+  const centralListingId = extractCentralListingId(responseData)
+  if (centralListingId) {
+    rememberCentralListingIdHint(previewLady || lady, centralListingId)
+    rememberCentralListingIdHint(lady, centralListingId)
+  }
+
+  const serverMedia = mergeMediaRecords([], responseData?.media || [])
+  rememberCentralWebsiteLocationSnapshot018200(responseData, previewLady || lady, serverMedia)
+  setCentralWebsiteMediaForLady(lady, serverMedia, previewLady)
+  if (cacheKey) rememberCentralMediaLookupCache018233(cacheKey, responseData)
+  return serverMedia
+}
+
 async function fetchCentralWebsiteMediaForLady(lady, options = {}) {
   if (!lady) return []
 
   const previewLady = options.previewLady || lady
+  const forceRefresh = options.forceRefresh === true || options.refresh === true
+  const cacheKey = makeCentralMediaLookupKey018233(lady, previewLady)
+  if (!forceRefresh) {
+    const cached = readCentralMediaLookupCache018233(cacheKey)
+    if (cached) return applyCentralWebsiteMediaLookupData018233(lady, previewLady, cached, cacheKey)
+  } else {
+    clearCentralMediaLookupCacheForLady018233(lady, previewLady)
+  }
+
   const syncItem = buildCentralWebsiteSyncItem(lady, previewLady)
   const accessToken = await getCentralWebsiteAccessToken()
   const { response, data } = await fetchJsonWithTimeout(
@@ -7376,17 +7473,123 @@ async function fetchCentralWebsiteMediaForLady(lady, options = {}) {
     throw new Error(data.message || data.error || `讀取中央網站媒體清單失敗：HTTP ${response.status}`)
   }
 
-  const centralListingId = extractCentralListingId(data?.data || data)
-  if (centralListingId) {
-    rememberCentralListingIdHint(previewLady || lady, centralListingId)
-    rememberCentralListingIdHint(lady, centralListingId)
+  const responseData = data?.data || data || {}
+  return applyCentralWebsiteMediaLookupData018233(lady, previewLady, responseData, cacheKey)
+}
+
+async function fetchCentralWebsiteMediaBatch018233(ladies = [], options = {}) {
+  const sourceLadies = Array.isArray(ladies) ? ladies.filter(Boolean).slice(0, 80) : []
+  const uniqueEntries = []
+  const seenKeys = new Set()
+  sourceLadies.forEach((lady) => {
+    const previewLady = lady
+    const lookupKey = makeCentralMediaLookupKey018233(lady, previewLady)
+    if (!lookupKey || seenKeys.has(lookupKey)) return
+    seenKeys.add(lookupKey)
+    uniqueEntries.push({ lady, previewLady, lookupKey })
+  })
+
+  if (!uniqueEntries.length) return { total: 0, refreshed: 0, failed: 0 }
+
+  const forceRefresh = options.forceRefresh === true || options.refresh === true
+  let refreshed = 0
+  let failed = 0
+  const pending = []
+
+  uniqueEntries.forEach((entry) => {
+    if (forceRefresh) clearCentralMediaLookupCacheForLady018233(entry.lady, entry.previewLady)
+    const cached = forceRefresh ? null : readCentralMediaLookupCache018233(entry.lookupKey)
+    if (cached) {
+      applyCentralWebsiteMediaLookupData018233(entry.lady, entry.previewLady, cached, entry.lookupKey)
+      refreshed += 1
+    } else {
+      pending.push(entry)
+    }
+  })
+
+  if (!pending.length) return { total: uniqueEntries.length, refreshed, failed }
+
+  const accessToken = await getCentralWebsiteAccessToken()
+  const clientEntryMap = new Map()
+  const requestItems = pending.map((entry, index) => {
+    const syncItem = buildCentralWebsiteSyncItem(entry.lady, entry.previewLady)
+    const clientKey = `media-${index + 1}`
+    clientEntryMap.set(clientKey, entry)
+    return {
+      clientKey,
+      item: syncItem,
+      sourceIdentity: syncItem.sourceIdentity || syncItem.sourceId || entry.lady?.sourceIdentity || '',
+      listingId: syncItem.centralListingId || syncItem.listingId || entry.lady?.centralListingId || entry.lady?.listingId || ''
+    }
+  })
+
+  let batchResponse = null
+  let batchData = null
+  try {
+    const result = await fetchJsonWithTimeout(
+      `${CENTRAL_WEBSITE_API_BASE_URL}/api/integrations/converter/central-listings/media/lookup-batch`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'X-Converter-Apikey': SUPABASE_PUBLIC_API_KEY
+        },
+        body: JSON.stringify({ items: requestItems })
+      },
+      Number(options.timeoutMs || 15000),
+      '批次讀取中央網站媒體清單失敗'
+    )
+    batchResponse = result.response
+    batchData = result.data
+  } catch (_error) {
+    batchResponse = null
   }
 
-  const responseData = data?.data || data || {}
-  const serverMedia = mergeMediaRecords([], responseData?.media || data?.media || [])
-  rememberCentralWebsiteLocationSnapshot018200(responseData, previewLady || lady, serverMedia)
-  setCentralWebsiteMediaForLady(lady, serverMedia, previewLady)
-  return serverMedia
+  const batchResults = Array.isArray(batchData?.data?.results) ? batchData.data.results : null
+  if (!batchResponse?.ok || batchData?.ok === false || !batchResults) {
+    // 新 Worker 尚未部署或批次端點暫時失敗時，保留舊 API 相容，不讓既有媒體功能中斷。
+    const fallbackResults = await Promise.allSettled(pending.map(entry => fetchCentralWebsiteMediaForLady(entry.lady, {
+      previewLady: entry.previewLady,
+      allowMissing: options.allowMissing === true,
+      requireLocation: options.requireLocation === true,
+      forceRefresh,
+      timeoutMs: options.timeoutMs || 12000
+    })))
+    fallbackResults.forEach(result => {
+      if (result.status === 'fulfilled') refreshed += 1
+      else failed += 1
+    })
+    return { total: uniqueEntries.length, refreshed, failed }
+  }
+
+  const handledClientKeys = new Set()
+  batchResults.forEach((row) => {
+    const clientKey = String(row?.clientKey || '')
+    const entry = clientEntryMap.get(clientKey)
+    if (!entry) return
+    handledClientKeys.add(clientKey)
+
+    if (row?.ok && row?.data) {
+      applyCentralWebsiteMediaLookupData018233(entry.lady, entry.previewLady, row.data, entry.lookupKey)
+      refreshed += 1
+      return
+    }
+
+    const status = Number(row?.status || 500)
+    if (options.allowMissing && [404, 409].includes(status) && options.requireLocation !== true) {
+      refreshed += 1
+      return
+    }
+    failed += 1
+    if (!options.silent) console.warn('批次讀取中央網站媒體失敗：', row?.message || row?.error || status)
+  })
+
+  pending.forEach((entry, index) => {
+    if (!handledClientKeys.has(`media-${index + 1}`)) failed += 1
+  })
+
+  return { total: uniqueEntries.length, refreshed, failed }
 }
 
 async function refreshCentralWebsiteMediaForCurrentDocument(options = {}) {
@@ -7397,49 +7600,77 @@ async function refreshCentralWebsiteMediaForCurrentDocument(options = {}) {
     return { total: 0, refreshed: 0, failed: 0 }
   }
 
-  // 每次只保留目前文件3／文件4的中央位置快照，避免上一批小姐殘留影響機房統計。
-  centralWebsiteLocationByListingId.value = {}
-  centralWebsiteLocationCoverageScopeKeys.value = {}
+  const forceRefresh = options.forceRefresh === true || options.refresh === true
+  const refreshKey = ladies.slice(0, 80)
+    .map(lady => makeCentralMediaLookupKey018233(lady, lady))
+    .filter(Boolean)
+    .sort()
+    .join('||')
+  const now = Date.now()
 
-  let refreshed = 0
-  let failed = 0
-  const originalScopeKeys = new Set()
-  ladies.slice(0, 80).forEach(lady => {
-    const key = makeRoomDailyScopeKey({
-      city: lady?.sourceCity || lady?.city,
-      district: lady?.sourceDistrict || lady?.district,
-      mode: lady?.sourceMode || lady?.mode || lady?.environment,
-      room: lady?.sourceRoom || lady?.room,
-    })
-    if (key) originalScopeKeys.add(key)
-  })
+  if (centralMediaRefreshPromise018233) {
+    const activePromise = centralMediaRefreshPromise018233
+    if (centralMediaRefreshPromiseKey018233 === refreshKey) return activePromise
+    await activePromise.catch(() => null)
+    return refreshCentralWebsiteMediaForCurrentDocument(options)
+  }
+  if (
+    !forceRefresh &&
+    refreshKey &&
+    centralMediaRefreshLastKey018233 === refreshKey &&
+    now - centralMediaRefreshLastAt018233 < CENTRAL_MEDIA_MEMORY_CACHE_MS018233
+  ) {
+    return centralMediaRefreshLastResult018233
+  }
 
-  for (const lady of ladies.slice(0, 80)) {
-    try {
-      await fetchCentralWebsiteMediaForLady(lady, {
-        allowMissing: true,
-        requireLocation: true,
-        timeoutMs: options.timeoutMs || 9000
+  centralMediaRefreshPromiseKey018233 = refreshKey
+  centralMediaRefreshPromise018233 = (async () => {
+    // 每次只保留目前文件3／文件4的中央位置快照，避免上一批小姐殘留影響機房統計。
+    centralWebsiteLocationByListingId.value = {}
+    centralWebsiteLocationCoverageScopeKeys.value = {}
+
+    const originalScopeKeys = new Set()
+    ladies.slice(0, 80).forEach(lady => {
+      const key = makeRoomDailyScopeKey({
+        city: lady?.sourceCity || lady?.city,
+        district: lady?.sourceDistrict || lady?.district,
+        mode: lady?.sourceMode || lady?.mode || lady?.environment,
+        room: lady?.sourceRoom || lady?.room,
       })
-      refreshed += 1
-    } catch (error) {
-      failed += 1
-      if (!options.silent) console.warn('讀取中央網站媒體清單失敗：', error)
-    }
-  }
-
-  if (failed === 0 && refreshed === Math.min(ladies.length, 80)) {
-    const coverage = {}
-    originalScopeKeys.forEach(key => { coverage[key] = true })
-    Object.values(centralWebsiteLocationByListingId.value || {}).forEach(snapshot => {
-      const key = makeCentralLocationSnapshotScopeKey018200(snapshot)
-      if (key) coverage[key] = true
+      if (key) originalScopeKeys.add(key)
     })
-    centralWebsiteLocationCoverageScopeKeys.value = coverage
-    mergeCentralLocationRoomsIntoPersonalOptions018200()
-  }
 
-  return { total: ladies.length, refreshed, failed }
+    const result = await fetchCentralWebsiteMediaBatch018233(ladies.slice(0, 80), {
+      allowMissing: true,
+      requireLocation: true,
+      forceRefresh,
+      silent: options.silent,
+      timeoutMs: options.timeoutMs || 15000
+    })
+
+    if (result.failed === 0 && result.refreshed === Math.min(ladies.length, 80)) {
+      const coverage = {}
+      originalScopeKeys.forEach(key => { coverage[key] = true })
+      Object.values(centralWebsiteLocationByListingId.value || {}).forEach(snapshot => {
+        const key = makeCentralLocationSnapshotScopeKey018200(snapshot)
+        if (key) coverage[key] = true
+      })
+      centralWebsiteLocationCoverageScopeKeys.value = coverage
+      mergeCentralLocationRoomsIntoPersonalOptions018200()
+    }
+
+    centralMediaRefreshLastAt018233 = Date.now()
+    centralMediaRefreshLastKey018233 = refreshKey
+    centralMediaRefreshLastResult018233 = result
+    return result
+  })()
+
+  try {
+    return await centralMediaRefreshPromise018233
+  } finally {
+    centralMediaRefreshPromise018233 = null
+    centralMediaRefreshPromiseKey018233 = ''
+  }
 }
 
 
@@ -8490,7 +8721,7 @@ async function uploadLadyMedia() {
       mergeUploadedMediaIntoLocalPreview(uploadTargetLadyId || mediaUploadLadyId.value, uploadedCentralMediaItems, uploadTargetPreviewLady)
     }
 
-    await loadFrontendLadies({ refresh: true })
+    await loadFrontendLadies({ refresh: true, skipCentralMediaRefresh: true })
     if (uploadedCentralMediaItems.length) {
       mergeUploadedMediaIntoLocalPreview(uploadTargetLadyId || mediaUploadLadyId.value, uploadedCentralMediaItems, uploadTargetPreviewLady)
     }
@@ -8516,7 +8747,7 @@ async function uploadLadyMedia() {
         await fetchCentralWebsiteMediaForLady(uploadTargetPreviewLady || centralUploadContext?.detail || { id: targetLadyId }, {
           previewLady: uploadTargetPreviewLady,
           allowMissing: true,
-          refresh: true
+          forceRefresh: true
         }).catch(() => null)
       }
 
@@ -8541,7 +8772,7 @@ async function uploadLadyMedia() {
     }
     mediaUploadCurrentFileName.value = ''
     mediaUploadStatusText.value = `媒體上傳中斷：成功 ${successCount} 個，失敗 ${failCount || 1} 個。錯誤：${error.message || error}`
-    await loadFrontendLadies({ refresh: true })
+    await loadFrontendLadies({ refresh: true, skipCentralMediaRefresh: true })
   }
 }
 
@@ -8568,8 +8799,8 @@ async function syncSelectedLadyToCentralWebsite() {
       }
     })
     mediaUploadStatusText.value = data?.message || '目前小姐的圖片、影片與資料已同步到中央網站。'
-    await fetchCentralWebsiteMediaForLady(previewLady || { id: targetLadyId }, { previewLady, allowMissing: true }).catch(() => null)
-    await loadFrontendLadies({ refresh: true })
+    await fetchCentralWebsiteMediaForLady(previewLady || { id: targetLadyId }, { previewLady, allowMissing: true, forceRefresh: true }).catch(() => null)
+    await loadFrontendLadies({ refresh: true, skipCentralMediaRefresh: true })
   } catch (error) {
     mediaUploadStatusText.value = `目前小姐同步中央網站失敗：${error.message || error}。圖片仍保留在資料庫，可稍後再次重試。`
   } finally {
@@ -8823,9 +9054,7 @@ async function fetchAllPublicLadies(options = {}) {
   return allItems
 }
 
-async function loadFrontendLadies(options = {}) {
-  saveApiBaseUrl()
-
+async function performFrontendLadiesLoad018233(options = {}) {
   try {
     // 第 018-79 批：
     // 先讀取萬筆可承受的輕量索引，再只補讀本次文件中有命中的小姐完整資料。
@@ -8846,11 +9075,6 @@ async function loadFrontendLadies(options = {}) {
     frontendStatusText.value = enriched.detailCount
       ? `已從${indexSourceText}讀取 ${indexItems.length} 筆小姐索引，並補讀本次 ${enriched.detailCount} 筆完整資料。`
       : `已從${indexSourceText}讀取 ${indexItems.length} 筆小姐索引。`
-    if (!options.skipCentralMediaRefresh) {
-      await refreshCentralWebsiteMediaForCurrentDocument({ silent: true }).catch(error => {
-        console.warn('中央網站媒體清單補讀失敗，先保留 converter fallback：', error)
-      })
-    }
     return true
   } catch (error) {
     frontendLadiesLoaded.value = false
@@ -8861,6 +9085,49 @@ async function loadFrontendLadies(options = {}) {
     return false
   }
 }
+
+async function loadFrontendLadies(options = {}) {
+  saveApiBaseUrl()
+
+  const loadKey = options.refresh === true ? 'refresh' : 'normal'
+  const now = Date.now()
+  let loaded = false
+
+  if (frontendLadiesLoadPromise018233) {
+    loaded = await frontendLadiesLoadPromise018233
+  } else if (
+    options.forceReload !== true &&
+    frontendLadiesLoaded.value &&
+    frontendLadiesLastLoadKey018233 === loadKey &&
+    now - frontendLadiesLastLoadedAt018233 < FRONTEND_LADIES_LOAD_DEDUPE_MS018233
+  ) {
+    loaded = true
+  } else {
+    frontendLadiesLoadPromiseKey018233 = loadKey
+    frontendLadiesLoadPromise018233 = performFrontendLadiesLoad018233(options)
+    try {
+      loaded = await frontendLadiesLoadPromise018233
+      if (loaded) {
+        frontendLadiesLastLoadedAt018233 = Date.now()
+        frontendLadiesLastLoadKey018233 = loadKey
+      }
+    } finally {
+      frontendLadiesLoadPromise018233 = null
+      frontendLadiesLoadPromiseKey018233 = ''
+    }
+  }
+
+  if (loaded && !options.skipCentralMediaRefresh) {
+    await refreshCentralWebsiteMediaForCurrentDocument({
+      silent: true,
+      forceRefresh: options.forceCentralMediaRefresh === true,
+    }).catch(error => {
+      console.warn('中央網站媒體清單補讀失敗，先保留 converter fallback：', error)
+    })
+  }
+  return loaded
+}
+
 
 function saveApiBaseUrl() {
   const value = String(apiBaseUrl.value || '').trim().replace(/\/+$/, '')
@@ -9373,7 +9640,7 @@ async function submitDocument4ToDatabase(options = {}) {
 
   try {
     setDatabaseSubmitFeedback('正在讀取資料庫並檢查重複小姐...', 'pending')
-    const databaseListReady = await loadFrontendLadies({ silent: true, refresh: true })
+    const databaseListReady = await loadFrontendLadies({ silent: true, refresh: true, skipCentralMediaRefresh: true })
     if (!databaseListReady) {
       throw new Error('無法讀取目前資料庫清單；為避免重複新增，已停止本次送出。')
     }
@@ -17418,7 +17685,7 @@ async function retryCentralWebsiteSync() {
     const message = `中央網站重新同步完成${duplicatePreventedCount ? `，並攔截 ${duplicatePreventedCount} 筆可能重複資料` : ''}。`
     apiStatusText.value = message
     setDatabaseSubmitFeedback(message, 'success', { toast: true })
-    await loadFrontendLadies({ silent: true, refresh: true })
+    await loadFrontendLadies({ silent: true, refresh: true, forceCentralMediaRefresh: true })
     return true
   } catch (error) {
     const message = formatNetworkError(error, '中央站重新同步失敗')
