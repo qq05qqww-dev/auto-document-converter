@@ -1,3 +1,5 @@
+<!-- 第 018-240 批：登出再登入保留最後選定縣市地區機房修正版 -->
+<!-- batch018-240-login-restore-last-selected-location-room-fix -->
 <!-- 第 018-239 批：底價／分鐘／小數節數斜線正式方案解析修正版 -->
 <!-- batch018-239-bottom-amount-minute-decimal-session-slash-price-parse-fix -->
 <!-- 第 018-238 批：年齡在罩杯前＋罩杯後置真奶描述身材解析與斜線價格誤判修正版 -->
@@ -4185,6 +4187,14 @@ async function deleteEmployeeAccount(profile) {
 
 async function logoutFromSupabase() {
   if (!supabaseConfigured) return
+
+  // 第 018-240 批：登出前先保存紅框工作區最後一次完整選擇。
+  // 本機以 Supabase user_id 分流；線上沿用既有 employee_rules 管理清單，不新增資料表或欄位。
+  const savedScope018240 = rememberCurrentScopeSelection({ syncOnline: false })
+  if (savedScope018240 && isOnlineWorkspaceReady()) {
+    await saveLocationOptionsOnline(locationOptions.value, { silent: true })
+  }
+
   await supabase.auth.signOut()
   resetOnlineRequestGuards018231()
   authUser.value = null
@@ -10360,6 +10370,11 @@ async function toggleRoomStatusDropdown018222() {
 
 function selectRoomStatusOption018222(room = '') {
   ruleScopeRoom.value = cleanScopeText(room)
+
+  // 第 018-240 批：紅框機房選定後立刻記住完整縣市／地區／類型／機房。
+  // 先同步寫入目前帳號的本機快取，再沿用既有管理清單列同步到線上，重新登入即可復原。
+  if (ruleScopeRoom.value) rememberCurrentScopeSelection({ syncOnline: true })
+
   closeRoomStatusDropdown018222()
 }
 
