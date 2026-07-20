@@ -1,3 +1,5 @@
+<!-- 第 018-238 批：年齡在罩杯前＋罩杯後置真奶描述身材解析與斜線價格誤判修正版 -->
+<!-- batch018-238-age-before-cup-postfix-breast-description-body-parse-slash-price-guard-fix -->
 <!-- 第 018-236 批：印尼國籍同義詞＋姓名前後與尾端說明解析修正版 -->
 <!-- 第 018-237 批：分鐘底價標記在前＋金額在後同行多方案解析修正版 -->
 <!-- batch018-237-minute-bottom-marker-amount-after-multi-pair-price-parse-fix -->
@@ -5114,7 +5116,9 @@ function bodyRuleFieldPattern(field) {
   if (field === 'cup' || field === 'braCup') {
     return {
       key: 'cup',
-      pattern: '(?:(?:真奶|天然|真|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓|奶|罩杯|胸)\\s*)?(?:\\d{2,3}\\s*)?([A-Ka-k])\\s*(?:奶|杯)?'
+      // 第 018-238 批：罩杯描述可寫在字母前或後。
+      // 例：真奶H、H真奶、天然H、H天然；文件2一律只取 H。
+      pattern: '(?:(?:真奶|天然|真|假|大|小|巨|美|漂亮|自然|軟|嫩|挺|飽|彈|圓|奶|罩杯|胸)\\s*)?(?:\\d{2,3}\\s*)?([A-Ka-k])\\s*(?:(?:真奶|天然奶?|天然|真|假奶?|假|大奶?|小奶?|巨奶?|美奶?|漂亮|自然|軟奶?|嫩奶?|挺奶?|飽滿|彈|圓|奶|杯))?'
     }
   }
   return null
@@ -12290,6 +12294,40 @@ function parseOutsideDeliveryBodyWithoutWeight018218(line) {
   }
 }
 
+
+// 第 018-238 批：支援「身高／體重／年齡／罩杯後置描述」。
+// 例：158/48/23y/H真奶、158／48／23歲／H天然、158 48 23 H假奶。
+// 罩杯描述可放在字母後方，但文件2只輸出 A～K 罩杯字母。
+function parseAgeBeforeCupPostfixDescriptionBodyLine018238(line) {
+  const normalized = normalizeDigits(String(line || ''))
+    .normalize('NFKC')
+    .replace(/[／]/g, '/')
+    .replace(/　/g, ' ')
+    .trim()
+
+  if (!normalized) return null
+
+  const separator = '(?:\\s*[/\\.．。·・,，:：_\\-]\\s*|\\s+)'
+  const cupSuffix = '(?:(?:真奶|天然奶?|天然|真|假奶?|假|大奶?|小奶?|巨奶?|美奶?|漂亮|自然|軟奶?|嫩奶?|挺奶?|飽滿|彈|圓|奶|杯))?'
+  const pattern = new RegExp(
+    `^\\s*(\\d{3})${separator}(\\d{2,3})${separator}(\\d{2})\\s*(?:歲|y|Y)?${separator}([A-Ka-k])\\s*${cupSuffix}\\s*$`,
+    'iu'
+  )
+  const matched = normalized.match(pattern)
+  if (!matched) return null
+
+  const parsed = validateParsedBodyResult({
+    height: matched[1],
+    weight: matched[2],
+    age: matched[3],
+    cup: matched[4]
+  })
+
+  return parsed
+    ? { ...parsed, matchedRule: '年齡在罩杯前＋罩杯後置描述' }
+    : null
+}
+
 function parseBody(text) {
   const rawLines = normalizeDigits(String(text || ''))
     .split('\n')
@@ -12305,6 +12343,9 @@ function parseBody(text) {
 
     const outsideDeliveryBodyWithoutWeight018218 = parseOutsideDeliveryBodyWithoutWeight018218(line)
     if (outsideDeliveryBodyWithoutWeight018218) return outsideDeliveryBodyWithoutWeight018218
+
+    const ageBeforeCupPostfixDescriptionBody018238 = parseAgeBeforeCupPostfixDescriptionBodyLine018238(line)
+    if (ageBeforeCupPostfixDescriptionBody018238) return ageBeforeCupPostfixDescriptionBody018238
 
     const advancedBody = parseBodyWithAdvancedRegex(line)
     if (advancedBody) return advancedBody
@@ -12974,7 +13015,9 @@ function parsePrices(text, increase, priceContext = {}) {
     }
 
     // 舊版寬鬆解析保留作為相容備援。
-    const compactAmountMatch = normalized.match(/^([0-9]+(?:\.[0-9]+)?)\s*\/\s*(\d{2,3})\s*\/\s*(NS|\d+\s*S?)/i)
+    // 第 018-238 批：必須整行結束，且節數必須明確帶 S／NS。
+    // 避免把「158/48/23y/H真奶」誤讀成「金額158／48分／23S」。
+    const compactAmountMatch = normalized.match(/^([0-9]+(?:\.[0-9]+)?)\s*\/\s*(\d{2,3})\s*\/\s*(NS|N\s*\/?\s*S|\d+\s*S)\s*$/i)
     if (compactAmountMatch) {
       const rawAmountNumber = Number(compactAmountMatch[1])
       const minutes = Number(compactAmountMatch[2])
