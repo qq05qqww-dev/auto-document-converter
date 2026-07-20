@@ -1,3 +1,5 @@
+<!-- 第 018-239 批：底價／分鐘／小數節數斜線正式方案解析修正版 -->
+<!-- batch018-239-bottom-amount-minute-decimal-session-slash-price-parse-fix -->
 <!-- 第 018-238 批：年齡在罩杯前＋罩杯後置真奶描述身材解析與斜線價格誤判修正版 -->
 <!-- batch018-238-age-before-cup-postfix-breast-description-body-parse-slash-price-guard-fix -->
 <!-- 第 018-236 批：印尼國籍同義詞＋姓名前後與尾端說明解析修正版 -->
@@ -5757,7 +5759,7 @@ function parseSlashPriceLine018234(line) {
     return { valid: false, order: '', minutes: 0, amount: 0, sessionLabel: '' }
   }
 
-  const sessionPattern = '(NS|N\\s*\\/?\\s*S|\\d+\\s*S?)'
+  const sessionPattern = '(NS|N\\s*\\/?\\s*S|\\d+(?:\\.\\d+)?\\s*S?)'
   const minuteFirstMatch = normalized.match(new RegExp(
     `^(\\d{2,3})\\s*\\/\\s*([0-9]+(?:\\.[0-9]+)?)\\s*([kK千]?)\\s*\\/\\s*${sessionPattern}$`,
     'i'
@@ -5821,7 +5823,7 @@ function parseSlashPriceLine018234(line) {
 
 
 // 第 018-235 批：支援「底價在前、分鐘在後」的正式方案。
-// 例：2.6底 30分、2.9底/50分、2600底 30分鐘、底2.6 30分、2.6底 30分 1S。
+// 例：2.6底 30分、2.9底/50分、2.0底/50/0.5、3.0底/50/1S、底2.6 30分。
 // 金額仍交由既有 parseBottomPriceAmount()，保留類型＋國籍的兩位數底價規則與所有加價／精準價格邏輯。
 function parseBottomAmountFirstMinuteLine018235(line, priceContext = {}) {
   const normalized = normalizeDigits(String(line || ''))
@@ -5836,13 +5838,15 @@ function parseBottomAmountFirstMinuteLine018235(line, priceContext = {}) {
   }
 
   const separatorPattern = '(?:\\s*[/|,，、:：-]\\s*|\\s+)'
-  const sessionPattern = '(NS|N\\s*\\/?\\s*S|\\d+\\s*S?)'
+  // 第 018-239 批：節數可為 0.5／0.5S，分鐘在斜線格式中可省略「分」。
+  // 因為整行必須帶「底」並完整符合，所以不會把身材斜線資料誤判成價格。
+  const sessionPattern = '(NS|N\\s*\\/?\\s*S|\\d+(?:\\.\\d+)?\\s*S?)'
   const suffixBottomPattern = new RegExp(
-    `^([0-9]+(?:\\.[0-9]+)?)\\s*([kK千]?)\\s*底(?:價)?${separatorPattern}(\\d{2,3})\\s*(?:分鐘|分)(?:${separatorPattern}${sessionPattern})?$`,
+    `^([0-9]+(?:\\.[0-9]+)?)\\s*([kK千]?)\\s*底(?:價)?${separatorPattern}(\\d{2,3})\\s*(?:分鐘|分)?(?:${separatorPattern}${sessionPattern})?$`,
     'i'
   )
   const prefixBottomPattern = new RegExp(
-    `^底(?:價)?\\s*([0-9]+(?:\\.[0-9]+)?)\\s*([kK千]?)${separatorPattern}(\\d{2,3})\\s*(?:分鐘|分)(?:${separatorPattern}${sessionPattern})?$`,
+    `^底(?:價)?\\s*([0-9]+(?:\\.[0-9]+)?)\\s*([kK千]?)${separatorPattern}(\\d{2,3})\\s*(?:分鐘|分)?(?:${separatorPattern}${sessionPattern})?$`,
     'i'
   )
 
@@ -5945,7 +5949,7 @@ function isPriceLine(line) {
   // 例：20底1.4 / 40底1.9、60底2.3 / 90底2.8 1S。
   if (parseMinuteBottomAmountPairs018237(value).valid) return true
 
-  // 第 018-235 批：底價在前＋分鐘在後，例如 2.6底 30分、2.9底/50分。
+  // 第 018-235／018-239 批：底價在前＋分鐘在後；亦支援 2.0底/50/0.5、3.0底/50/1S。
   if (parseBottomAmountFirstMinuteLine018235(value).valid) return true
 
   // 30分/1S 2.2K、60分鐘 回3200、短鐘30分/2.5底
@@ -10029,7 +10033,7 @@ async function submitDocument4ToApi() {
 
 function parsePriceTextToObject(priceText) {
   const value = String(priceText || '').trim()
-  const match = value.match(/^([0-9]+(?:\.[0-9]+)?)K\/(\d+)\/(NS|\d+S)$/i)
+  const match = value.match(/^([0-9]+(?:\.[0-9]+)?)K\/(\d+)\/(NS|\d+(?:\.\d+)?S)$/i)
   if (match) {
     const sessionLabel = normalizePriceSessionLabel(match[3])
 
@@ -12612,15 +12616,18 @@ function normalizePriceSessionLabel(value) {
   const text = String(value || '').trim().toUpperCase().replace(/\s+/g, '')
   if (text === 'NS' || text === 'N/S') return 'NS'
 
-  const numericMatch = text.match(/^(\d+)S?$/i)
-  if (numericMatch) return `${Number(numericMatch[1])}S`
+  // 第 018-239 批：支援半節／小數節數。0.5、0.5S、.5 都統一輸出為 0.5S。
+  const numericMatch = text.match(/^(\d*(?:\.\d+)?)S?$/i)
+  if (numericMatch && numericMatch[1] && Number(numericMatch[1]) > 0) {
+    return `${Number(numericMatch[1])}S`
+  }
 
   return '1S'
 }
 
 function getPriceSessionSortValue(sessionLabel) {
   if (sessionLabel === 'NS') return 999
-  const match = String(sessionLabel || '').match(/^(\d+)S$/i)
+  const match = String(sessionLabel || '').match(/^(\d+(?:\.\d+)?)S$/i)
   return match ? Number(match[1]) : 1
 }
 
@@ -12629,7 +12636,7 @@ function extractPriceSessionLabel(line) {
   const nsMatch = normalized.match(/(?:^|[^A-Z0-9])N\s*\/?\s*S(?=$|[^A-Z0-9])/i)
   if (nsMatch) return 'NS'
 
-  const sessionMatch = normalized.match(/(?:^|[^A-Z0-9])(\d+)\s*S(?=$|[^A-Z0-9])/i)
+  const sessionMatch = normalized.match(/(?:^|[^A-Z0-9])(\d+(?:\.\d+)?)\s*S(?=$|[^A-Z0-9])/i)
   if (sessionMatch) return `${Number(sessionMatch[1])}S`
 
   return '1S'
@@ -12744,7 +12751,7 @@ function parsePrices(text, increase, priceContext = {}) {
     }
 
     // 第 018-235 批：支援「底價在前＋分鐘在後」，並共用 isPriceLine 的同一解析器。
-    // 例：2.6底 30分、2.9底 50分、2600底/30分鐘、底2.6 30分、2.6底 30分 1S。
+    // 例：2.6底 30分、2.9底 50分、2.0底/50/0.5、3.0底/50/1S、底2.6 30分。
     // 解析後仍走既有 pushPrice()，所以國籍、固定、分鐘加價、精準價格與區間規則全部保留。
     const bottomAmountFirstMinute018235 = parseBottomAmountFirstMinuteLine018235(normalized, priceContext)
     if (bottomAmountFirstMinute018235.valid) {
