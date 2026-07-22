@@ -1,4 +1,6 @@
-﻿<!-- 第 018-244 批：文件1貼上英文數字金額轉數字＋共用價格移到小姐標題下方版 -->
+﻿<!-- 第 018-245 批：文件1貼上事件直接接管＋input 後備正規化修正版 -->
+<!-- batch018-245-source-paste-direct-clipboard-input-fallback-fix -->
+<!-- 第 018-244 批：文件1貼上英文數字金額轉數字＋共用價格移到小姐標題下方版 -->
 <!-- batch018-244-paste-english-digit-price-move-under-lady-header -->
 <!-- 第 018-243 批：文件開頭共用價格列套用到小姐區塊修正版 -->
 <!-- batch018-243-leading-shared-price-lines-attach-to-record-blocks-fix -->
@@ -1714,10 +1716,12 @@
         </div>
 
         <textarea
+          ref="sourceTextareaRef018245"
           v-model="sourceText"
           class="work-textarea"
           placeholder="請貼上店家最新資訊。系統會先清掉符號，再抓國籍+小姐名或小姐名+國籍。"
-          @paste="handleSourceTextPaste"
+          @paste="handleSourceTextPaste018245"
+          @input="handleSourceTextInput018245"
         ></textarea>
 
         <div class="button-row">
@@ -2870,19 +2874,87 @@ function normalizeSourceTextAfterPaste(text = '') {
   return normalizeSourceTextAfterPaste018244(text).text
 }
 
-function handleSourceTextPaste() {
-  window.setTimeout(() => {
-    const result018244 = normalizeSourceTextAfterPaste018244(sourceText.value)
-    if (result018244.text !== sourceText.value) sourceText.value = result018244.text
+// 第 018-245 批：不能再只靠 paste 後 setTimeout(0) 讀 v-model。
+// 某些瀏覽器／右鍵貼上流程中，Vue 的 v-model 更新會晚於該計時器，
+// 導致正規化拿到貼上前舊值，所以文件1畫面完全不變。
+const sourceTextareaRef018245 = ref(null)
+let sourcePasteNormalizeTimer018245 = 0
+let sourcePasteNormalizeRequest018245 = 0
 
-    if (result018244.convertedEnglishPriceCount || result018244.movedPriceLineCount) {
-      statusMessage.value = SOURCE_PASTE_REORDERED_PRICE_NOTICE018244
-      return
-    }
-
-    statusMessage.value = SOURCE_PASTE_TWO_BLANK_LINES_NOTICE
-  }, 0)
+function updateSourcePasteStatus018245(result = {}) {
+  if (result.convertedEnglishPriceCount || result.movedPriceLineCount) {
+    statusMessage.value = SOURCE_PASTE_REORDERED_PRICE_NOTICE018244
+    return
+  }
+  statusMessage.value = SOURCE_PASTE_TWO_BLANK_LINES_NOTICE
 }
+
+function applySourcePasteNormalization018245(rawText = '') {
+  const result018245 = normalizeSourceTextAfterPaste018244(rawText)
+  sourceText.value = result018245.text
+  updateSourcePasteStatus018245(result018245)
+  return result018245
+}
+
+function scheduleSourcePasteNormalization018245(delayMs = 40) {
+  if (typeof window === 'undefined') return
+  const requestId = ++sourcePasteNormalizeRequest018245
+  if (sourcePasteNormalizeTimer018245) window.clearTimeout(sourcePasteNormalizeTimer018245)
+  sourcePasteNormalizeTimer018245 = window.setTimeout(() => {
+    if (requestId !== sourcePasteNormalizeRequest018245) return
+    sourcePasteNormalizeTimer018245 = 0
+    applySourcePasteNormalization018245(sourceText.value)
+  }, Math.max(0, Number(delayMs) || 0))
+}
+
+function handleSourceTextPaste018245(event) {
+  const clipboardText = event?.clipboardData?.getData?.('text/plain')
+  const target = event?.currentTarget
+
+  // 正常鍵盤／右鍵貼上：直接讀剪貼簿文字並接管本次貼上，
+  // 不再等待瀏覽器預設貼上與 v-model 更新先後順序。
+  if (typeof clipboardText === 'string' && clipboardText.length) {
+    event.preventDefault()
+
+    const currentText = String(sourceText.value || '')
+    const selectionStart = Number.isFinite(Number(target?.selectionStart))
+      ? Number(target.selectionStart)
+      : currentText.length
+    const selectionEnd = Number.isFinite(Number(target?.selectionEnd))
+      ? Number(target.selectionEnd)
+      : selectionStart
+    const mergedText = `${currentText.slice(0, selectionStart)}${clipboardText}${currentText.slice(selectionEnd)}`
+    const result018245 = applySourcePasteNormalization018245(mergedText)
+
+    nextTick(() => {
+      const textarea = sourceTextareaRef018245.value || target
+      if (!textarea?.setSelectionRange) return
+      const caretPosition = result018245.text.length
+      textarea.focus?.()
+      textarea.setSelectionRange(caretPosition, caretPosition)
+    })
+    return
+  }
+
+  // iOS／特殊瀏覽器若不提供 clipboardData，讓瀏覽器先完成預設貼上，
+  // 再由 inputType 後備與延遲檢查讀取最新版 v-model。
+  scheduleSourcePasteNormalization018245(80)
+}
+
+function handleSourceTextInput018245(event) {
+  const inputType = String(event?.inputType || event?.dataTransfer?.dropEffect || '')
+  if (inputType === 'insertFromPaste' || inputType === 'insertFromDrop') {
+    scheduleSourcePasteNormalization018245(20)
+  }
+}
+
+onBeforeUnmount(() => {
+  sourcePasteNormalizeRequest018245 += 1
+  if (sourcePasteNormalizeTimer018245 && typeof window !== 'undefined') {
+    window.clearTimeout(sourcePasteNormalizeTimer018245)
+    sourcePasteNormalizeTimer018245 = 0
+  }
+})
 
 const LEGACY_RULE_STORAGE_KEYS = [
   'auto-document-converter-rules-batch009-6',
