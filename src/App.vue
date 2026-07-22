@@ -1,4 +1,8 @@
-﻿<!-- batch018-250-verified-overwrite-build-deploy-chain-fix -->
+﻿<!-- batch018-252-owner-base-employee-room-final-override -->
+<!-- 第 018-252 批：老闆公版作為基礎＋員工目前機房規則最後覆蓋版 -->
+<!-- batch018-251-owner-price-field-visible-owner-first-employee-fallback -->
+<!-- 第 018-251 批：老闆顯示價格欄位規則＋老闆公版優先、員工機房未命中補充版 -->
+<!-- batch018-250-verified-overwrite-build-deploy-chain-fix -->
 <!-- 第 018-250 批：價格規則卡片固定分區＋覆蓋 Build 部署全鏈驗證修正版 -->
 <!-- 第 018-249 批：價格欄位規則卡片改為固定上下分區版 -->
 <!-- batch018-249-price-field-rule-card-fixed-stacked-layout -->
@@ -1104,7 +1108,15 @@
         <div class="format-settings-tabs" role="tablist" aria-label="欄位辨識設定">
           <button type="button" :class="{ active: formatSettingsTab === 'header' }" @click="formatSettingsTab = 'header'">小姐標題規則</button>
           <button type="button" :class="{ active: formatSettingsTab === 'body' }" @click="formatSettingsTab = 'body'">身材欄位規則</button>
-          <button type="button" :class="{ active: formatSettingsTab === 'price-field' }" @click="formatSettingsTab = 'price-field'">價格欄位規則</button>
+          <!-- 第 018-251 批：價格欄位規則對老闆與員工都顯示；只有老闆特殊格式限制老闆。 -->
+          <button
+            type="button"
+            class="price-field-tab018251 price-field-tab018252"
+            :class="{ active: formatSettingsTab === 'price-field' }"
+            @click="formatSettingsTab = 'price-field'"
+          >
+            價格欄位規則
+          </button>
           <button type="button" :class="{ active: formatSettingsTab === 'output' }" @click="formatSettingsTab = 'output'">文件2輸出格式</button>
           <button v-if="isOwner" type="button" :class="{ active: formatSettingsTab === 'regex' }" @click="formatSettingsTab = 'regex'">老闆特殊格式</button>
         </div>
@@ -1236,14 +1248,14 @@
         <section v-else-if="formatSettingsTab === 'price-field'" class="recognition-settings-panel price-field-rules-panel018247">
           <div class="recognition-panel-intro">
             <strong>每間機房可以自行設定「文件1每一欄代表什麼」，並決定文件2價格顯示順序。</strong>
-            <span v-if="isOwner">目前編輯的是老闆全站公版；所有員工都會看得到並自動套用。</span>
-            <span v-else>老闆公版只供查看；你可以新增、修改與刪除目前授權機房的補充規則，儲存後只綁定目前登入帳號與目前機房。</span>
+            <span v-if="isOwner" class="price-field-priority-hint018251 price-field-priority-hint018252">目前編輯的是老闆全站公版，會先作為所有機房的基礎規則；員工目前機房有補充時，最後以員工規則覆蓋相同格式。</span>
+            <span v-else class="price-field-priority-hint018251 price-field-priority-hint018252">老闆公版會先載入作為基礎；你目前機房的補充規則會最後套用，相同格式以員工規則為主。</span>
           </div>
 
           <div v-if="!isOwner && ownerPriceFieldRulesForEmployee018247.length" class="price-field-owner-readonly018247">
             <div class="price-field-section-title018247">
-              <strong>🔒 老闆公版價格規則</strong>
-              <span>唯讀，員工不能修改</span>
+              <strong>🔒 老闆公版價格規則（第一層基礎）</strong>
+              <span>唯讀；目前機房補充會最後覆蓋相同格式</span>
             </div>
             <div class="recognition-rule-list">
               <article
@@ -5067,15 +5079,33 @@ function getPriceFieldRuleSignature018247(rule = {}) {
 function mergePriceFieldRecognitionRuleLists018247(ownerValue, supplementValue) {
   const ownerRules = normalizePriceFieldRecognitionRules018247(ownerValue)
   const supplementRules = normalizePriceFieldRecognitionRules018247(supplementValue)
-  const result = []
-  const seen = new Set()
-  ;[...supplementRules, ...ownerRules].forEach(rule => {
+
+  // 第 018-252 批：
+  // 1. 老闆公版先作為完整基礎。
+  // 2. 員工目前機房的「已啟用＋有效」規則為最後覆蓋層。
+  // 3. 相同 signature 時移除老闆版本，實際以員工版本為主。
+  // 4. 員工停用或無效的補充規則，不得反向停用老闆公版。
+  const activeSupplementRules = supplementRules.filter(
+    rule => rule.enabled !== false && isPriceFieldRuleStructureValid018247(rule)
+  )
+  const supplementSignatures = new Set(
+    activeSupplementRules
+      .map(rule => getPriceFieldRuleSignature018247(rule))
+      .filter(Boolean)
+  )
+
+  const ownerFallbackRules = ownerRules.filter(rule => {
+    if (rule.enabled === false || !isPriceFieldRuleStructureValid018247(rule)) {
+      return false
+    }
     const signature = getPriceFieldRuleSignature018247(rule)
-    if (!signature || seen.has(signature)) return
-    seen.add(signature)
-    result.push(cloneRuleFieldValue(rule))
+    return Boolean(signature) && !supplementSignatures.has(signature)
   })
-  return result
+
+  // 員工規則放在 runtime 最前面：
+  // 除了覆蓋同 signature，也能在不同規則同時可辨識時維持機房規則優先。
+  return [...activeSupplementRules, ...ownerFallbackRules]
+    .map(rule => cloneRuleFieldValue(rule))
 }
 
 const ownerPriceFieldRulesForEmployee018247 = computed(() => {
@@ -13592,7 +13622,7 @@ function parsePrices(text, increase, priceContext = {}) {
       .replace(/　/g, ' ')
       .trim()
 
-    // 第 018-247 批：先套用目前員工機房補充，再套老闆公版價格欄位規則。
+    // 第 018-252 批：老闆公版先作為基礎，實際辨識時由員工目前機房規則最後覆蓋並優先命中。
     const configuredPrice018247 = parsePriceFieldRuleLine018247(normalized)
     if (configuredPrice018247.valid) {
       pushPrice(
@@ -28824,6 +28854,27 @@ button:disabled {
   .recognition-format-modal .price-field-rule-actions018250 button {
     width: 100%;
   }
+}
+
+
+/* 第 018-251 批：價格欄位規則所有角色可見，並清楚標示老闆公版優先。 */
+.price-field-priority-hint018251 {
+  font-weight: 700;
+  color: #36556f;
+}
+
+.price-field-tab018251 {
+  min-width: 0;
+}
+
+
+/* 第 018-252 批：老闆公版為基礎，員工目前機房規則為最後覆蓋層。 */
+.price-field-priority-hint018252 {
+  color: #2f536e;
+}
+
+.price-field-tab018252 {
+  min-width: 0;
 }
 
 </style>
