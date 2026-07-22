@@ -1,4 +1,10 @@
-﻿<!-- 第 018-247 批：員工可維護機房價格欄位規則＋文件2自訂價格輸出格式版 -->
+﻿<!-- batch018-250-verified-overwrite-build-deploy-chain-fix -->
+<!-- 第 018-250 批：價格規則卡片固定分區＋覆蓋 Build 部署全鏈驗證修正版 -->
+<!-- 第 018-249 批：價格欄位規則卡片改為固定上下分區版 -->
+<!-- batch018-249-price-field-rule-card-fixed-stacked-layout -->
+<!-- 第 018-248 批：價格欄位規則桌機卡片完整對齊＋響應式不擠壓修正版 -->
+<!-- batch018-248-price-field-rule-layout-alignment-responsive-fix -->
+<!-- 第 018-247 批：員工可維護機房價格欄位規則＋文件2自訂價格輸出格式版 -->
 <!-- batch018-247-employee-room-price-field-rules-custom-document2-output -->
 <!-- 第 018-246 批：中央 API 正式網域＋45 秒逾時＋失敗自動重試修正版 -->
 <!-- batch018-246-central-api-formal-domain-timeout-retry-error-detail-fix -->
@@ -1310,50 +1316,59 @@
             <article
               v-for="(rule, index) in priceFieldRecognitionRules018247"
               :key="rule.id || `price-field-rule-${index}`"
-              class="recognition-rule-card price-field-rule-card018247"
+              class="price-field-rule-card018250"
             >
-              <label class="recognition-enable-toggle">
-                <input v-model="rule.enabled" type="checkbox" />
-                啟用
-              </label>
-              <div class="recognition-rule-main price-field-rule-main018247">
-                <input v-model="rule.name" class="recognition-rule-name" aria-label="價格規則名稱" />
-                <div class="price-field-rule-fields018247">
-                  <label v-for="position in 4" :key="`${rule.id}-field-${position}`">
-                    第 {{ position }} 欄
-                    <select v-model="rule.fields[position - 1]">
-                      <option value="">不使用</option>
-                      <option v-for="option in priceFieldOptions018247" :key="option.value" :value="option.value">{{ option.label }}</option>
-                    </select>
-                  </label>
+              <div class="price-field-rule-card-head018250">
+                <label class="recognition-enable-toggle price-field-rule-enable018250">
+                  <input v-model="rule.enabled" type="checkbox" />
+                  啟用
+                </label>
+                <label class="price-field-rule-name018250">
+                  規則名稱
+                  <input v-model="rule.name" class="recognition-rule-name" aria-label="價格規則名稱" />
+                </label>
+                <div class="recognition-rule-actions price-field-rule-actions018250">
+                  <button type="button" :disabled="index === 0" @click="moveRecognitionRule(priceFieldRecognitionRules018247, index, -1)">上移</button>
+                  <button type="button" :disabled="index === priceFieldRecognitionRules018247.length - 1" @click="moveRecognitionRule(priceFieldRecognitionRules018247, index, 1)">下移</button>
+                  <button type="button" class="danger-text-btn" @click="removeRecognitionRule(priceFieldRecognitionRules018247, index)">刪除</button>
                 </div>
-                <div class="price-field-rule-settings018247">
-                  <label>
-                    分隔方式
-                    <select v-model="rule.separator">
-                      <option v-for="option in priceFieldSeparatorOptions018247" :key="option.value" :value="option.value">{{ option.label }}</option>
-                    </select>
-                  </label>
-                  <label>
-                    預設節數
-                    <input v-model="rule.defaultSession" placeholder="1S" />
-                  </label>
-                  <label class="price-field-rule-output018247">
-                    文件2輸出
-                    <input v-model="rule.outputTemplate" placeholder="{價格K}/{分鐘}/{節數}" />
-                  </label>
-                  <label class="price-field-rule-example018247">
-                    來源範例
-                    <input v-model="rule.example" placeholder="30/2.5/1" />
-                  </label>
-                </div>
-                <small class="price-field-rule-hint018247">{{ getPriceFieldRuleValidationMessage018247(rule) }}</small>
               </div>
-              <div class="recognition-rule-actions">
-                <button type="button" :disabled="index === 0" @click="moveRecognitionRule(priceFieldRecognitionRules018247, index, -1)">上移</button>
-                <button type="button" :disabled="index === priceFieldRecognitionRules018247.length - 1" @click="moveRecognitionRule(priceFieldRecognitionRules018247, index, 1)">下移</button>
-                <button type="button" class="danger-text-btn" @click="removeRecognitionRule(priceFieldRecognitionRules018247, index)">刪除</button>
+
+              <div class="price-field-rule-fields018250">
+                <label v-for="position in 4" :key="`${rule.id}-field-${position}`">
+                  第 {{ position }} 欄
+                  <select v-model="rule.fields[position - 1]">
+                    <option value="">不使用</option>
+                    <option v-for="option in priceFieldOptions018247" :key="option.value" :value="option.value">{{ option.label }}</option>
+                  </select>
+                </label>
               </div>
+
+              <div class="price-field-rule-basic-settings018250">
+                <label>
+                  分隔方式
+                  <select v-model="rule.separator">
+                    <option v-for="option in priceFieldSeparatorOptions018247" :key="option.value" :value="option.value">{{ option.label }}</option>
+                  </select>
+                </label>
+                <label>
+                  預設節數
+                  <input v-model="rule.defaultSession" placeholder="1S" />
+                </label>
+              </div>
+
+              <div class="price-field-rule-output-settings018250">
+                <label>
+                  文件2輸出
+                  <input v-model="rule.outputTemplate" placeholder="{價格K}/{分鐘}/{節數}" />
+                </label>
+                <label>
+                  來源範例
+                  <input v-model="rule.example" placeholder="30/2.5/1" />
+                </label>
+              </div>
+
+              <small class="price-field-rule-hint018247 price-field-rule-hint018250">{{ getPriceFieldRuleValidationMessage018247(rule) }}</small>
             </article>
           </div>
           <p v-else class="recognition-empty-hint">目前這一層尚未新增價格欄位規則；轉換時仍會使用老闆公版與系統內建價格解析。</p>
@@ -28501,6 +28516,313 @@ button:disabled {
   .price-field-rule-output018247,
   .price-field-rule-example018247 {
     grid-column: auto;
+  }
+}
+
+
+
+/* 第 018-248 批：修正價格欄位規則被既有彈窗三欄 CSS 壓縮走樣 */
+.recognition-format-modal .price-field-builder-grid018247 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: end;
+}
+
+/* 新增區固定成四列：基本設定／四個來源欄／輸出與範例／新增按鈕 */
+.recognition-format-modal .price-field-builder-grid018247 > label:nth-child(1) {
+  grid-column: 1 / 3;
+  grid-row: 1;
+}
+
+.recognition-format-modal .price-field-builder-grid018247 > label:nth-child(6) {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.recognition-format-modal .price-field-builder-grid018247 > label:nth-child(7) {
+  grid-column: 4;
+  grid-row: 1;
+}
+
+.recognition-format-modal .price-field-builder-grid018247 > label:nth-child(2) {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.recognition-format-modal .price-field-builder-grid018247 > label:nth-child(3) {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.recognition-format-modal .price-field-builder-grid018247 > label:nth-child(4) {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.recognition-format-modal .price-field-builder-grid018247 > label:nth-child(5) {
+  grid-column: 4;
+  grid-row: 2;
+}
+
+.recognition-format-modal .price-field-builder-grid018247 > .price-field-output-template-field018247 {
+  grid-column: 1 / 3;
+  grid-row: 3;
+}
+
+.recognition-format-modal .price-field-builder-grid018247 > .price-field-example-field018247 {
+  grid-column: 3 / 5;
+  grid-row: 3;
+}
+
+.recognition-format-modal .price-field-builder-grid018247 > .price-field-add-btn018247 {
+  grid-column: 1 / -1;
+  grid-row: 4;
+  margin-top: 2px;
+}
+
+/* 已建立規則：保留啟用／內容／操作三區，但內容本身一定直向展開 */
+.recognition-format-modal .price-field-rule-card018247 {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 14px;
+  overflow: hidden;
+}
+
+.recognition-format-modal .price-field-rule-main018247 {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 12px;
+  min-width: 0;
+  width: 100%;
+}
+
+.recognition-format-modal .price-field-rule-main018247 > .recognition-rule-name {
+  min-width: 0;
+}
+
+.recognition-format-modal .price-field-rule-fields018247 {
+  grid-template-columns: repeat(4, minmax(130px, 1fr));
+  width: 100%;
+  min-width: 0;
+}
+
+.recognition-format-modal .price-field-rule-settings018247 {
+  grid-template-columns:
+    minmax(145px, 0.7fr)
+    minmax(125px, 0.55fr)
+    minmax(230px, 1.25fr)
+    minmax(230px, 1.25fr);
+  width: 100%;
+  min-width: 0;
+}
+
+.recognition-format-modal .price-field-rule-settings018247 .price-field-rule-output018247,
+.recognition-format-modal .price-field-rule-settings018247 .price-field-rule-example018247 {
+  grid-column: auto;
+}
+
+.recognition-format-modal .price-field-rule-card018247 .recognition-rule-actions {
+  min-width: 168px;
+  align-content: flex-start;
+}
+
+@media (max-width: 1180px) {
+  .recognition-format-modal .price-field-builder-grid018247 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .recognition-format-modal .price-field-builder-grid018247 > label,
+  .recognition-format-modal .price-field-builder-grid018247 > .price-field-output-template-field018247,
+  .recognition-format-modal .price-field-builder-grid018247 > .price-field-example-field018247,
+  .recognition-format-modal .price-field-builder-grid018247 > .price-field-add-btn018247 {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .recognition-format-modal .price-field-builder-grid018247 > .price-field-output-template-field018247,
+  .recognition-format-modal .price-field-builder-grid018247 > .price-field-example-field018247,
+  .recognition-format-modal .price-field-builder-grid018247 > .price-field-add-btn018247 {
+    grid-column: 1 / -1;
+  }
+
+  .recognition-format-modal .price-field-rule-card018247 {
+    grid-template-columns: 1fr;
+  }
+
+  .recognition-format-modal .price-field-rule-card018247 .recognition-enable-toggle,
+  .recognition-format-modal .price-field-rule-card018247 .price-field-rule-main018247,
+  .recognition-format-modal .price-field-rule-card018247 .recognition-rule-actions {
+    grid-column: 1;
+  }
+
+  .recognition-format-modal .price-field-rule-card018247 .recognition-rule-actions {
+    min-width: 0;
+    justify-content: flex-start;
+  }
+
+  .recognition-format-modal .price-field-rule-fields018247,
+  .recognition-format-modal .price-field-rule-settings018247 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .recognition-format-modal .price-field-rule-settings018247 .price-field-rule-output018247,
+  .recognition-format-modal .price-field-rule-settings018247 .price-field-rule-example018247 {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 720px) {
+  .recognition-format-modal .price-field-builder-grid018247,
+  .recognition-format-modal .price-field-rule-fields018247,
+  .recognition-format-modal .price-field-rule-settings018247 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .recognition-format-modal .price-field-builder-grid018247 > .price-field-output-template-field018247,
+  .recognition-format-modal .price-field-builder-grid018247 > .price-field-example-field018247,
+  .recognition-format-modal .price-field-builder-grid018247 > .price-field-add-btn018247,
+  .recognition-format-modal .price-field-rule-settings018247 .price-field-rule-output018247,
+  .recognition-format-modal .price-field-rule-settings018247 .price-field-rule-example018247 {
+    grid-column: auto;
+  }
+}
+
+
+/* 第 018-249 批：價格欄位規則卡片改用獨立上下分區，不再沿用通用 recognition-rule-card 三欄版型 */
+.recognition-format-modal .price-field-rule-card018250 {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  width: 100%;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid rgba(89, 116, 149, 0.2);
+  border-radius: 16px;
+  background: rgba(249, 251, 254, 0.96);
+  box-sizing: border-box;
+}
+
+.recognition-format-modal .price-field-rule-card018250 label {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  color: #5b6f86;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.recognition-format-modal .price-field-rule-card018250 input,
+.recognition-format-modal .price-field-rule-card018250 select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(92, 116, 146, 0.26);
+  border-radius: 12px;
+  background: #fff;
+  color: #24364d;
+  padding: 10px 12px;
+  font: inherit;
+  box-sizing: border-box;
+}
+
+.recognition-format-modal .price-field-rule-card-head018250 {
+  display: grid;
+  grid-template-columns: auto minmax(260px, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+  min-width: 0;
+}
+
+.recognition-format-modal .price-field-rule-enable018250 {
+  display: inline-flex;
+  grid-auto-flow: column;
+  align-items: center;
+  align-self: end;
+  gap: 7px;
+  padding: 0 2px 11px;
+  white-space: nowrap;
+}
+
+.recognition-format-modal .price-field-rule-enable018250 input {
+  width: auto;
+}
+
+.recognition-format-modal .price-field-rule-name018250 {
+  min-width: 0;
+}
+
+.recognition-format-modal .price-field-rule-actions018250 {
+  align-self: end;
+  min-width: 0;
+  padding-bottom: 2px;
+}
+
+.recognition-format-modal .price-field-rule-fields018250 {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  min-width: 0;
+}
+
+.recognition-format-modal .price-field-rule-basic-settings018250 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  min-width: 0;
+}
+
+.recognition-format-modal .price-field-rule-output-settings018250 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  min-width: 0;
+}
+
+.recognition-format-modal .price-field-rule-hint018250 {
+  display: block;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 11px;
+  background: rgba(239, 246, 255, 0.72);
+  color: #49647e;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1000px) {
+  .recognition-format-modal .price-field-rule-card-head018250 {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .recognition-format-modal .price-field-rule-actions018250 {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+
+  .recognition-format-modal .price-field-rule-fields018250 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .recognition-format-modal .price-field-rule-card-head018250,
+  .recognition-format-modal .price-field-rule-fields018250,
+  .recognition-format-modal .price-field-rule-basic-settings018250,
+  .recognition-format-modal .price-field-rule-output-settings018250 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .recognition-format-modal .price-field-rule-enable018250 {
+    justify-self: start;
+    padding-bottom: 0;
+  }
+
+  .recognition-format-modal .price-field-rule-actions018250 {
+    grid-column: auto;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .recognition-format-modal .price-field-rule-actions018250 button {
+    width: 100%;
   }
 }
 
