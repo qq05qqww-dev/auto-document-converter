@@ -1,4 +1,6 @@
-﻿<!-- 第 018-242 批：分鐘／節數斜線在前＋金額在後正式價格解析修正版 -->
+﻿<!-- 第 018-243 批：文件開頭共用價格列套用到小姐區塊修正版 -->
+<!-- batch018-243-leading-shared-price-lines-attach-to-record-blocks-fix -->
+<!-- 第 018-242 批：分鐘／節數斜線在前＋金額在後正式價格解析修正版 -->
 <!-- batch018-242-minute-session-slash-amount-after-price-parse-fix -->
 <!-- 第 018-241 批：機房狀態下拉依名稱長度由長到短排序版 -->
 <!-- batch018-241-room-status-name-length-desc-sort -->
@@ -11339,10 +11341,29 @@ function splitBlocks(text) {
 
   const uniqueStartIndexes = Array.from(new Set(startIndexes)).sort((a, b) => a - b)
   if (uniqueStartIndexes.length) {
+    // 第 018-243 批：文件開頭位於第一位小姐標題之前的正式價格列，
+    // 是整份店家資訊的共用價格表，不能在 splitBlocks() 從第一個標題切筆時被丟掉。
+    // 只收 isPriceLine() 已確認的正式價格列，避免把店名、日期、公告或其他前言誤套進小姐資料。
+    const leadingSharedPriceLines018243 = lines
+      .slice(0, uniqueStartIndexes[0])
+      .map(line => String(line || '').trim())
+      .filter(line => line && isPriceLine(line))
+
     return uniqueStartIndexes
       .map((startIndex, index) => {
         const endIndex = index + 1 < uniqueStartIndexes.length ? uniqueStartIndexes[index + 1] : lines.length
-        return lines.slice(startIndex, endIndex).join('\n').trim()
+        const recordLines = lines.slice(startIndex, endIndex)
+        const recordText = recordLines.join('\n').trim()
+
+        // 若這位小姐區塊已有自己的正式價格，就以區塊內價格為準；
+        // 只有區塊內沒有正式價格時，才補上文件開頭的共用價格表。
+        const recordHasOwnPrice018243 = recordLines.some(line => isPriceLine(line))
+          || Boolean(extractHeaderStandaloneAmount018207(recordText, findHeaderInBlock(recordText)))
+        const effectiveLines = leadingSharedPriceLines018243.length && !recordHasOwnPrice018243
+          ? [...leadingSharedPriceLines018243, ...recordLines]
+          : recordLines
+
+        return effectiveLines.join('\n').trim()
       })
       // 第 018-172 批：文件2本來就允許顯示「缺少身材／價格」的不完整小姐，
       // 因此切筆後只要仍有可辨識的小姐標題就必須保留。
