@@ -1,4 +1,6 @@
-﻿<!-- 第 018-241 批：機房狀態下拉依名稱長度由長到短排序版 -->
+﻿<!-- 第 018-242 批：分鐘／節數斜線在前＋金額在後正式價格解析修正版 -->
+<!-- batch018-242-minute-session-slash-amount-after-price-parse-fix -->
+<!-- 第 018-241 批：機房狀態下拉依名稱長度由長到短排序版 -->
 <!-- batch018-241-room-status-name-length-desc-sort -->
 <!-- 第 018-240 批：登出再登入保留最後選定縣市地區機房修正版 -->
 <!-- batch018-240-login-restore-last-selected-location-room-fix -->
@@ -5759,6 +5761,54 @@ onBeforeUnmount(() => {
 // 新增分鐘／金額／節數：20/1500/1S、30/1800/1S、50/2.3K/1S、90/3.8K/2S。
 // 只有第二欄具備明確價格特徵（>=1000、帶 K/千、或為小數）時，才判定為分鐘在前，
 // 因此 20/30/1S 仍延續舊規則解讀為 20K/30/1S，不會改變既有資料。
+// 第 018-242 批：支援「分鐘／節數在前，金額在後」的正式價格列。
+// 例：30/1S 2800、50/1S 3500、60/2S 4500、30／1S 2.8K。
+// 節數必須明確帶 S／NS，且整行必須完整符合，避免把身材 160/42/E 或一般斜線資料誤判成價格。
+function parseMinuteSessionAmountLine018242(line) {
+  const normalized = normalizeDigits(String(line || ''))
+    .normalize('NFKC')
+    .replace(/[：]/g, ':')
+    .replace(/[／]/g, '/')
+    .replace(/　/g, ' ')
+    .trim()
+
+  if (!normalized) {
+    return { valid: false, minutes: 0, amount: 0, sessionLabel: '' }
+  }
+
+  const matched = normalized.match(
+    /^(?:快餐|短[鐘鍾]|長[鐘鍾])?\s*(\d{2,3})\s*\/\s*(NS|N\s*\/?\s*S|\d+(?:\.\d+)?\s*S)\s*(?:[|,，、:：=+＋-]\s*|\s+)([0-9]+(?:\.\d+)?)\s*([kK千]?)\s*$/i
+  )
+
+  if (!matched) {
+    return { valid: false, minutes: 0, amount: 0, sessionLabel: '' }
+  }
+
+  const minutes = Number(matched[1])
+  const sessionLabel = normalizePriceSessionLabel(matched[2] || '1S')
+  const rawAmount = Number(matched[3])
+  const explicitThousandUnit = Boolean(matched[4])
+  const amount = explicitThousandUnit || rawAmount < 100
+    ? rawAmount * 1000
+    : rawAmount
+
+  if (
+    minutes < 10 || minutes > 180 ||
+    !sessionLabel ||
+    amount < 1000 || amount > 100000
+  ) {
+    return { valid: false, minutes: 0, amount: 0, sessionLabel: '' }
+  }
+
+  return {
+    valid: true,
+    minutes,
+    amount,
+    sessionLabel
+  }
+}
+
+
 function parseSlashPriceLine018234(line) {
   const normalized = normalizeDigits(String(line || ''))
     .normalize('NFKC')
@@ -5953,6 +6003,10 @@ function parseMinuteBottomAmountPairs018237(line, priceContext = {}) {
 function isPriceLine(line) {
   const value = normalizeDigits(String(line || '')).trim()
   if (!value) return false
+
+  // 第 018-242 批：分鐘／節數斜線在前，金額在後。
+  // 例：30/1S 2800、50/1S 3500、60/2S 4500。
+  if (parseMinuteSessionAmountLine018242(value).valid) return true
 
   // 第 018-234 批：金額／分鐘／節數與分鐘／金額／節數共用同一個正式解析器。
   if (parseSlashPriceLine018234(value).valid) return true
@@ -12723,6 +12777,19 @@ function parsePrices(text, increase, priceContext = {}) {
       .replace(/[／]/g, '/')
       .replace(/　/g, ' ')
       .trim()
+
+    // 第 018-242 批：支援「分鐘／節數在前，金額在後」。
+    // 例：30/1S 2800、50/1S 3500、60/2S 4500。
+    // 解析後仍交由 pushPrice()，完整保留精準價格、區間、國籍、固定及分鐘加價規則。
+    const minuteSessionAmount018242 = parseMinuteSessionAmountLine018242(normalized)
+    if (minuteSessionAmount018242.valid) {
+      pushPrice(
+        minuteSessionAmount018242.minutes,
+        minuteSessionAmount018242.sessionLabel,
+        minuteSessionAmount018242.amount
+      )
+      return
+    }
 
     // 第 018-209 批：支援「定點14底/外送15底」這類同一行雙類型底價。
     // 依目前選定的定點／外送工作區只取對應底價，再沿用既有精準價格、區間、國籍與金額轉換規則。
