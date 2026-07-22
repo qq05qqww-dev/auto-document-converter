@@ -1,4 +1,8 @@
-﻿<!-- 第 018-245 批：文件1貼上事件直接接管＋input 後備正規化修正版 -->
+﻿<!-- 第 018-247 批：員工可維護機房價格欄位規則＋文件2自訂價格輸出格式版 -->
+<!-- batch018-247-employee-room-price-field-rules-custom-document2-output -->
+<!-- 第 018-246 批：中央 API 正式網域＋45 秒逾時＋失敗自動重試修正版 -->
+<!-- batch018-246-central-api-formal-domain-timeout-retry-error-detail-fix -->
+<!-- 第 018-245 批：文件1貼上事件直接接管＋input 後備正規化修正版 -->
 <!-- batch018-245-source-paste-direct-clipboard-input-fallback-fix -->
 <!-- 第 018-244 批：文件1貼上英文數字金額轉數字＋共用價格移到小姐標題下方版 -->
 <!-- batch018-244-paste-english-digit-price-move-under-lady-header -->
@@ -1083,7 +1087,7 @@
               class="ghost-btn"
               type="button"
               :disabled="isSavingScopeRules"
-              @click="saveRuleFields('欄位辨識與輸出格式', ['headerRecognitionRules', 'bodyRecognitionRules', 'advancedRegexRules', 'bodyOutputOrder', 'formatHint', 'titleMode'])"
+              @click="saveRuleFields('欄位辨識與輸出格式', ['headerRecognitionRules', 'bodyRecognitionRules', 'priceFieldRecognitionRules018247', 'advancedRegexRules', 'bodyOutputOrder', 'formatHint', 'titleMode'])"
             >
               {{ isSavingScopeRules ? '儲存中...' : '儲存' }}
             </button>
@@ -1094,6 +1098,7 @@
         <div class="format-settings-tabs" role="tablist" aria-label="欄位辨識設定">
           <button type="button" :class="{ active: formatSettingsTab === 'header' }" @click="formatSettingsTab = 'header'">小姐標題規則</button>
           <button type="button" :class="{ active: formatSettingsTab === 'body' }" @click="formatSettingsTab = 'body'">身材欄位規則</button>
+          <button type="button" :class="{ active: formatSettingsTab === 'price-field' }" @click="formatSettingsTab = 'price-field'">價格欄位規則</button>
           <button type="button" :class="{ active: formatSettingsTab === 'output' }" @click="formatSettingsTab = 'output'">文件2輸出格式</button>
           <button v-if="isOwner" type="button" :class="{ active: formatSettingsTab === 'regex' }" @click="formatSettingsTab = 'regex'">老闆特殊格式</button>
         </div>
@@ -1218,6 +1223,150 @@
               <strong>{{ bodyRecognitionPreview.ok ? '辨識成功' : '尚未辨識' }}</strong>
               <span>{{ bodyRecognitionPreview.message }}</span>
               <code v-if="bodyRecognitionPreview.preview">{{ bodyRecognitionPreview.preview }}</code>
+            </div>
+          </div>
+        </section>
+
+        <section v-else-if="formatSettingsTab === 'price-field'" class="recognition-settings-panel price-field-rules-panel018247">
+          <div class="recognition-panel-intro">
+            <strong>每間機房可以自行設定「文件1每一欄代表什麼」，並決定文件2價格顯示順序。</strong>
+            <span v-if="isOwner">目前編輯的是老闆全站公版；所有員工都會看得到並自動套用。</span>
+            <span v-else>老闆公版只供查看；你可以新增、修改與刪除目前授權機房的補充規則，儲存後只綁定目前登入帳號與目前機房。</span>
+          </div>
+
+          <div v-if="!isOwner && ownerPriceFieldRulesForEmployee018247.length" class="price-field-owner-readonly018247">
+            <div class="price-field-section-title018247">
+              <strong>🔒 老闆公版價格規則</strong>
+              <span>唯讀，員工不能修改</span>
+            </div>
+            <div class="recognition-rule-list">
+              <article
+                v-for="(rule, index) in ownerPriceFieldRulesForEmployee018247"
+                :key="rule.id || `owner-price-field-${index}`"
+                class="recognition-rule-card price-field-readonly-card018247"
+              >
+                <span class="price-field-origin-badge018247">公版</span>
+                <div class="price-field-readonly-main018247">
+                  <strong>{{ rule.name }}</strong>
+                  <span>來源：{{ getPriceFieldRuleSourceSummary018247(rule) }}</span>
+                  <span>輸出：{{ rule.outputTemplate }}</span>
+                  <code v-if="rule.example">範例：{{ rule.example }}</code>
+                </div>
+              </article>
+            </div>
+          </div>
+
+          <div class="price-field-section-title018247">
+            <strong>{{ isOwner ? '老闆公版規則' : '目前機房補充規則' }}</strong>
+            <span>{{ isOwner ? '可新增、修改、排序及刪除' : currentRuleScopeLabel }}</span>
+          </div>
+
+          <div class="recognition-builder-grid price-field-builder-grid018247">
+            <label>
+              規則名稱
+              <input v-model="newPriceFieldRuleName018247" placeholder="例如：分鐘／價格K／節數" />
+            </label>
+            <label v-for="position in 4" :key="`price-field-new-${position}`">
+              第 {{ position }} 欄
+              <select v-model="newPriceFieldRuleFields018247[position - 1]">
+                <option value="">不使用</option>
+                <option v-for="option in priceFieldOptions018247" :key="option.value" :value="option.value">{{ option.label }}</option>
+              </select>
+            </label>
+            <label>
+              分隔方式
+              <select v-model="newPriceFieldRuleSeparator018247">
+                <option v-for="option in priceFieldSeparatorOptions018247" :key="option.value" :value="option.value">{{ option.label }}</option>
+              </select>
+            </label>
+            <label>
+              未提供節數時
+              <input v-model="newPriceFieldRuleDefaultSession018247" placeholder="1S" />
+            </label>
+            <label class="price-field-output-template-field018247">
+              文件2輸出格式
+              <input
+                v-model="newPriceFieldRuleOutputTemplate018247"
+                list="price-field-output-template-options018247"
+                placeholder="{價格K}/{分鐘}/{節數}"
+              />
+              <datalist id="price-field-output-template-options018247">
+                <option value="{價格K}/{分鐘}/{節數}"></option>
+                <option value="{分鐘}/{價格K}/{節數}"></option>
+                <option value="{分鐘}/{節數}/{價格K}"></option>
+                <option value="{完整金額}/{分鐘}/{節數}"></option>
+                <option value="{完整金額}/{分鐘}"></option>
+              </datalist>
+              <small>可用：{價格K}、{完整金額}、{分鐘}、{節數}</small>
+            </label>
+            <label class="price-field-example-field018247">
+              來源範例
+              <input v-model="newPriceFieldRuleExample018247" placeholder="例如：30/2.5/1" />
+            </label>
+            <button class="primary-btn recognition-add-btn price-field-add-btn018247" type="button" @click="addPriceFieldRecognitionRule018247">新增價格規則</button>
+          </div>
+
+          <div v-if="priceFieldRecognitionRules018247.length" class="recognition-rule-list">
+            <article
+              v-for="(rule, index) in priceFieldRecognitionRules018247"
+              :key="rule.id || `price-field-rule-${index}`"
+              class="recognition-rule-card price-field-rule-card018247"
+            >
+              <label class="recognition-enable-toggle">
+                <input v-model="rule.enabled" type="checkbox" />
+                啟用
+              </label>
+              <div class="recognition-rule-main price-field-rule-main018247">
+                <input v-model="rule.name" class="recognition-rule-name" aria-label="價格規則名稱" />
+                <div class="price-field-rule-fields018247">
+                  <label v-for="position in 4" :key="`${rule.id}-field-${position}`">
+                    第 {{ position }} 欄
+                    <select v-model="rule.fields[position - 1]">
+                      <option value="">不使用</option>
+                      <option v-for="option in priceFieldOptions018247" :key="option.value" :value="option.value">{{ option.label }}</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="price-field-rule-settings018247">
+                  <label>
+                    分隔方式
+                    <select v-model="rule.separator">
+                      <option v-for="option in priceFieldSeparatorOptions018247" :key="option.value" :value="option.value">{{ option.label }}</option>
+                    </select>
+                  </label>
+                  <label>
+                    預設節數
+                    <input v-model="rule.defaultSession" placeholder="1S" />
+                  </label>
+                  <label class="price-field-rule-output018247">
+                    文件2輸出
+                    <input v-model="rule.outputTemplate" placeholder="{價格K}/{分鐘}/{節數}" />
+                  </label>
+                  <label class="price-field-rule-example018247">
+                    來源範例
+                    <input v-model="rule.example" placeholder="30/2.5/1" />
+                  </label>
+                </div>
+                <small class="price-field-rule-hint018247">{{ getPriceFieldRuleValidationMessage018247(rule) }}</small>
+              </div>
+              <div class="recognition-rule-actions">
+                <button type="button" :disabled="index === 0" @click="moveRecognitionRule(priceFieldRecognitionRules018247, index, -1)">上移</button>
+                <button type="button" :disabled="index === priceFieldRecognitionRules018247.length - 1" @click="moveRecognitionRule(priceFieldRecognitionRules018247, index, 1)">下移</button>
+                <button type="button" class="danger-text-btn" @click="removeRecognitionRule(priceFieldRecognitionRules018247, index)">刪除</button>
+              </div>
+            </article>
+          </div>
+          <p v-else class="recognition-empty-hint">目前這一層尚未新增價格欄位規則；轉換時仍會使用老闆公版與系統內建價格解析。</p>
+
+          <div class="recognition-test-card">
+            <label>
+              即時測試來源
+              <textarea v-model="priceFieldRecognitionTestText018247" rows="3" placeholder="例如：30/2.5/1"></textarea>
+            </label>
+            <div class="recognition-test-result" :class="priceFieldRecognitionPreview018247.ok ? 'success' : 'warning'">
+              <strong>{{ priceFieldRecognitionPreview018247.ok ? '辨識成功' : '尚未辨識' }}</strong>
+              <span>{{ priceFieldRecognitionPreview018247.message }}</span>
+              <code v-if="priceFieldRecognitionPreview018247.preview">{{ priceFieldRecognitionPreview018247.preview }}</code>
             </div>
           </div>
         </section>
@@ -2998,10 +3147,19 @@ const jsonResultText = ref('')
 const REQUIRED_BACKEND_IMPORT_MODE = 'db_append_upsert_keep_existing_safety_checked'
 const REQUIRED_BACKEND_VERSION = '0.0.18-14-backend-version-guard'
 const DEFAULT_ONLINE_API_BASE_URL = 'https://auto-document-converter-api.qq05qqww-5c5.workers.dev'
+// 第 018-246 批：中央網站正式 API 固定改用自訂網域。
+// 即使 Vercel 仍殘留舊 workers.dev 環境變數，也會自動轉回正式網域，避免再次同步到舊 Worker。
+const CENTRAL_WEBSITE_FORMAL_API_BASE_URL018246 = 'https://api.twtw88.com'
+const CENTRAL_WEBSITE_LEGACY_API_BASE_URL018246 = 'https://auto-api-website-api.qq05qqww-5c5.workers.dev'
+const configuredCentralWebsiteApiBaseUrl018246 = String(
+  import.meta.env.VITE_CENTRAL_WEBSITE_API_BASE_URL || ''
+).trim().replace(/\/+$/, '')
 const CENTRAL_WEBSITE_API_BASE_URL = (
-  import.meta.env.VITE_CENTRAL_WEBSITE_API_BASE_URL ||
-  'https://auto-api-website-api.qq05qqww-5c5.workers.dev'
-).replace(/\/+$/, '')
+  !configuredCentralWebsiteApiBaseUrl018246
+  || configuredCentralWebsiteApiBaseUrl018246.toLowerCase() === CENTRAL_WEBSITE_LEGACY_API_BASE_URL018246.toLowerCase()
+    ? CENTRAL_WEBSITE_FORMAL_API_BASE_URL018246
+    : configuredCentralWebsiteApiBaseUrl018246
+)
 const apiBaseUrl = ref(DEFAULT_ONLINE_API_BASE_URL)
 const apiStatusText = ref('尚未測試 API。')
 const frontendLadies = ref([])
@@ -4678,6 +4836,34 @@ const bodyFieldOptions = [
   { value: 'braCup', label: '胸圍尺寸＋罩杯（34D）' }
 ]
 
+
+// 第 018-247 批：員工可在目前機房維護價格欄位順序；老闆公版對員工唯讀。
+const priceFieldOptions018247 = [
+  { value: 'minutes', label: '分鐘' },
+  { value: 'amountK', label: '價格K（2.5＝2500）' },
+  { value: 'amount', label: '完整金額（2500）' },
+  { value: 'session', label: '節數' },
+  { value: 'ignore', label: '忽略欄位' }
+]
+
+const priceFieldSeparatorOptions018247 = [
+  { value: 'slash', label: '斜線／' },
+  { value: 'space', label: '空格' },
+  { value: 'hyphen', label: '連字號－' },
+  { value: 'pipe', label: '直線｜' },
+  { value: 'comma', label: '逗號，' },
+  { value: 'auto', label: '自動辨識常見分隔符號' }
+]
+
+const priceFieldRecognitionRules018247 = ref([])
+const newPriceFieldRuleName018247 = ref('')
+const newPriceFieldRuleFields018247 = ref(['minutes', 'amountK', 'session', ''])
+const newPriceFieldRuleSeparator018247 = ref('slash')
+const newPriceFieldRuleDefaultSession018247 = ref('1S')
+const newPriceFieldRuleOutputTemplate018247 = ref('{價格K}/{分鐘}/{節數}')
+const newPriceFieldRuleExample018247 = ref('30/2.5/1')
+const priceFieldRecognitionTestText018247 = ref('30/2.5/1')
+
 const defaultHeaderRecognitionRules = [
   { id: 'header-country-name', name: '國籍在姓名前', mode: 'country-name', example: '馬來 小淫娃', enabled: true },
   { id: 'header-name-country', name: '姓名在國籍前', mode: 'name-country', example: '小淫娃 馬來西亞', enabled: true },
@@ -4758,6 +4944,352 @@ function normalizeBodyRecognitionRules(value, options = {}) {
     })
     .filter(rule => rule.name && rule.fields.length >= 3 && rule.fields.includes('height') && rule.fields.includes('weight') && rule.fields.some(field => field === 'cup' || field === 'braCup'))
 }
+
+
+function normalizePriceFieldSession018247(value = '', fallback = '1S') {
+  const rawValue = String(value || '').trim()
+  if (!rawValue && fallback === '') return ''
+  const label = normalizePriceSessionLabel(rawValue || fallback)
+  if (label === 'NS') return 'NS'
+  const matched = String(label || '').match(/^(\d+(?:\.\d+)?)S$/i)
+  const count = matched ? Number(matched[1]) : 0
+  if (count > 0 && count <= 20) return `${count}S`
+  if (fallback === '') return ''
+  const fallbackLabel = normalizePriceSessionLabel(fallback || '1S')
+  if (fallbackLabel === 'NS') return 'NS'
+  const fallbackMatched = String(fallbackLabel || '').match(/^(\d+(?:\.\d+)?)S$/i)
+  const fallbackCount = fallbackMatched ? Number(fallbackMatched[1]) : 1
+  return fallbackCount > 0 && fallbackCount <= 20 ? `${fallbackCount}S` : '1S'
+}
+
+function normalizePriceFieldOutputTemplate018247(value = '') {
+  const template = String(value || '').normalize('NFKC').trim()
+  if (!template) return '{價格K}/{分鐘}/{節數}'
+  const hasMinutes = template.includes('{分鐘}')
+  const hasAmount = template.includes('{價格K}') || template.includes('{完整金額}')
+  if (!hasMinutes || !hasAmount) return '{價格K}/{分鐘}/{節數}'
+  return template
+}
+
+function normalizePriceFieldRecognitionRules018247(value) {
+  if (!Array.isArray(value)) return []
+  const validFields = new Set(priceFieldOptions018247.map(option => option.value))
+  const validSeparators = new Set(priceFieldSeparatorOptions018247.map(option => option.value))
+
+  return value
+    .map((rule, index) => {
+      const sourceFields = Array.isArray(rule?.fields) ? rule.fields : []
+      const fields = Array.from({ length: 4 }, (_, fieldIndex) => {
+        const field = String(sourceFields[fieldIndex] || '')
+        return validFields.has(field) ? field : ''
+      })
+      const separator = validSeparators.has(rule?.separator) ? rule.separator : 'slash'
+      const defaultSession = normalizePriceFieldSession018247(rule?.defaultSession || '1S')
+      return {
+        id: String(rule?.id || createRecognitionRuleId(`price-field-${index}`)),
+        name: String(rule?.name || `價格欄位規則 ${index + 1}`).trim(),
+        fields,
+        separator,
+        defaultSession,
+        outputTemplate: normalizePriceFieldOutputTemplate018247(rule?.outputTemplate),
+        example: String(rule?.example || ''),
+        enabled: rule?.enabled !== false
+      }
+    })
+    .filter(rule => rule.name && isPriceFieldRuleStructureValid018247(rule))
+}
+
+function getPriceFieldActiveFields018247(rule = {}) {
+  return (Array.isArray(rule?.fields) ? rule.fields : [])
+    .map(field => String(field || ''))
+    .filter(Boolean)
+}
+
+function isPriceFieldRuleStructureValid018247(rule = {}) {
+  const fields = getPriceFieldActiveFields018247(rule)
+  if (fields.length < 2 || fields.length > 4) return false
+  if (fields.filter(field => field === 'minutes').length !== 1) return false
+  if (fields.filter(field => field === 'amount' || field === 'amountK').length !== 1) return false
+  if (fields.filter(field => field === 'session').length > 1) return false
+  const duplicateFields = fields.filter(field => field !== 'ignore')
+  if (new Set(duplicateFields).size !== duplicateFields.length) return false
+  const template = normalizePriceFieldOutputTemplate018247(rule?.outputTemplate)
+  return template.includes('{分鐘}') && (template.includes('{價格K}') || template.includes('{完整金額}'))
+}
+
+function getPriceFieldRuleValidationMessage018247(rule = {}) {
+  const fields = getPriceFieldActiveFields018247(rule)
+  if (fields.length < 2) return '至少要設定兩個來源欄位。'
+  if (fields.filter(field => field === 'minutes').length !== 1) return '必須且只能有一個「分鐘」欄位。'
+  if (fields.filter(field => field === 'amount' || field === 'amountK').length !== 1) return '必須且只能有一個「價格K」或「完整金額」欄位。'
+  if (fields.filter(field => field === 'session').length > 1) return '「節數」欄位不能重複。'
+  const duplicateFields = fields.filter(field => field !== 'ignore')
+  if (new Set(duplicateFields).size !== duplicateFields.length) return '同一條規則不能重複使用相同欄位。'
+  const template = String(rule?.outputTemplate || '')
+  if (!template.includes('{分鐘}') || (!template.includes('{價格K}') && !template.includes('{完整金額}'))) {
+    return '文件2輸出至少要包含「{分鐘}」與一種價格欄位。'
+  }
+  return `可正常使用｜來源：${getPriceFieldRuleSourceSummary018247(rule)}｜輸出：${normalizePriceFieldOutputTemplate018247(rule.outputTemplate)}`
+}
+
+function getPriceFieldLabel018247(field = '') {
+  return priceFieldOptions018247.find(option => option.value === field)?.label || field
+}
+
+function getPriceFieldSeparatorLabel018247(separator = '') {
+  return priceFieldSeparatorOptions018247.find(option => option.value === separator)?.label || separator
+}
+
+function getPriceFieldRuleSourceSummary018247(rule = {}) {
+  const fields = getPriceFieldActiveFields018247(rule).map(getPriceFieldLabel018247)
+  return `${fields.join(' → ')}｜${getPriceFieldSeparatorLabel018247(rule?.separator)}`
+}
+
+function getPriceFieldRuleSignature018247(rule = {}) {
+  return `${String(rule?.separator || 'slash')}::${getPriceFieldActiveFields018247(rule).join('>')}`
+}
+
+function mergePriceFieldRecognitionRuleLists018247(ownerValue, supplementValue) {
+  const ownerRules = normalizePriceFieldRecognitionRules018247(ownerValue)
+  const supplementRules = normalizePriceFieldRecognitionRules018247(supplementValue)
+  const result = []
+  const seen = new Set()
+  ;[...supplementRules, ...ownerRules].forEach(rule => {
+    const signature = getPriceFieldRuleSignature018247(rule)
+    if (!signature || seen.has(signature)) return
+    seen.add(signature)
+    result.push(cloneRuleFieldValue(rule))
+  })
+  return result
+}
+
+const ownerPriceFieldRulesForEmployee018247 = computed(() => {
+  if (isOwner.value) return []
+  return normalizePriceFieldRecognitionRules018247(ownerBaseRuleData.value?.priceFieldRecognitionRules018247)
+})
+
+function getRuntimePriceFieldRecognitionRules018247() {
+  const current = normalizePriceFieldRecognitionRules018247(priceFieldRecognitionRules018247.value)
+  if (isOwner.value) return current
+  return mergePriceFieldRecognitionRuleLists018247(
+    ownerBaseRuleData.value?.priceFieldRecognitionRules018247,
+    current
+  )
+}
+
+function splitPriceFieldRuleSource018247(value = '', separator = 'slash') {
+  const normalized = normalizeDigits(String(value || ''))
+    .normalize('NFKC')
+    .replace(/[／]/g, '/')
+    .replace(/[｜]/g, '|')
+    .replace(/[，]/g, ',')
+    .replace(/[－–—]/g, '-')
+    .trim()
+  if (!normalized) return []
+
+  if (separator === 'space') return normalized.split(/\s+/).map(item => item.trim()).filter(Boolean)
+  if (separator === 'hyphen') return normalized.split(/\s*-\s*/).map(item => item.trim()).filter(Boolean)
+  if (separator === 'pipe') return normalized.split(/\s*\|\s*/).map(item => item.trim()).filter(Boolean)
+  if (separator === 'comma') return normalized.split(/\s*,\s*/).map(item => item.trim()).filter(Boolean)
+  if (separator === 'auto') return normalized.split(/\s*(?:\/|\||,|-)\s*|\s+/).map(item => item.trim()).filter(Boolean)
+  return normalized.split(/\s*\/\s*/).map(item => item.trim()).filter(Boolean)
+}
+
+function parsePriceFieldAmountK018247(value = '') {
+  const text = String(value || '').normalize('NFKC').trim().replace(/(?:K|千)$/i, '')
+  if (!/^\d+(?:\.\d+)?$/.test(text)) return 0
+  const amount = Number(text) * 1000
+  return amount >= 1000 && amount <= 100000 ? amount : 0
+}
+
+function parsePriceFieldFullAmount018247(value = '') {
+  const amount = parseFlexibleAmount018207(value, { min: 1000, max: 100000 })
+  return amount || 0
+}
+
+function parsePriceFieldRuleLine018247(line = '', rulesValue = null) {
+  const rules = Array.isArray(rulesValue)
+    ? normalizePriceFieldRecognitionRules018247(rulesValue)
+    : getRuntimePriceFieldRecognitionRules018247()
+
+  for (const rule of rules) {
+    if (rule.enabled === false || !isPriceFieldRuleStructureValid018247(rule)) continue
+    const fields = getPriceFieldActiveFields018247(rule)
+    const parts = splitPriceFieldRuleSource018247(line, rule.separator)
+    if (parts.length !== fields.length) continue
+
+    let minutes = 0
+    let amount = 0
+    let sessionLabel = normalizePriceFieldSession018247(rule.defaultSession || '1S')
+    let valid = true
+
+    fields.forEach((field, index) => {
+      if (!valid) return
+      const part = String(parts[index] || '').trim()
+      if (field === 'ignore') return
+      if (field === 'minutes') {
+        const number = Number(part.replace(/(?:分鐘|分)$/i, ''))
+        if (!Number.isFinite(number) || number < 10 || number > 180) valid = false
+        else minutes = number
+        return
+      }
+      if (field === 'amountK') {
+        const parsedAmount = parsePriceFieldAmountK018247(part)
+        if (!parsedAmount) valid = false
+        else amount = parsedAmount
+        return
+      }
+      if (field === 'amount') {
+        const parsedAmount = parsePriceFieldFullAmount018247(part)
+        if (!parsedAmount) valid = false
+        else amount = parsedAmount
+        return
+      }
+      if (field === 'session') {
+        if (!/^(?:NS|N\s*\/?\s*S|\d+(?:\.\d+)?\s*S?)$/i.test(part)) {
+          valid = false
+          return
+        }
+        const parsedSession = normalizePriceFieldSession018247(part, '')
+        if (!parsedSession || (parsedSession !== 'NS' && Number(parsedSession.replace(/S$/i, '')) > 20)) {
+          valid = false
+          return
+        }
+        sessionLabel = parsedSession
+      }
+    })
+
+    if (!valid || !minutes || !amount || !sessionLabel) continue
+    return { valid: true, minutes, amount, sessionLabel, rule }
+  }
+
+  return { valid: false, minutes: 0, amount: 0, sessionLabel: '', rule: null }
+}
+
+function formatPriceFieldOutput018247(rule = {}, data = {}) {
+  const amount = Math.round(Number(data.amount || 0))
+  const minutes = Number(data.minutes || 0)
+  const sessionLabel = normalizePriceFieldSession018247(data.sessionLabel || rule.defaultSession || '1S')
+  const template = normalizePriceFieldOutputTemplate018247(rule.outputTemplate)
+  return template
+    .replaceAll('{價格K}', formatAmount(amount))
+    .replaceAll('{完整金額}', String(amount))
+    .replaceAll('{分鐘}', String(minutes))
+    .replaceAll('{節數}', sessionLabel)
+}
+
+function compilePriceFieldOutputTemplate018247(rule = {}) {
+  const template = normalizePriceFieldOutputTemplate018247(rule.outputTemplate)
+  const tokenPattern = /\{價格K\}|\{完整金額\}|\{分鐘\}|\{節數\}/g
+  const fields = []
+  const parts = []
+  let lastIndex = 0
+  let matched
+  while ((matched = tokenPattern.exec(template))) {
+    parts.push(escapeRegExp(template.slice(lastIndex, matched.index)))
+    const token = matched[0]
+    if (token === '{價格K}') {
+      fields.push('amountK')
+      parts.push('([0-9]+(?:\\.[0-9]+)?)\\s*K')
+    } else if (token === '{完整金額}') {
+      fields.push('amount')
+      parts.push('([0-9]{3,6})')
+    } else if (token === '{分鐘}') {
+      fields.push('minutes')
+      parts.push('(\\d{1,3})')
+    } else {
+      fields.push('session')
+      parts.push('(NS|\\d+(?:\\.\\d+)?S)')
+    }
+    lastIndex = matched.index + token.length
+  }
+  parts.push(escapeRegExp(template.slice(lastIndex)))
+  return { regex: new RegExp(`^${parts.join('')}$`, 'i'), fields }
+}
+
+function parseConfiguredPriceOutputText018247(value = '') {
+  const text = String(value || '').normalize('NFKC').trim()
+  if (!text) return null
+
+  for (const rule of getRuntimePriceFieldRecognitionRules018247()) {
+    if (rule.enabled === false) continue
+    const compiled = compilePriceFieldOutputTemplate018247(rule)
+    const matched = text.match(compiled.regex)
+    if (!matched) continue
+
+    let price = 0
+    let minutes = 0
+    let sessionLabel = normalizePriceFieldSession018247(rule.defaultSession || '1S')
+    let valid = true
+    compiled.fields.forEach((field, index) => {
+      const part = matched[index + 1]
+      if (field === 'amountK') price = Math.round(Number(part) * 1000)
+      if (field === 'amount') price = Number(part)
+      if (field === 'minutes') minutes = Number(part)
+      if (field === 'session') sessionLabel = normalizePriceFieldSession018247(part)
+    })
+    if (price < 1000 || price > 1000000 || minutes < 10 || minutes > 180) valid = false
+    if (!valid) continue
+
+    return {
+      priceText: text,
+      price,
+      minutes,
+      sessions: sessionLabel === 'NS' ? null : Number(sessionLabel.replace(/S$/i, '')),
+      sessionLabel
+    }
+  }
+  return null
+}
+
+function addPriceFieldRecognitionRule018247() {
+  const candidate = {
+    id: createRecognitionRuleId('price-field'),
+    name: String(newPriceFieldRuleName018247.value || '').trim() || '機房價格欄位規則',
+    fields: [...newPriceFieldRuleFields018247.value],
+    separator: newPriceFieldRuleSeparator018247.value,
+    defaultSession: newPriceFieldRuleDefaultSession018247.value,
+    outputTemplate: newPriceFieldRuleOutputTemplate018247.value,
+    example: String(newPriceFieldRuleExample018247.value || '').trim(),
+    enabled: true
+  }
+  const validation = getPriceFieldRuleValidationMessage018247(candidate)
+  if (!validation.startsWith('可正常使用')) {
+    showActionToast(validation, 'warning')
+    return
+  }
+
+  const normalized = normalizePriceFieldRecognitionRules018247([candidate])[0]
+  if (!normalized) {
+    showActionToast('價格欄位規則內容不完整。', 'warning')
+    return
+  }
+  const signature = getPriceFieldRuleSignature018247(normalized)
+  if (priceFieldRecognitionRules018247.value.some(rule => getPriceFieldRuleSignature018247(rule) === signature)) {
+    showActionToast('目前這一層已有相同來源欄位順序與分隔方式。', 'warning')
+    return
+  }
+
+  priceFieldRecognitionRules018247.value.push(normalized)
+  newPriceFieldRuleName018247.value = ''
+  newPriceFieldRuleExample018247.value = ''
+  showActionToast(`已新增價格欄位規則；請按上方「儲存」。`, 'success')
+}
+
+const priceFieldRecognitionPreview018247 = computed(() => {
+  const source = String(priceFieldRecognitionTestText018247.value || '').trim()
+  if (!source) return { ok: false, message: '請輸入一行價格來源。', preview: '' }
+  const parsed = parsePriceFieldRuleLine018247(source)
+  if (!parsed.valid) {
+    return { ok: false, message: '尚未命中目前機房補充、老闆公版或已啟用的價格欄位規則。', preview: '' }
+  }
+  const output = formatPriceFieldOutput018247(parsed.rule, parsed)
+  return {
+    ok: true,
+    message: `規則：${parsed.rule.name}｜分鐘 ${parsed.minutes}｜金額 ${parsed.amount}｜節數 ${parsed.sessionLabel}`,
+    preview: `文件2：${output}`
+  }
+})
 
 function normalizeAdvancedRegexRules(value) {
   if (!Array.isArray(value)) return []
@@ -6218,6 +6750,9 @@ function parseMinuteBottomAmountPairs018237(line, priceContext = {}) {
 function isPriceLine(line) {
   const value = normalizeDigits(String(line || '')).trim()
   if (!value) return false
+
+  // 第 018-247 批：目前機房補充規則優先，其次老闆公版，再進入系統內建格式。
+  if (parsePriceFieldRuleLine018247(value).valid) return true
 
   // 第 018-242 批：分鐘／節數斜線在前，金額在後。
   // 例：30/1S 2800、50/1S 3500、60/2S 4500。
@@ -9714,8 +10249,12 @@ async function ensureAppendImportBackendReady() {
 
 // 第 018-110 批：文件3儲存與中央網站同步拆開，避免小批資料被整批同步拖慢。
 const DATABASE_IMPORT_TIMEOUT_MS = 90000
+// 既有中央媒體／一致性查詢仍維持 12 秒，不改動媒體流程。
 const CENTRAL_WEBSITE_SYNC_TIMEOUT_MS = 12000
-const CENTRAL_WEBSITE_SINGLE_SYNC_ATTEMPTS = 2
+// 第 018-246 批：只有中央小姐資料匯入同步改為 45 秒，失敗後最多再重試 2 次。
+const CENTRAL_WEBSITE_IMPORT_SYNC_TIMEOUT_MS018246 = 45000
+const CENTRAL_WEBSITE_IMPORT_SYNC_MAX_ATTEMPTS018246 = 3
+const CENTRAL_WEBSITE_SINGLE_SYNC_ATTEMPTS = CENTRAL_WEBSITE_IMPORT_SYNC_MAX_ATTEMPTS018246
 
 function waitCentralWebsiteSyncRetry(milliseconds) {
   return new Promise(resolve => window.setTimeout(resolve, milliseconds))
@@ -9860,13 +10399,16 @@ async function postCentralWebsiteSyncItems(items, options = {}) {
   if (!syncItems.length) throw new Error('沒有可同步到中央網站的小姐資料。')
 
   const accessToken = await getCentralWebsiteAccessToken()
-  const maxAttempts = Math.max(1, Number(options.maxAttempts || 1))
+  const syncUrl018246 = `${CENTRAL_WEBSITE_API_BASE_URL}/api/integrations/converter/central-listings/import`
+  const maxAttempts = Math.max(1, Number(
+    options.maxAttempts || CENTRAL_WEBSITE_IMPORT_SYNC_MAX_ATTEMPTS018246
+  ))
   let lastError = null
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
       const { response, data } = await fetchJsonWithTimeout(
-        `${CENTRAL_WEBSITE_API_BASE_URL}/api/integrations/converter/central-listings/import`,
+        syncUrl018246,
         {
           method: 'POST',
           headers: {
@@ -9876,32 +10418,45 @@ async function postCentralWebsiteSyncItems(items, options = {}) {
           },
           body: JSON.stringify({ items: syncItems })
         },
-        Number(options.timeoutMs || CENTRAL_WEBSITE_SYNC_TIMEOUT_MS),
+        Number(options.timeoutMs || CENTRAL_WEBSITE_IMPORT_SYNC_TIMEOUT_MS018246),
         '中央網站同步失敗'
       )
 
       if (!response.ok) {
-        const error = new Error(data.message || data.error || `中央網站同步失敗：HTTP ${response.status}`)
+        const responseDetail018246 = String(data.message || data.error || '中央網站拒絕本次同步請求').trim()
+        const error = new Error(
+          `中央網站同步失敗：${responseDetail018246}（HTTP ${response.status}；API：${syncUrl018246}）`
+        )
         error.status = response.status
+        error.url = syncUrl018246
         throw error
       }
 
       applyCentralListingIdHintsFromResponse(data, { items: syncItems })
       return data
     } catch (error) {
-      lastError = error
       const status = Number(error?.status || 0)
+      const rawMessage018246 = String(error?.message || error || '中央網站同步失敗').trim()
+      const alreadyShowsApi018246 = rawMessage018246.includes(syncUrl018246)
+      const enrichedError018246 = alreadyShowsApi018246
+        ? error
+        : Object.assign(
+            new Error(`${rawMessage018246}（API：${syncUrl018246}${status ? `；HTTP ${status}` : ''}）`),
+            { status, url: syncUrl018246 }
+          )
+
+      lastError = enrichedError018246
       const retryableStatus = !status || [408, 425, 429, 500, 502, 503, 504].includes(status)
       const shouldRetry = attempt < maxAttempts && retryableStatus
 
-      if (!shouldRetry) throw error
+      if (!shouldRetry) throw enrichedError018246
 
       if (typeof options.onRetry === 'function') {
         options.onRetry({
           attempt,
           nextAttempt: attempt + 1,
           maxAttempts,
-          error
+          error: enrichedError018246
         })
       }
 
@@ -10086,8 +10641,8 @@ async function syncSavedLadiesToCentralWebsite(payload = null) {
   if (currentItems.length) {
     const syncItems = currentItems.map(item => buildCentralWebsiteSyncItem(item))
     return postCentralWebsiteSyncItems(syncItems, {
-      maxAttempts: 1,
-      timeoutMs: CENTRAL_WEBSITE_SYNC_TIMEOUT_MS
+      maxAttempts: CENTRAL_WEBSITE_IMPORT_SYNC_MAX_ATTEMPTS018246,
+      timeoutMs: CENTRAL_WEBSITE_IMPORT_SYNC_TIMEOUT_MS018246
     })
   }
 
@@ -10099,8 +10654,8 @@ async function syncSavedLadiesToCentralWebsite(payload = null) {
 
   const syncItems = items.map(item => buildCentralWebsiteSyncItem(item))
   return postCentralWebsiteSyncItems(syncItems, {
-    maxAttempts: 1,
-    timeoutMs: CENTRAL_WEBSITE_SYNC_TIMEOUT_MS
+    maxAttempts: CENTRAL_WEBSITE_IMPORT_SYNC_MAX_ATTEMPTS018246,
+    timeoutMs: CENTRAL_WEBSITE_IMPORT_SYNC_TIMEOUT_MS018246
   })
 }
 
@@ -10314,6 +10869,8 @@ async function submitDocument4ToApi() {
 
 function parsePriceTextToObject(priceText) {
   const value = String(priceText || '').trim()
+  const configured018247 = parseConfiguredPriceOutputText018247(value)
+  if (configured018247) return configured018247
   const match = value.match(/^([0-9]+(?:\.[0-9]+)?)K\/(\d+)\/(NS|\d+(?:\.\d+)?S)$/i)
   if (match) {
     const sessionLabel = normalizePriceSessionLabel(match[3])
@@ -13007,7 +13564,9 @@ function parsePrices(text, increase, priceContext = {}) {
       minutes: min,
       sessionSort: getPriceSessionSortValue(sessionLabel),
       sessionLabel,
-      text: `${formatAmount(finalAmount)}/${min}/${sessionLabel}`
+      text: options.priceFieldRule018247
+        ? formatPriceFieldOutput018247(options.priceFieldRule018247, { amount: finalAmount, minutes: min, sessionLabel })
+        : `${formatAmount(finalAmount)}/${min}/${sessionLabel}`
     })
   }
 
@@ -13017,6 +13576,18 @@ function parsePrices(text, increase, priceContext = {}) {
       .replace(/[／]/g, '/')
       .replace(/　/g, ' ')
       .trim()
+
+    // 第 018-247 批：先套用目前員工機房補充，再套老闆公版價格欄位規則。
+    const configuredPrice018247 = parsePriceFieldRuleLine018247(normalized)
+    if (configuredPrice018247.valid) {
+      pushPrice(
+        configuredPrice018247.minutes,
+        configuredPrice018247.sessionLabel,
+        configuredPrice018247.amount,
+        { priceFieldRule018247: configuredPrice018247.rule }
+      )
+      return
+    }
 
     // 第 018-242 批：支援「分鐘／節數在前，金額在後」。
     // 例：30/1S 2800、50/1S 3500、60/2S 4500。
@@ -16903,6 +17474,7 @@ function buildDefaultRuleData() {
     headerRecognitionRules: normalizeHeaderRecognitionRules(defaultHeaderRecognitionRules),
     bodyRecognitionRules: normalizeBodyRecognitionRules(defaultBodyRecognitionRules),
     advancedRegexRules: [],
+    priceFieldRecognitionRules018247: [],
     countryPriceRulesText: defaultCountryPriceRules.join('\n'),
     minutePriceAddRulesText: defaultMinutePriceAddRules.join('\n'),
     countryAliasText: defaultCountryAliases.join('\n'),
@@ -17148,6 +17720,7 @@ function buildEmptyEmployeeSupplementData() {
     headerRecognitionRules: [],
     bodyRecognitionRules: [],
     advancedRegexRules: [],
+    priceFieldRecognitionRules018247: [],
     countryPriceRulesText: '',
     minutePriceAddRulesText: '',
     countryAliasText: '',
@@ -17173,6 +17746,7 @@ function normalizeSupplementRuleData(data = {}) {
     headerRecognitionRules: normalizeHeaderRecognitionRules(data.headerRecognitionRules, { useDefaults: false }),
     bodyRecognitionRules: normalizeBodyRecognitionRules(data.bodyRecognitionRules, { useDefaults: false }),
     advancedRegexRules: [],
+    priceFieldRecognitionRules018247: normalizePriceFieldRecognitionRules018247(data.priceFieldRecognitionRules018247),
     amountTransformRules: normalizeAmountRules(data.amountTransformRules ?? data.amountTransformRulesText ?? []),
     priceMappingProfiles018204: normalizePriceMappingProfiles018204(data.priceMappingProfiles018204 ?? data.priceMappingProfiles ?? [])
   }
@@ -17256,6 +17830,10 @@ function mergeOwnerAndEmployeeRules(ownerData = {}, supplementData = {}) {
     headerRecognitionRules: mergeRecognitionRuleLists(owner.headerRecognitionRules, extra.headerRecognitionRules, 'header'),
     bodyRecognitionRules: mergeRecognitionRuleLists(owner.bodyRecognitionRules, extra.bodyRecognitionRules, 'body'),
     advancedRegexRules: normalizeAdvancedRegexRules(owner.advancedRegexRules),
+    priceFieldRecognitionRules018247: mergePriceFieldRecognitionRuleLists018247(
+      owner.priceFieldRecognitionRules018247,
+      extra.priceFieldRecognitionRules018247
+    ),
     countryPriceRulesText: mergeRuleTextWithSupplementOverride(
       owner.countryPriceRulesText,
       extra.countryPriceRulesText,
@@ -17401,6 +17979,7 @@ function applyEmployeeSupplementData(data, options = {}) {
   headerRecognitionRules.value = normalizeHeaderRecognitionRules(extra.headerRecognitionRules, { useDefaults: false })
   bodyRecognitionRules.value = normalizeBodyRecognitionRules(extra.bodyRecognitionRules, { useDefaults: false })
   advancedRegexRules.value = []
+  priceFieldRecognitionRules018247.value = normalizePriceFieldRecognitionRules018247(extra.priceFieldRecognitionRules018247)
   countryPriceRulesText.value = extra.countryPriceRulesText
   minutePriceAddRulesText.value = extra.minutePriceAddRulesText
   countryAliasText.value = extra.countryAliasText
@@ -17476,6 +18055,7 @@ function normalizeRuleDataForCompare(data = {}) {
     headerRecognitionRules: normalizeHeaderRecognitionRules(data.headerRecognitionRules, { useDefaults: true }),
     bodyRecognitionRules: normalizeBodyRecognitionRules(data.bodyRecognitionRules, { useDefaults: true }),
     advancedRegexRules: normalizeAdvancedRegexRules(data.advancedRegexRules),
+    priceFieldRecognitionRules018247: normalizePriceFieldRecognitionRules018247(data.priceFieldRecognitionRules018247),
     countryPriceRulesText: normalizeRuleTextForCompare(data.countryPriceRulesText),
     minutePriceAddRulesText: normalizeRuleTextForCompare(data.minutePriceAddRulesText),
     countryAliasText: normalizeRuleTextForCompare(data.countryAliasText),
@@ -17902,6 +18482,7 @@ function collectRuleData() {
     headerRecognitionRules: normalizeHeaderRecognitionRules(headerRecognitionRules.value, { useDefaults: isOwner.value }),
     bodyRecognitionRules: normalizeBodyRecognitionRules(bodyRecognitionRules.value, { useDefaults: isOwner.value }),
     advancedRegexRules: isOwner.value ? normalizeAdvancedRegexRules(advancedRegexRules.value) : [],
+    priceFieldRecognitionRules018247: normalizePriceFieldRecognitionRules018247(priceFieldRecognitionRules018247.value),
     countryPriceRulesText: countryPriceRulesText.value,
     minutePriceAddRulesText: minutePriceAddRulesText.value,
     countryAliasText: countryAliasText.value,
@@ -17930,6 +18511,7 @@ function applyRuleData(data, options = {}) {
   headerRecognitionRules.value = normalizeHeaderRecognitionRules(data.headerRecognitionRules, { useDefaults: true })
   bodyRecognitionRules.value = normalizeBodyRecognitionRules(data.bodyRecognitionRules, { useDefaults: true })
   advancedRegexRules.value = normalizeAdvancedRegexRules(data.advancedRegexRules)
+  priceFieldRecognitionRules018247.value = normalizePriceFieldRecognitionRules018247(data.priceFieldRecognitionRules018247)
   countryPriceRulesText.value = data.countryPriceRulesText ?? countryPriceRulesText.value
   minutePriceAddRulesText.value = data.minutePriceAddRulesText ?? minutePriceAddRulesText.value
   countryAliasText.value = data.countryAliasText ?? countryAliasText.value
@@ -25497,7 +26079,7 @@ button:disabled {
   top: 77px;
   z-index: 7;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   width: 100%;
   padding: 12px 0 14px;
   background: rgba(255, 255, 255, 0.97);
@@ -27774,6 +28356,151 @@ button:disabled {
     position: relative !important;
     min-height: 58px !important;
     padding: 9px 14px 12px !important;
+  }
+}
+
+
+
+/* 第 018-247 批：價格欄位規則，員工可編輯目前機房補充，老闆公版唯讀 */
+.price-field-rules-panel018247 {
+  gap: 18px;
+}
+
+.price-field-section-title018247 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 2px 0;
+  color: #29415c;
+}
+
+.price-field-section-title018247 span {
+  color: #748397;
+  font-size: 13px;
+}
+
+.price-field-owner-readonly018247 {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(139, 92, 246, 0.16);
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.06), rgba(59, 130, 246, 0.05));
+}
+
+.price-field-readonly-card018247 {
+  grid-template-columns: auto minmax(0, 1fr);
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.price-field-origin-badge018247 {
+  align-self: start;
+  border-radius: 999px;
+  background: #ede9fe;
+  color: #6d43aa;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.price-field-readonly-main018247 {
+  display: grid;
+  gap: 5px;
+  color: #40556d;
+  font-size: 13px;
+}
+
+.price-field-readonly-main018247 strong {
+  color: #263b54;
+  font-size: 14px;
+}
+
+.price-field-readonly-main018247 code {
+  color: #5c4a77;
+  font-family: inherit;
+  font-weight: 800;
+}
+
+.price-field-builder-grid018247 {
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+}
+
+.price-field-output-template-field018247 {
+  grid-column: span 2;
+}
+
+.price-field-example-field018247 {
+  grid-column: span 2;
+}
+
+.price-field-output-template-field018247 small {
+  color: #718096;
+  font-weight: 700;
+}
+
+.price-field-add-btn018247 {
+  grid-column: 1 / -1;
+  justify-self: start;
+  min-width: 190px;
+}
+
+.price-field-rule-main018247 {
+  grid-template-columns: 1fr;
+}
+
+.price-field-rule-fields018247,
+.price-field-rule-settings018247 {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(130px, 1fr));
+  gap: 9px;
+}
+
+.price-field-rule-fields018247 label,
+.price-field-rule-settings018247 label {
+  display: grid;
+  gap: 6px;
+  color: #5b6f86;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.price-field-rule-output018247,
+.price-field-rule-example018247 {
+  grid-column: span 2;
+}
+
+.price-field-rule-hint018247 {
+  color: #49647e;
+  line-height: 1.5;
+  font-weight: 700;
+}
+
+@media (max-width: 1180px) {
+  .price-field-builder-grid018247,
+  .price-field-rule-fields018247,
+  .price-field-rule-settings018247 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .price-field-section-title018247 {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .price-field-builder-grid018247,
+  .price-field-rule-fields018247,
+  .price-field-rule-settings018247 {
+    grid-template-columns: 1fr;
+  }
+
+  .price-field-output-template-field018247,
+  .price-field-example-field018247,
+  .price-field-rule-output018247,
+  .price-field-rule-example018247 {
+    grid-column: auto;
   }
 }
 
