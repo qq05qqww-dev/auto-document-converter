@@ -1,3 +1,5 @@
+﻿<!-- 第 018-241 批：機房狀態下拉依名稱長度由長到短排序版 -->
+<!-- batch018-241-room-status-name-length-desc-sort -->
 <!-- 第 018-240 批：登出再登入保留最後選定縣市地區機房修正版 -->
 <!-- batch018-240-login-restore-last-selected-location-room-fix -->
 <!-- 第 018-239 批：底價／分鐘／小數節數斜線正式方案解析修正版 -->
@@ -15263,9 +15265,26 @@ const isRoomManagerScopeReady = computed(() => Boolean(
   cleanScopeText(roomManagerSelectedType.value) &&
   cleanScopeText(roomManagerEffectiveDistrict.value)
 ))
+function getRoomNameLength018241(room = '') {
+  return Array.from(cleanScopeText(room).normalize('NFKC')).length
+}
+
 const managerRooms = computed(() => {
   const key = `${cleanScopeText(managerSelectedCity.value)}__${cleanScopeText(managerEffectiveDistrict.value)}__${cleanScopeText(managerSelectedType.value)}`
-  return locationOptions.value.rooms?.[key] || []
+  const roomList = Array.isArray(locationOptions.value.rooms?.[key])
+    ? locationOptions.value.rooms[key]
+    : []
+
+  // 第 018-241 批：只調整紅框機房狀態下拉的顯示順序。
+  // 名稱字數較長的排前面；相同字數維持原本管理清單順序，避免儲存順序被改寫。
+  return roomList
+    .map((room, index) => ({
+      room,
+      index,
+      nameLength: getRoomNameLength018241(room),
+    }))
+    .sort((left, right) => (right.nameLength - left.nameLength) || (left.index - right.index))
+    .map(item => item.room)
 })
 const roomManagerDistricts = computed(() => locationOptions.value.districts?.[roomManagerSelectedCity.value] || [])
 const roomManagerRooms = computed(() => {
