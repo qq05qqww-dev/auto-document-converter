@@ -1,4 +1,6 @@
-﻿<!-- 第 018-243 批：文件開頭共用價格列套用到小姐區塊修正版 -->
+﻿<!-- 第 018-244 批：文件1貼上英文數字金額轉數字＋共用價格移到小姐標題下方版 -->
+<!-- batch018-244-paste-english-digit-price-move-under-lady-header -->
+<!-- 第 018-243 批：文件開頭共用價格列套用到小姐區塊修正版 -->
 <!-- batch018-243-leading-shared-price-lines-attach-to-record-blocks-fix -->
 <!-- 第 018-242 批：分鐘／節數斜線在前＋金額在後正式價格解析修正版 -->
 <!-- batch018-242-minute-session-slash-amount-after-price-parse-fix -->
@@ -2710,6 +2712,7 @@ const CLEAN_START_PANEL_STORAGE_KEY = 'auto-document-converter-clean-start-panel
 const ONLINE_READY_VERSION_LABEL = '第 018-126 批：中央媒體來源統一與前後台數量同步修正版'
 const PROTECTED_GLOBAL_RULE_NOTICE = '公版規則已固定保護，不會被清除；若遺失會自動補回預設公版。'
 const SOURCE_PASTE_TWO_BLANK_LINES_NOTICE = '文件1貼上後已自動在底部保留兩行空白；斜線 / 與 ／ 會保留原樣。'
+const SOURCE_PASTE_REORDERED_PRICE_NOTICE018244 = '文件1貼上完成：英文逐字金額已轉為數字，共用價格已移到小姐國籍姓名下方。'
 const STAFF_PROFILE_STORAGE_KEY = 'auto-document-converter-current-staff-profile'
 const STAFF_DEFAULT_NAME = '未登入使用者'
 const ONLINE_OPTIONS_SCOPE = { city: '__OPTIONS__', district: '__OPTIONS__', mode: '定點', room: '__OPTIONS__' }
@@ -2724,22 +2727,160 @@ const EMPLOYEE_COMMON_RULE_STORAGE_KEY018215 = 'auto-document-converter-employee
 // 第 018-205 批：文件1是原始資料編輯區，不能在輸入階段把 / 或 ／ 改成空格。
 // 斜線可能是價格格式、服務分隔、國籍代碼或店家原文的一部分；
 // 僅在後續解析副本中按各解析規則正規化，不回寫並破壞使用者看到的文件1。
-function normalizeSourceTextAfterPaste(text = '') {
-  const normalized = String(text || '')
+const ENGLISH_DIGIT_WORD_MAP018244 = Object.freeze({
+  zero: '0',
+  one: '1',
+  two: '2',
+  three: '3',
+  four: '4',
+  five: '5',
+  six: '6',
+  seven: '7',
+  eight: '8',
+  nine: '9'
+})
+
+// 第 018-244 批：只在「分鐘／節數＋英文逐字金額」完整價格列內轉換英文數字。
+// 例：30/1S two eight zero zero -> 30/1S 2800。
+// 一般英文姓名、服務說明或句子不符合整行價格格式時完全不改。
+function normalizeEnglishDigitPriceLine018244(line = '') {
+  const original = String(line || '')
+  const normalized = original
+    .normalize('NFKC')
+    .replace(/[／]/g, '/')
+    .replace(/　/g, ' ')
+    .replace(/[ \t]+/g, ' ')
+    .trim()
+
+  const matched = normalized.match(
+    /^(?:(快餐|短[鐘鍾]|長[鐘鍾])\s*)?(\d{2,3})\s*\/\s*(NS|N\s*\/?\s*S|\d+(?:\.\d+)?\s*S)\s+(.+)$/i
+  )
+  if (!matched) return { line: original.replace(/[ \t]+$/g, ''), converted: false }
+
+  const amountWords = String(matched[4] || '')
+    .trim()
+    .split(/[\s-]+/)
+    .filter(Boolean)
+  if (amountWords.length < 3 || !amountWords.every(word => ENGLISH_DIGIT_WORD_MAP018244[word.toLowerCase()] !== undefined)) {
+    return { line: original.replace(/[ \t]+$/g, ''), converted: false }
+  }
+
+  const amountText = amountWords
+    .map(word => ENGLISH_DIGIT_WORD_MAP018244[word.toLowerCase()])
+    .join('')
+  const amount = Number(amountText)
+  if (!Number.isFinite(amount) || amount < 1000 || amount > 100000) {
+    return { line: original.replace(/[ \t]+$/g, ''), converted: false }
+  }
+
+  const prefix = matched[1] ? String(matched[1]).trim() : ''
+  const minutes = Number(matched[2])
+  const sessionLabel = normalizePriceSessionLabel(matched[3] || '1S')
+  if (minutes < 10 || minutes > 180 || !sessionLabel) {
+    return { line: original.replace(/[ \t]+$/g, ''), converted: false }
+  }
+
+  return {
+    line: `${prefix}${minutes}/${sessionLabel} ${amountText}`,
+    converted: true
+  }
+}
+
+// 第 018-244 批：把文件最前面的共用價格列移到每位沒有自訂價格的小姐標題正下方。
+// 這是文件1可見內容的整理，不只是文件2解析時的虛擬補入。
+function moveLeadingSharedPricesUnderLadyHeaders018244(lines = []) {
+  const sourceLines = Array.isArray(lines) ? [...lines] : []
+  const recordStartIndexes = getRecordStartIndexes018244(sourceLines)
+  if (!recordStartIndexes.length) {
+    return { lines: sourceLines, movedPriceLineCount: 0, targetRecordCount: 0 }
+  }
+
+  const firstRecordStart = recordStartIndexes[0]
+  const leadingPriceIndexes = []
+  const sharedPriceLines = []
+  sourceLines.slice(0, firstRecordStart).forEach((line, index) => {
+    const value = String(line || '').trim()
+    if (!value || !isPriceLine(value)) return
+    leadingPriceIndexes.push(index)
+    sharedPriceLines.push(value)
+  })
+
+  if (!sharedPriceLines.length) {
+    return { lines: sourceLines, movedPriceLineCount: 0, targetRecordCount: 0 }
+  }
+
+  const removedIndexSet = new Set(leadingPriceIndexes)
+  const workingLines = sourceLines.filter((_, index) => !removedIndexSet.has(index))
+  while (workingLines.length && !String(workingLines[0] || '').trim()) workingLines.shift()
+
+  const adjustedRecordStarts = getRecordStartIndexes018244(workingLines)
+  let targetRecordCount = 0
+
+  // 由最後一筆往前插入，避免前方 splice 改變後續索引。
+  for (let index = adjustedRecordStarts.length - 1; index >= 0; index -= 1) {
+    const startIndex = adjustedRecordStarts[index]
+    const endIndex = index + 1 < adjustedRecordStarts.length
+      ? adjustedRecordStarts[index + 1]
+      : workingLines.length
+    const structuredHeader = parseStructuredHeaderAt(workingLines, startIndex)
+    const consumedLines = Math.max(1, Number(structuredHeader?.consumedLines || 1))
+    const recordLines = workingLines.slice(startIndex, endIndex)
+    const recordText = recordLines.join('\n').trim()
+    const recordHasOwnPrice = recordLines
+      .slice(consumedLines)
+      .some(line => isPriceLine(line))
+      || Boolean(extractHeaderStandaloneAmount018207(recordText, findHeaderInBlock(recordText)))
+
+    if (recordHasOwnPrice) continue
+    workingLines.splice(startIndex + consumedLines, 0, ...sharedPriceLines)
+    targetRecordCount += 1
+  }
+
+  return {
+    lines: workingLines,
+    movedPriceLineCount: sharedPriceLines.length,
+    targetRecordCount
+  }
+}
+
+function normalizeSourceTextAfterPaste018244(text = '') {
+  const normalizedBase = String(text || '')
     .replace(/\r\n?/g, '\n')
     .replace(/[\u0085\u2028\u2029]/g, '\n')
     .replace(/[\u000B\u000C]/g, '\n')
     .replace(/[ \t]+$/gm, '')
-  return ensureSourceTextBottomBlankLines(normalized)
+
+  let convertedEnglishPriceCount = 0
+  const normalizedLines = normalizedBase.split('\n').map(line => {
+    const normalizedPrice = normalizeEnglishDigitPriceLine018244(line)
+    if (normalizedPrice.converted) convertedEnglishPriceCount += 1
+    return normalizedPrice.line
+  })
+
+  const moved = moveLeadingSharedPricesUnderLadyHeaders018244(normalizedLines)
+  return {
+    text: ensureSourceTextBottomBlankLines(moved.lines.join('\n')),
+    convertedEnglishPriceCount,
+    movedPriceLineCount: moved.movedPriceLineCount,
+    targetRecordCount: moved.targetRecordCount
+  }
+}
+
+function normalizeSourceTextAfterPaste(text = '') {
+  return normalizeSourceTextAfterPaste018244(text).text
 }
 
 function handleSourceTextPaste() {
   window.setTimeout(() => {
-    const normalized = normalizeSourceTextAfterPaste(sourceText.value)
-    if (normalized !== sourceText.value) {
-      sourceText.value = normalized
-      statusMessage.value = SOURCE_PASTE_TWO_BLANK_LINES_NOTICE
+    const result018244 = normalizeSourceTextAfterPaste018244(sourceText.value)
+    if (result018244.text !== sourceText.value) sourceText.value = result018244.text
+
+    if (result018244.convertedEnglishPriceCount || result018244.movedPriceLineCount) {
+      statusMessage.value = SOURCE_PASTE_REORDERED_PRICE_NOTICE018244
+      return
     }
+
+    statusMessage.value = SOURCE_PASTE_TWO_BLANK_LINES_NOTICE
   }, 0)
 }
 
@@ -11307,25 +11448,24 @@ function parseLooseNameBodyHeaderLine(line) {
   return { name }
 }
 
-function splitBlocks(text) {
-  // 第 018-192 批：即使未先經過 cleanupSourceText，也必須能正確切開 Unicode 換行來源。
-  const normalizedText = normalizeImportedLineBreaks018192(text)
-  const lines = normalizedText.split('\n')
+// 第 018-244 批：文件1貼上整理與 splitBlocks 共用同一套小姐起點辨識，
+// 避免畫面移動價格時認得的小姐與正式轉換切筆結果不同。
+function getRecordStartIndexes018244(lines = []) {
+  const sourceLines = Array.isArray(lines) ? lines : []
   const startIndexes = []
 
   // 第 018-164 批：同一份文件可能同時包含：
   // 1.「嫩p 越南」這種姓名＋國籍同一行。
   // 2.「萌喵喵」下一行才寫「越南」的姓名／國籍分行格式。
-  // 舊版只要先找到第 1 種，就完全不再掃描純姓名起點，導致第 2 位小姐被併入上一筆。
-  lines.forEach((line, index) => {
+  sourceLines.forEach((line, index) => {
     const normalizedLine = normalizeThaiCountryHeaderLine(line)
-    const structuredHeader = parseStructuredHeaderAt(lines, index)
+    const structuredHeader = parseStructuredHeaderAt(sourceLines, index)
     // 第 018-169 批：標準規則若因員工／機房自訂規則誤把「妮妮 馬來西亞」
     // 判成非標題，仍以固定國籍清單做第二層結構辨識，避免整份文件切出 0 筆。
     const hasCountryHeader = Boolean(
       structuredHeader || parseHeaderLine(normalizedLine) || parseStrictNameCountryHeaderLine(normalizedLine)
     )
-    const previousStructuredHeader = index > 0 ? parseStructuredHeaderAt(lines, index - 1) : null
+    const previousStructuredHeader = index > 0 ? parseStructuredHeaderAt(sourceLines, index - 1) : null
     const isStructuredHeaderContinuation = Boolean(
       previousStructuredHeader
       && previousStructuredHeader.consumedLines === 2
@@ -11334,12 +11474,19 @@ function splitBlocks(text) {
     const hasNameOnlyHeader = !hasCountryHeader
       && !isStructuredHeaderContinuation
       && isNameOnlyHeaderLine(line)
-      && looksLikeNameOnlyRecordStart(lines, index)
+      && looksLikeNameOnlyRecordStart(sourceLines, index)
 
     if (hasCountryHeader || hasNameOnlyHeader) startIndexes.push(index)
   })
 
-  const uniqueStartIndexes = Array.from(new Set(startIndexes)).sort((a, b) => a - b)
+  return Array.from(new Set(startIndexes)).sort((a, b) => a - b)
+}
+
+function splitBlocks(text) {
+  // 第 018-192 批：即使未先經過 cleanupSourceText，也必須能正確切開 Unicode 換行來源。
+  const normalizedText = normalizeImportedLineBreaks018192(text)
+  const lines = normalizedText.split('\n')
+  const uniqueStartIndexes = getRecordStartIndexes018244(lines)
   if (uniqueStartIndexes.length) {
     // 第 018-243 批：文件開頭位於第一位小姐標題之前的正式價格列，
     // 是整份店家資訊的共用價格表，不能在 splitBlocks() 從第一個標題切筆時被丟掉。
