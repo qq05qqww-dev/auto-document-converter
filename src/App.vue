@@ -1,4 +1,6 @@
-﻿<!-- batch018-252-owner-base-employee-room-final-override -->
+﻿<!-- batch018-253-document2-full-amount-output -->
+<!-- 第 018-253 批：文件2正式方案由 K 格式統一輸出完整金額版 -->
+<!-- batch018-252-owner-base-employee-room-final-override -->
 <!-- 第 018-252 批：老闆公版作為基礎＋員工目前機房規則最後覆蓋版 -->
 <!-- batch018-251-owner-price-field-visible-owner-first-employee-fallback -->
 <!-- 第 018-251 批：老闆顯示價格欄位規則＋老闆公版優先、員工機房未命中補充版 -->
@@ -4843,7 +4845,7 @@ const priceMappingRulesText018204 = ref('')
 const priceRangeRulesText018206 = ref('')
 const priceMappingFallback018204 = ref('legacy')
 const titleMode = ref('country-name')
-const formatHint = ref('【國籍 名稱】身高 體重 Cup 年齡　短鐘K/30/1S　長鐘K/50/1S')
+const formatHint = ref('【國籍 名稱】身高 體重 Cup 年齡　2500/30/1S　3500/50/1S')
 const bodyOutputOrder = ref('height-weight-cup-age')
 const formatSettingsTab = ref('header')
 
@@ -4887,7 +4889,7 @@ const newPriceFieldRuleName018247 = ref('')
 const newPriceFieldRuleFields018247 = ref(['minutes', 'amountK', 'session', ''])
 const newPriceFieldRuleSeparator018247 = ref('slash')
 const newPriceFieldRuleDefaultSession018247 = ref('1S')
-const newPriceFieldRuleOutputTemplate018247 = ref('{價格K}/{分鐘}/{節數}')
+const newPriceFieldRuleOutputTemplate018247 = ref('{完整金額}/{分鐘}/{節數}')
 const newPriceFieldRuleExample018247 = ref('30/2.5/1')
 const priceFieldRecognitionTestText018247 = ref('30/2.5/1')
 
@@ -4991,10 +4993,10 @@ function normalizePriceFieldSession018247(value = '', fallback = '1S') {
 
 function normalizePriceFieldOutputTemplate018247(value = '') {
   const template = String(value || '').normalize('NFKC').trim()
-  if (!template) return '{價格K}/{分鐘}/{節數}'
+  if (!template) return '{完整金額}/{分鐘}/{節數}'
   const hasMinutes = template.includes('{分鐘}')
   const hasAmount = template.includes('{價格K}') || template.includes('{完整金額}')
-  if (!hasMinutes || !hasAmount) return '{價格K}/{分鐘}/{節數}'
+  if (!hasMinutes || !hasAmount) return '{完整金額}/{分鐘}/{節數}'
   return template
 }
 
@@ -5216,9 +5218,11 @@ function formatPriceFieldOutput018247(rule = {}, data = {}) {
   const minutes = Number(data.minutes || 0)
   const sessionLabel = normalizePriceFieldSession018247(data.sessionLabel || rule.defaultSession || '1S')
   const template = normalizePriceFieldOutputTemplate018247(rule.outputTemplate)
+  const fullAmountText = formatDocument2FullAmount018253(amount)
   return template
-    .replaceAll('{價格K}', formatAmount(amount))
-    .replaceAll('{完整金額}', String(amount))
+    // 第 018-253 批：舊規則即使仍使用「{價格K}」，文件2也統一輸出完整金額。
+    .replaceAll('{價格K}', fullAmountText)
+    .replaceAll('{完整金額}', fullAmountText)
     .replaceAll('{分鐘}', String(minutes))
     .replaceAll('{節數}', sessionLabel)
 }
@@ -5234,8 +5238,9 @@ function compilePriceFieldOutputTemplate018247(rule = {}) {
     parts.push(escapeRegExp(template.slice(lastIndex, matched.index)))
     const token = matched[0]
     if (token === '{價格K}') {
-      fields.push('amountK')
-      parts.push('([0-9]+(?:\\.[0-9]+)?)\\s*K')
+      // 第 018-253 批：舊模板名稱保留相容，但輸出與反向解析都支援完整金額。
+      fields.push('amountFlexible')
+      parts.push('([0-9]+(?:\\.[0-9]+)?\\s*K|[0-9]{3,6})')
     } else if (token === '{完整金額}') {
       fields.push('amount')
       parts.push('([0-9]{3,6})')
@@ -5268,7 +5273,12 @@ function parseConfiguredPriceOutputText018247(value = '') {
     let valid = true
     compiled.fields.forEach((field, index) => {
       const part = matched[index + 1]
-      if (field === 'amountK') price = Math.round(Number(part) * 1000)
+      if (field === 'amountFlexible') {
+        const amountText = String(part || '').replace(/\s+/g, '')
+        price = /K$/i.test(amountText)
+          ? Math.round(Number(amountText.replace(/K$/i, '')) * 1000)
+          : Number(amountText)
+      }
       if (field === 'amount') price = Number(part)
       if (field === 'minutes') minutes = Number(part)
       if (field === 'session') sessionLabel = normalizePriceFieldSession018247(part)
@@ -6008,7 +6018,7 @@ function formatBodyOutput(body = {}) {
 
 const outputFormatPreview = computed(() => {
   const title = buildPreviewHeaderTitle('小淫娃', '馬來')
-  return `${title}${formatBodyOutput({ height: '150', weight: '40', cup: 'D', age: '20y' })}  3K/30/1S  3.3K/50/1S`
+  return `${title}${formatBodyOutput({ height: '150', weight: '40', cup: 'D', age: '20y' })}  3000/30/1S  3300/50/1S`
 })
 
 const headerRecognitionPreview = computed(() => {
@@ -10916,6 +10926,21 @@ function parsePriceTextToObject(priceText) {
   const value = String(priceText || '').trim()
   const configured018247 = parseConfiguredPriceOutputText018247(value)
   if (configured018247) return configured018247
+
+  // 第 018-253 批：文件2正式格式改為「完整金額／分鐘／節數」。
+  const fullAmountMatch018253 = value.match(/^([0-9]{3,6})\/(\d+)\/(NS|\d+(?:\.\d+)?S)$/i)
+  if (fullAmountMatch018253) {
+    const sessionLabel = normalizePriceSessionLabel(fullAmountMatch018253[3])
+    return {
+      priceText: value,
+      price: Number(fullAmountMatch018253[1]),
+      minutes: Number(fullAmountMatch018253[2]),
+      sessions: sessionLabel === 'NS' ? null : Number(sessionLabel.replace(/S$/i, '')),
+      sessionLabel
+    }
+  }
+
+  // 舊 K 格式仍保留反向解析相容。
   const match = value.match(/^([0-9]+(?:\.[0-9]+)?)K\/(\d+)\/(NS|\d+(?:\.\d+)?S)$/i)
   if (match) {
     const sessionLabel = normalizePriceSessionLabel(match[3])
@@ -10929,9 +10954,19 @@ function parsePriceTextToObject(priceText) {
     }
   }
 
-  // 第 018-205 批：外送來源常只提供單一總金額，沒有分鐘與節數。
-  // 例：4000、7500 經文件2正規化後分別為 4K、7.5K。
-  // 這類仍是正式價格，只是 minutes / sessions 為空；中央網站保存 priceText 即可正常顯示。
+  // 第 018-253 批：純完整金額也維持正式價格結構。
+  const standaloneFullAmount018253 = value.match(/^([0-9]{3,6})$/)
+  if (standaloneFullAmount018253) {
+    return {
+      priceText: value,
+      price: Number(standaloneFullAmount018253[1]),
+      minutes: null,
+      sessions: null,
+      sessionLabel: ''
+    }
+  }
+
+  // 舊 K 純金額仍保留相容。
   const standaloneMatch = value.match(/^([0-9]+(?:\.[0-9]+)?)K$/i)
   if (!standaloneMatch) return null
 
@@ -13574,7 +13609,7 @@ function parsePrices(text, increase, priceContext = {}) {
         : resolveFinalAmount(rawAmount, increase)
 
     if (!finalAmount || finalAmount < 1000 || finalAmount > 1000000) return
-    const text = formatAmount(finalAmount)
+    const text = formatDocument2FullAmount018253(finalAmount)
     const key = `standalone/${text}`
     if (seen.has(key)) return
     seen.add(key)
@@ -13611,7 +13646,7 @@ function parsePrices(text, increase, priceContext = {}) {
       sessionLabel,
       text: options.priceFieldRule018247
         ? formatPriceFieldOutput018247(options.priceFieldRule018247, { amount: finalAmount, minutes: min, sessionLabel })
-        : `${formatAmount(finalAmount)}/${min}/${sessionLabel}`
+        : `${formatDocument2FullAmount018253(finalAmount)}/${min}/${sessionLabel}`
     })
   }
 
@@ -15834,6 +15869,14 @@ function formatAmount(amount) {
   return `${Number(k.toFixed(1))}K`
 }
 
+// 第 018-253 批：文件2方案統一輸出完整金額，不再顯示 K。
+// 例如 2K → 2000、2.5K → 2500、3.8K → 3800。
+function formatDocument2FullAmount018253(amount) {
+  const normalizedAmount = applyDecimal149Plus100(Number(amount || 0))
+  if (!normalizedAmount) return ''
+  return String(Math.round(normalizedAmount))
+}
+
 
 
 function parseList(text) {
@@ -17515,7 +17558,7 @@ function buildDefaultRuleData() {
     priceMappingProfiles018204: [],
     titleMode: 'country-name',
     bodyOutputOrder: 'height-weight-cup-age',
-    formatHint: '【國籍 名稱】身高 體重 Cup 年齡　短鐘K/30/1S　長鐘K/50/1S',
+    formatHint: '【國籍 名稱】身高 體重 Cup 年齡　2500/30/1S　3500/50/1S',
     headerRecognitionRules: normalizeHeaderRecognitionRules(defaultHeaderRecognitionRules),
     bodyRecognitionRules: normalizeBodyRecognitionRules(defaultBodyRecognitionRules),
     advancedRegexRules: [],
