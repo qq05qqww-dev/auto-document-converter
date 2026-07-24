@@ -1,4 +1,6 @@
-﻿<!-- batch018-255-document2-preserve-source-layout-and-editable-room-combobox -->
+﻿<!-- batch018-256-document3-preserve-document2-layout-and-room-inline-delete -->
+<!-- 第 018-256 批：文件3完整保留文件2原文排版＋機房下拉小叉刪除版 -->
+<!-- batch018-255-document2-preserve-source-layout-and-editable-room-combobox -->
 <!-- 第 018-255 批：文件2原文排版模式＋機房可輸入貼上與下拉選擇版 -->
 <!-- batch018-254-inline-k-price-tokens-to-full-amount-document2 -->
 <!-- 第 018-254 批：文件1小姐資料同行多組 K 價格辨識＋文件2完整金額輸出版 -->
@@ -684,28 +686,44 @@
                       <span class="room-status-option-media018222">—</span>
                     </button>
 
-                    <button
+                    <div
                       v-for="room in managerRooms"
-                      :key="`room-status-option018222-${room}`"
-                      class="room-status-option018222"
-                      type="button"
-                      role="option"
-                      :aria-selected="ruleScopeRoom === room"
-                      :class="{ 'is-active': ruleScopeRoom === room }"
-                      @click="selectRoomStatusOption018222(room)"
+                      :key="`room-status-option018256-${room}`"
+                      class="room-status-option-row018256"
+                      role="presentation"
                     >
-                      <span class="room-status-option-name018222" :title="room">{{ room }}</span>
-                      <span
-                        class="room-status-option-state018222"
-                        :class="`is-${getRoomDailyStatus(room).state}`"
+                      <button
+                        class="room-status-option018222 room-status-option-select018256"
+                        type="button"
+                        role="option"
+                        :aria-selected="ruleScopeRoom === room"
+                        :class="{ 'is-active': ruleScopeRoom === room }"
+                        @click="selectRoomStatusOption018222(room)"
                       >
-                        <i aria-hidden="true">{{ getRoomDailyStatus(room).documentSaved ? '●' : '○' }}</i>
-                        {{ getRoomDailyStatus(room).documentSaved ? '已更新' : '未更新' }}
-                      </span>
-                      <span class="room-status-option-media018222">
-                        {{ getRoomDailyStatus(room).mediaReadyCount }}/{{ getRoomDailyStatus(room).mediaTotalCount }}
-                      </span>
-                    </button>
+                        <span class="room-status-option-name018222" :title="room">{{ room }}</span>
+                        <span
+                          class="room-status-option-state018222"
+                          :class="`is-${getRoomDailyStatus(room).state}`"
+                        >
+                          <i aria-hidden="true">{{ getRoomDailyStatus(room).documentSaved ? '●' : '○' }}</i>
+                          {{ getRoomDailyStatus(room).documentSaved ? '已更新' : '未更新' }}
+                        </span>
+                        <span class="room-status-option-media018222">
+                          {{ getRoomDailyStatus(room).mediaReadyCount }}/{{ getRoomDailyStatus(room).mediaTotalCount }}
+                        </span>
+                      </button>
+
+                      <button
+                        class="room-status-option-delete018256"
+                        type="button"
+                        :disabled="isDeletingLocationRoom018225"
+                        :title="`從目前帳號清單刪除機房：${room}`"
+                        :aria-label="`刪除機房 ${room}`"
+                        @click.stop="removeCurrentScopeRoom018256(room)"
+                      >
+                        ×
+                      </button>
+                    </div>
 
                     <div v-if="!managerRooms.length" class="room-status-empty018222">
                       目前範圍尚未建立機房
@@ -1966,7 +1984,7 @@
 
         <p class="document2-output-mode-hint018255">
           <template v-if="isDocument2PreserveLayoutMode018255">
-            原文排版會保留文件1的換行、順序與文字位置，只把 K 價格換成完整金額；加入文件3時仍使用正式固定格式，避免文件4 JSON 與中央同步失效。
+            原文排版會保留文件1的換行、順序與文字位置，只把 K 價格換成完整金額；加入文件3後畫面仍完全相同，文件4 JSON 與中央同步會使用系統隱藏的正式結構。
           </template>
           <template v-else>
             固定格式會依目前老闆公版與員工機房規則重新整理標題、身材、價格與服務。
@@ -1997,7 +2015,7 @@
           v-model="confirmedText"
           class="work-textarea"
           placeholder="文件2確認後加入這裡，可手動微調。"
-          @blur="normalizeDocument3Text(); updateJsonPreview()"
+          @blur="handleConfirmedTextBlur018256"
         ></textarea>
 
         <div class="button-row">
@@ -2920,6 +2938,9 @@ import { isSupabaseConfigured, supabase } from './supabaseClient'
 // 第 018-120 批：同步後回傳資料庫 ID，並在媒體上傳前自動補抓真實 ID。
 const RULE_STORAGE_KEY = 'auto-document-converter-rules-current'
 const CONFIRMED_STORAGE_KEY = 'auto-document-converter-confirmed-current'
+// 第 018-256 批：文件3畫面保留原文排版，正式 JSON 另存固定格式影子稿。
+const CONFIRMED_FORMAL_STORAGE_KEY018256 = 'auto-document-converter-confirmed-formal-current-018256'
+const CONFIRMED_LAYOUT_MODE_STORAGE_KEY018256 = 'auto-document-converter-confirmed-layout-mode-current-018256'
 const SOURCE_STORAGE_KEY = 'auto-document-converter-source-current'
 const RESULT_STORAGE_KEY = 'auto-document-converter-result-current'
 const RULE_SCOPE_STORAGE_KEY = 'auto-document-converter-scope-rules-current'
@@ -4041,6 +4062,10 @@ const selectedUploadLadyMedia = computed(() => {
     : []
 })
 const confirmedText = ref('')
+// 第 018-256 批：confirmedText 給使用者看原文排版；
+// confirmedFormalText018256 專供文件4 JSON、資料庫與中央網站同步。
+const confirmedFormalText018256 = ref('')
+const confirmedPreserveLayout018256 = ref(false)
 const statusMessage = ref('等待貼上資料。')
 const isSavingScopeRules = ref(false)
 const isLoadingScopeRules = ref(false)
@@ -10823,7 +10848,7 @@ async function submitDocument4ToDatabase(options = {}) {
     return false
   }
 
-  const payload = parseConfirmedTextToJson(confirmedText.value)
+  const payload = parseConfirmedTextToJson(getConfirmedStructuredText018256())
   if (!payload.items.length) {
     const message = '文件3目前沒有可送出到資料庫的資料。'
     apiStatusText.value = message
@@ -10973,7 +10998,7 @@ async function submitDocument4ToDatabase(options = {}) {
 async function submitDocument4ToApi() {
   saveApiBaseUrl()
 
-  const payload = parseConfirmedTextToJson(confirmedText.value)
+  const payload = parseConfirmedTextToJson(getConfirmedStructuredText018256())
   if (!payload.items.length) {
     apiStatusText.value = '文件3目前沒有可送出的資料。'
     return
@@ -11457,6 +11482,105 @@ function scheduleRoomStatusPasteCommit018255() {
   }, 80)
 }
 
+// 第 018-256 批：在機房下拉清單右側直接用小叉刪除。
+// 只刪除目前登入帳號的管理清單，不刪中央網站小姐資料或媒體。
+async function removeCurrentScopeRoom018256(room = '') {
+  if (isDeletingLocationRoom018225.value) return false
+
+  const city = cleanScopeText(managerSelectedCity.value)
+  const type = cleanScopeText(managerSelectedType.value)
+  const district = resolveScopeDistrictForType(managerEffectiveDistrict.value, type)
+  const targetRoom = cleanScopeText(room)
+  const key = `${city}__${district}__${type}`
+
+  if (!city || !district || !type || !targetRoom || !managerRooms.value.includes(targetRoom)) {
+    statusMessage.value = '目前機房資料已變更，請重新開啟下拉清單後再刪除。'
+    return false
+  }
+
+  const scopeLabel = `${city} / ${getScopeDistrictDisplay(district, type)} / ${type}`
+  const confirmed = window.confirm(
+    `確定要從目前登入帳號的機房清單刪除「${targetRoom}」嗎？\n\n範圍：${scopeLabel}\n此操作會儲存到線上；不會刪除中央網站的小姐資料、圖片或影片。`
+  )
+  if (!confirmed) return false
+
+  const previousOptions = normalizeLocationOptions(
+    JSON.parse(JSON.stringify(locationOptions.value || {}))
+  )
+  const previousRuleScope = {
+    city: ruleScopeCity.value,
+    district: ruleScopeDistrict.value,
+    type: ruleScopeType.value,
+    room: ruleScopeRoom.value
+  }
+  const previousInput = roomStatusInput018255.value
+
+  if (!locationOptions.value.hiddenRooms || typeof locationOptions.value.hiddenRooms !== 'object') {
+    locationOptions.value.hiddenRooms = {}
+  }
+
+  locationOptions.value.hiddenRooms[key] = addHiddenValue(
+    locationOptions.value.hiddenRooms[key],
+    targetRoom
+  )
+  locationOptions.value.rooms[key] = removeFromList(
+    locationOptions.value.rooms[key],
+    targetRoom
+  )
+
+  const deletingCurrentRoom = cleanScopeText(ruleScopeRoom.value) === targetRoom
+  if (deletingCurrentRoom) {
+    ruleScopeRoom.value = ''
+    roomStatusInput018255.value = ''
+    writeLastScopeSelection({ city, district, type, room: '' })
+  }
+
+  isDeletingLocationRoom018225.value = true
+  statusMessage.value = `正在從線上刪除機房：${targetRoom}...`
+
+  try {
+    const saved = await saveLocationOptions(locationOptions.value)
+    if (!saved) {
+      const failureMessage = statusMessage.value
+      locationOptions.value = previousOptions
+      ruleScopeCity.value = previousRuleScope.city
+      ruleScopeDistrict.value = previousRuleScope.district
+      ruleScopeType.value = previousRuleScope.type
+      ruleScopeRoom.value = previousRuleScope.room
+      roomStatusInput018255.value = previousInput
+
+      if (previousRuleScope.room) {
+        writeLastScopeSelection(previousRuleScope)
+      }
+
+      statusMessage.value = `${failureMessage}；畫面已恢復刪除前狀態。`
+      return false
+    }
+
+    statusMessage.value = `已在線上刪除機房：${targetRoom}。不會刪除中央網站小姐資料或媒體。`
+    showActionToast(`已刪除機房：${targetRoom}`, 'success')
+    return true
+  } catch (error) {
+    locationOptions.value = previousOptions
+    ruleScopeCity.value = previousRuleScope.city
+    ruleScopeDistrict.value = previousRuleScope.district
+    ruleScopeType.value = previousRuleScope.type
+    ruleScopeRoom.value = previousRuleScope.room
+    roomStatusInput018255.value = previousInput
+
+    if (previousRuleScope.room) {
+      writeLastScopeSelection(previousRuleScope)
+    }
+
+    const message = `刪除機房失敗，畫面已恢復：${error.message || error}`
+    statusMessage.value = message
+    showActionToast(message, 'error')
+    return false
+  } finally {
+    isDeletingLocationRoom018225.value = false
+  }
+}
+
 function handleRoomStatusDropdownOutsideClick018222(event) {
   const target = event?.target
   if (!(target instanceof Element)) return
@@ -11751,7 +11875,7 @@ function parseConfirmedTextToJson(text) {
 }
 
 function updateJsonPreview() {
-  jsonResultText.value = JSON.stringify(parseConfirmedTextToJson(confirmedText.value), null, 2)
+  jsonResultText.value = JSON.stringify(parseConfirmedTextToJson(getConfirmedStructuredText018256()), null, 2)
 }
 
 function ensureSourceTextBottomBlankLines(text = '') {
@@ -17091,6 +17215,8 @@ async function loadOnlineWorkspace(opts = {}) {
 const BACKUP_STORAGE_KEYS = [
   RULE_STORAGE_KEY,
   CONFIRMED_STORAGE_KEY,
+  CONFIRMED_FORMAL_STORAGE_KEY018256,
+  CONFIRMED_LAYOUT_MODE_STORAGE_KEY018256,
   SOURCE_STORAGE_KEY,
   RESULT_STORAGE_KEY,
   RULE_SCOPE_STORAGE_KEY,
@@ -19158,16 +19284,35 @@ function ensureDocument3TopBlankLines(text) {
 }
 
 function normalizeDocument3Text() {
+  if (confirmedPreserveLayout018256.value) {
+    confirmedText.value = normalizeImportedLineBreaks018192(String(confirmedText.value || ''))
+      .replace(/^\n+|\n+$/g, '')
+    return
+  }
+
   confirmedText.value = ensureDocument3TopBlankLines(confirmedText.value)
 }
 
-function appendResultToConfirmed() {
-  const visibleText018255 = String(resultText.value || '').trim()
-  const text = isDocument2PreserveLayoutMode018255.value
-    ? String(currentDocument2FormalText018255.value || '').trim()
-    : visibleText018255
+function getConfirmedStructuredText018256() {
+  const formal = String(confirmedFormalText018256.value || '').trim()
+  return formal || String(confirmedText.value || '')
+}
 
-  if (!visibleText018255 || !text) {
+function handleConfirmedTextBlur018256() {
+  normalizeDocument3Text()
+  cacheConfirmedDocumentDraft018216()
+  updateJsonPreview()
+}
+
+function appendResultToConfirmed() {
+  const visibleText018255 = normalizeImportedLineBreaks018192(
+    String(resultText.value || '')
+  ).replace(/^\n+|\n+$/g, '')
+  const formalText018256 = String(
+    currentDocument2FormalText018255.value || visibleText018255
+  ).trim()
+
+  if (!visibleText018255 || !formalText018256) {
     statusMessage.value = '文件2目前沒有內容，不能加入文件3。'
     return
   }
@@ -19177,13 +19322,32 @@ function appendResultToConfirmed() {
     return
   }
 
-  const current = String(confirmedText.value || '').replace(/^\n+/, '').trim()
-  confirmedText.value = ensureDocument3TopBlankLines(current ? `${current}\n\n${text}` : text)
+  const currentVisible018256 = normalizeImportedLineBreaks018192(
+    String(confirmedText.value || '')
+  ).replace(/^\n+|\n+$/g, '')
+  const currentFormal018256 = String(
+    confirmedFormalText018256.value || ''
+  ).replace(/^\n+|\n+$/g, '')
+
+  confirmedPreserveLayout018256.value = (
+    confirmedPreserveLayout018256.value ||
+    isDocument2PreserveLayoutMode018255.value
+  )
+
+  confirmedText.value = currentVisible018256
+    ? `${currentVisible018256}\n\n${visibleText018255}`
+    : visibleText018255
+
+  confirmedFormalText018256.value = currentFormal018256
+    ? `${currentFormal018256}\n\n${formalText018256}`
+    : formalText018256
+
   saveConfirmedText({ silent: true })
   clearResultText({ silent: true })
   updateJsonPreview()
+
   statusMessage.value = isDocument2PreserveLayoutMode018255.value
-    ? '文件2目前保留原文排版；加入文件3時已自動使用正式固定格式，文件4 JSON 已同步更新。'
+    ? '文件2已原封不動加入文件3；文件1、文件2、文件3的換行、順序與文字位置保持一致，文件4使用隱藏正式結構。'
     : '已把文件2加入文件3草稿，文件4 JSON 已同步更新；尚未按儲存文件3到線上。'
 }
 
@@ -19194,6 +19358,14 @@ function appendResultToConfirmed() {
 function cacheConfirmedDocumentDraft018216() {
   try {
     localStorage.setItem(CONFIRMED_STORAGE_KEY, confirmedText.value)
+    localStorage.setItem(
+      CONFIRMED_FORMAL_STORAGE_KEY018256,
+      confirmedFormalText018256.value
+    )
+    localStorage.setItem(
+      CONFIRMED_LAYOUT_MODE_STORAGE_KEY018256,
+      confirmedPreserveLayout018256.value ? 'preserve' : 'standard'
+    )
   } catch (error) {
     console.warn('文件3草稿快取失敗，但不影響目前畫面：', error)
   }
@@ -19254,7 +19426,7 @@ async function saveConfirmedText(options = {}) {
 async function retryCentralWebsiteSync() {
   if (isDatabaseSubmitting.value) return false
 
-  const payload = parseConfirmedTextToJson(confirmedText.value)
+  const payload = parseConfirmedTextToJson(getConfirmedStructuredText018256())
   if (!payload.items.length) {
     const message = '文件3目前沒有可重新同步中央站的資料。'
     setDatabaseSubmitFeedback(message, 'warning', { toast: true })
@@ -19290,12 +19462,26 @@ async function retryCentralWebsiteSync() {
 
 function loadConfirmedText(options = {}) {
   const saved = getFirstStorageValue(CONFIRMED_STORAGE_KEY, LEGACY_CONFIRMED_STORAGE_KEYS)
+  const savedFormal018256 = localStorage.getItem(CONFIRMED_FORMAL_STORAGE_KEY018256) || ''
+  const savedMode018256 = localStorage.getItem(CONFIRMED_LAYOUT_MODE_STORAGE_KEY018256)
+
+  confirmedPreserveLayout018256.value = savedMode018256 === 'preserve'
+  confirmedFormalText018256.value = savedFormal018256
 
   if (saved) {
-    confirmedText.value = ensureDocument3TopBlankLines(saved)
+    confirmedText.value = confirmedPreserveLayout018256.value
+      ? normalizeImportedLineBreaks018192(saved).replace(/^\n+|\n+$/g, '')
+      : ensureDocument3TopBlankLines(saved)
     localStorage.setItem(CONFIRMED_STORAGE_KEY, confirmedText.value)
   } else {
-    confirmedText.value = ensureDocument3TopBlankLines(confirmedText.value)
+    confirmedText.value = confirmedPreserveLayout018256.value
+      ? ''
+      : ensureDocument3TopBlankLines(confirmedText.value)
+  }
+
+  // 舊版本沒有正式影子稿時，沿用既有文件3內容，維持向下相容。
+  if (!confirmedFormalText018256.value.trim() && !confirmedPreserveLayout018256.value) {
+    confirmedFormalText018256.value = String(confirmedText.value || '')
   }
 
   normalizeDocument3Text()
@@ -19317,8 +19503,12 @@ function clearSourceAndResult() {
 }
 
 function clearConfirmedText() {
-  confirmedText.value = '\n\n'
+  confirmedText.value = ''
+  confirmedFormalText018256.value = ''
+  confirmedPreserveLayout018256.value = false
   localStorage.setItem(CONFIRMED_STORAGE_KEY, confirmedText.value)
+  localStorage.setItem(CONFIRMED_FORMAL_STORAGE_KEY018256, '')
+  localStorage.setItem(CONFIRMED_LAYOUT_MODE_STORAGE_KEY018256, 'standard')
   updateJsonPreview()
   statusMessage.value = '文件3已清空，文件4 JSON 已同步更新。'
 }
@@ -19327,7 +19517,9 @@ function clearConfirmedText() {
 function clearDocumentsAfterDatabaseSubmit() {
   sourceText.value = ''
   clearResultText({ silent: true })
-  confirmedText.value = '\n\n'
+  confirmedText.value = ''
+  confirmedFormalText018256.value = ''
+  confirmedPreserveLayout018256.value = false
   jsonResultText.value = JSON.stringify({
     generatedAt: new Date().toISOString(),
     source: 'document3_confirmed',
@@ -19338,6 +19530,8 @@ function clearDocumentsAfterDatabaseSubmit() {
   safeSetStorageValue(SOURCE_STORAGE_KEY, sourceText.value)
   safeSetStorageValue(RESULT_STORAGE_KEY, resultText.value)
   safeSetStorageValue(CONFIRMED_STORAGE_KEY, confirmedText.value)
+  safeSetStorageValue(CONFIRMED_FORMAL_STORAGE_KEY018256, '')
+  safeSetStorageValue(CONFIRMED_LAYOUT_MODE_STORAGE_KEY018256, 'standard')
 
   return true
 }
@@ -29299,6 +29493,49 @@ button:disabled {
   .document2-header-actions018255 {
     width: 100%;
   }
+}
+
+
+/* 第 018-256 批：機房下拉列右側小叉刪除。 */
+.room-status-option-row018256 {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 38px;
+  align-items: stretch;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.room-status-option-row018256:last-of-type {
+  border-bottom: 0;
+}
+
+.room-status-option-select018256 {
+  width: 100%;
+  border-bottom: 0;
+}
+
+.room-status-option-delete018256 {
+  align-self: center;
+  justify-self: center;
+  width: 29px;
+  height: 29px;
+  border: 1px solid rgba(239, 68, 68, 0.28);
+  border-radius: 999px;
+  background: rgba(254, 226, 226, 0.72);
+  color: #b91c1c;
+  cursor: pointer;
+  font-size: 20px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.room-status-option-delete018256:hover {
+  background: #fee2e2;
+  box-shadow: 0 5px 14px rgba(185, 28, 28, 0.14);
+}
+
+.room-status-option-delete018256:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 </style>
