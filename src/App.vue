@@ -1,4 +1,8 @@
-﻿<!-- batch018-257-document3-single-source-exact-card-json-sync -->
+﻿<!-- batch018-258-1-document3-two-trailing-blank-lines -->
+<!-- 第 018-258-1 批：文件3最後文字下方固定兩空行修正版 -->
+<!-- batch018-258-rebuilt-keep-area-heading-not-lady-document3-two-leading-blank-lines -->
+<!-- 第 018-258 重新版：地區區域標題完整保留但不算小姐；前置兩空行已由第 018-258-1 修正為尾端兩空行 -->
+<!-- batch018-257-document3-single-source-exact-card-json-sync -->
 <!-- 第 018-257 批：文件3唯一正式來源＋卡片價格服務逐字一致修正版 -->
 <!-- batch018-256-document3-preserve-document2-layout-and-room-inline-delete -->
 <!-- 第 018-256 批：文件3完整保留文件2原文排版＋機房下拉小叉刪除版 -->
@@ -11847,6 +11851,14 @@ function splitConfirmedVisibleLadyBlocks018257(value = '') {
 
   lines.forEach(line => {
     const normalizedLine = String(line || '')
+
+    // 第 018-258 重新版：文件3保留區域標題，
+    // 但 JSON／卡片解析時不把它當成小姐區塊。
+    if (isStandaloneAreaHeading018258R(normalizedLine)) {
+      pushCurrent()
+      return
+    }
+
     if (/^\s*【[^】]+】/.test(normalizedLine)) {
       pushCurrent()
       current.push(normalizedLine)
@@ -12179,6 +12191,74 @@ function resetResultValidationState() {
 
 // 第 018-255 批：原文排版只把 K／千價格換算成完整金額，
 // 其餘文字、換行、空白段落與前後順序完全照文件1。
+// 第 018-258 重新版：辨識「只是地區／區域標題」的行。
+// 這些行在文件1、文件2、文件3都完整保留，但不能被當成小姐姓名。
+// 支援：北區、【北區】、`【北區】`、台北市【內湖區】、台中市 北區。
+function normalizeAreaHeadingForDetection018258R(line = '') {
+  let source = String(line || '')
+    .normalize('NFKC')
+    .trim()
+
+  if (!source) return ''
+
+  source = source
+    .replace(/^`+|`+$/g, '')
+    .replace(/^[#*•·\-–—]+\s*/, '')
+    .trim()
+
+  if (!source) return ''
+
+  // 有身材、價格、分鐘、節數、加價或服務內容時，不是純地區標題。
+  if (/\d/.test(source)) return ''
+  if (/[\/／+]/.test(source)) return ''
+  if (/(?:分鐘|分|節|價格|方案|服務|身高|體重|罩杯|歲|[A-K]\s*(?:奶|杯)?)/i.test(source)) {
+    return ''
+  }
+
+  const administrativeUnit = '[\\u4e00-\\u9fa5]{1,8}(?:市|縣|區|鄉|鎮|村|里)'
+  const cityOrCounty = '[\\u4e00-\\u9fa5]{1,8}(?:市|縣)'
+  const localArea = '[\\u4e00-\\u9fa5]{1,8}(?:區|鄉|鎮|村|里)'
+
+  const wrapped = source.match(
+    new RegExp(`^[【\\[（(]\\s*(${administrativeUnit})\\s*[】\\]）)]$`)
+  )
+  if (wrapped) return wrapped[1]
+
+  const cityWithWrappedArea = source.match(
+    new RegExp(`^(${cityOrCounty})\\s*[【\\[（(]\\s*(${localArea})\\s*[】\\]）)]$`)
+  )
+  if (cityWithWrappedArea) {
+    return `${cityWithWrappedArea[1]} ${cityWithWrappedArea[2]}`
+  }
+
+  const plainSingle = source.match(
+    new RegExp(`^(${administrativeUnit})$`)
+  )
+  if (plainSingle) return plainSingle[1]
+
+  const plainPair = source.match(
+    new RegExp(`^(${cityOrCounty})\\s+(?:→\\s*)?(${localArea})$`)
+  )
+  if (plainPair) {
+    return `${plainPair[1]} ${plainPair[2]}`
+  }
+
+  return ''
+}
+
+function isStandaloneAreaHeading018258R(line = '') {
+  return Boolean(normalizeAreaHeadingForDetection018258R(line))
+}
+
+// 第 018-258-1 批：文件3原文模式固定在最後文字下方保留兩個空白行。
+// 不再於文件3最上方加空白行，也不改文件2內部換行與區域標題位置。
+function ensureDocument3TwoTrailingBlankLines018258_1(value = '') {
+  const body = normalizeImportedLineBreaks018192(String(value || ''))
+    .replace(/^\n+|\n+$/g, '')
+
+  return body ? `${body}\n\n` : '\n\n'
+}
+
 function convertSourceKPricesToFullAmountPreserveLayout018255(value = '') {
   return normalizeImportedLineBreaks018192(String(value || ''))
     .replace(
@@ -12274,8 +12354,8 @@ function convertText() {
   }
 
   statusMessage.value = isDocument2PreserveLayoutMode018255.value
-    ? `已產生 ${completeRecords.length} 筆原文排版文件2；換行與順序保持不變，K 價格已換成完整金額。`
-    : `已產生 ${completeRecords.length} 筆固定格式；文件1符號已清理。`
+    ? `已產生 ${completeRecords.length} 筆原文排版文件2；地區／區域標題已保留但不算小姐，換行與順序保持不變，K 價格已換成完整金額。`
+    : `已產生 ${completeRecords.length} 筆固定格式；地區／區域標題不算小姐，文件1符號已清理。`
 }
 
 function shouldKeepExplicitPaidServiceWhenCleaning(word = '') {
@@ -12740,6 +12820,9 @@ function getRecordStartIndexes018244(lines = []) {
   // 1.「嫩p 越南」這種姓名＋國籍同一行。
   // 2.「萌喵喵」下一行才寫「越南」的姓名／國籍分行格式。
   sourceLines.forEach((line, index) => {
+    // 第 018-258 重新版：區域標題保留在原文，但不建立小姐切筆起點。
+    if (isStandaloneAreaHeading018258R(line)) return
+
     const normalizedLine = normalizeThaiCountryHeaderLine(line)
     const structuredHeader = parseStructuredHeaderAt(sourceLines, index)
     // 第 018-169 批：標準規則若因員工／機房自訂規則誤把「妮妮 馬來西亞」
@@ -12800,13 +12883,18 @@ function splitBlocks(text) {
       // 因此切筆後只要仍有可辨識的小姐標題就必須保留。
       // 舊版用 hasMinimumRecordFields() 先要求價格完整，會讓使用者把備註加入
       // 「不想出現文字」後，原本僅靠錯誤姓名候選被保留下來的台妹整筆消失。
-      .filter(block => Boolean(findHeaderInBlock(block) || parseNameOnlyRecord(block)))
+      .filter(block => (
+        !isStandaloneAreaHeading018258R(block)
+        && Boolean(findHeaderInBlock(block) || parseNameOnlyRecord(block))
+      ))
   }
 
   const fallbackBlock = normalizedText.trim()
-  return fallbackBlock && (findHeaderInBlock(fallbackBlock) || parseNameOnlyRecord(fallbackBlock))
-    ? [fallbackBlock]
-    : []
+  return fallbackBlock
+    && !isStandaloneAreaHeading018258R(fallbackBlock)
+    && (findHeaderInBlock(fallbackBlock) || parseNameOnlyRecord(fallbackBlock))
+      ? [fallbackBlock]
+      : []
 }
 
 function normalizeThaiCountryHeaderLine(line) {
@@ -19528,8 +19616,9 @@ function ensureDocument3TopBlankLines(text) {
 
 function normalizeDocument3Text() {
   if (confirmedPreserveLayout018256.value) {
-    confirmedText.value = normalizeImportedLineBreaks018192(String(confirmedText.value || ''))
-      .replace(/^\n+|\n+$/g, '')
+    confirmedText.value = ensureDocument3TwoTrailingBlankLines018258_1(
+      confirmedText.value
+    )
     return
   }
 
@@ -19582,9 +19671,13 @@ function appendResultToConfirmed() {
     isDocument2PreserveLayoutMode018255.value
   )
 
-  confirmedText.value = currentVisible018256
+  const nextVisibleDocument3Body018258R = currentVisible018256
     ? `${currentVisible018256}\n\n${visibleText018255}`
     : visibleText018255
+
+  confirmedText.value = ensureDocument3TwoTrailingBlankLines018258_1(
+    nextVisibleDocument3Body018258R
+  )
 
   confirmedFormalText018256.value = currentFormal018256
     ? `${currentFormal018256}\n\n${formalText018256}`
@@ -19595,7 +19688,7 @@ function appendResultToConfirmed() {
   updateJsonPreview()
 
   statusMessage.value = isDocument2PreserveLayoutMode018255.value
-    ? '文件2已原封不動加入文件3；文件3現在是卡片、文件4、資料庫與中央同步的唯一正式來源。'
+    ? '文件2已原封不動加入文件3；地區／區域標題完整保留但不算小姐，文件3最後文字下方已自動空兩行。'
     : '已把文件2加入文件3草稿，文件4 JSON 已同步更新；尚未按儲存文件3到線上。'
 }
 
