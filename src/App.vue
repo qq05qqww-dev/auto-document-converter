@@ -1,4 +1,6 @@
-﻿<!-- batch018-256-document3-preserve-document2-layout-and-room-inline-delete -->
+﻿<!-- batch018-257-document3-single-source-exact-card-json-sync -->
+<!-- 第 018-257 批：文件3唯一正式來源＋卡片價格服務逐字一致修正版 -->
+<!-- batch018-256-document3-preserve-document2-layout-and-room-inline-delete -->
 <!-- 第 018-256 批：文件3完整保留文件2原文排版＋機房下拉小叉刪除版 -->
 <!-- batch018-255-document2-preserve-source-layout-and-editable-room-combobox -->
 <!-- 第 018-255 批：文件2原文排版模式＋機房可輸入貼上與下拉選擇版 -->
@@ -1984,7 +1986,7 @@
 
         <p class="document2-output-mode-hint018255">
           <template v-if="isDocument2PreserveLayoutMode018255">
-            原文排版會保留文件1的換行、順序與文字位置，只把 K 價格換成完整金額；加入文件3後畫面仍完全相同，文件4 JSON 與中央同步會使用系統隱藏的正式結構。
+            原文排版會保留文件1的換行、順序與文字位置，只把 K 價格換成完整金額；加入文件3後，卡片、文件4 JSON、資料庫與中央同步都直接以文件3原文為準。
           </template>
           <template v-else>
             固定格式會依目前老闆公版與員工機房規則重新整理標題、身材、價格與服務。
@@ -2023,7 +2025,7 @@
           <button class="danger-btn" type="button" @click="clearConfirmedText">清空文件3</button>
         </div>
 
-        <p class="hint">文件3會保留此裝置草稿；按「儲存文件3到線上」且資料庫寫入成功後，才算正式儲存。</p>
+        <p class="hint">文件3是卡片、文件4 JSON、資料庫與中央網站同步的唯一正式來源；方案與服務會依文件3原文精準解析，不再重新加價或改寫。</p>
       </article>
 
       <article class="panel json-panel">
@@ -10848,7 +10850,7 @@ async function submitDocument4ToDatabase(options = {}) {
     return false
   }
 
-  const payload = parseConfirmedTextToJson(getConfirmedStructuredText018256())
+  const payload = parseCurrentConfirmedDocumentToJson018257()
   if (!payload.items.length) {
     const message = '文件3目前沒有可送出到資料庫的資料。'
     apiStatusText.value = message
@@ -10998,7 +11000,7 @@ async function submitDocument4ToDatabase(options = {}) {
 async function submitDocument4ToApi() {
   saveApiBaseUrl()
 
-  const payload = parseConfirmedTextToJson(getConfirmedStructuredText018256())
+  const payload = parseCurrentConfirmedDocumentToJson018257()
   if (!payload.items.length) {
     apiStatusText.value = '文件3目前沒有可送出的資料。'
     return
@@ -11777,6 +11779,247 @@ function validateCurrentListingLocation() {
   return location
 }
 
+// 第 018-257 批：文件3成為唯一正式來源。
+// 只擷取文件3實際存在的方案與服務，不重新套用價格規則，
+// 也不把「2S+500(60分)」等加值服務誤判成正式方案。
+function normalizeConfirmedPlanText018257(amountToken = '', minutesToken = '', sessionToken = '') {
+  const rawAmount = String(amountToken || '').trim()
+  const amount = /(?:K|千)$/i.test(rawAmount)
+    ? Math.round(Number(rawAmount.replace(/(?:K|千)$/i, '')) * 1000)
+    : Number(rawAmount)
+  const minutes = Number(minutesToken)
+  const sessionLabel = normalizePriceSessionLabel(sessionToken)
+
+  if (!Number.isFinite(amount) || amount < 1000 || amount > 1000000) return null
+  if (!Number.isFinite(minutes) || minutes < 1 || minutes > 600) return null
+  if (!sessionLabel) return null
+
+  return {
+    priceText: `${Math.round(amount)}/${Math.round(minutes)}/${sessionLabel}`,
+    price: Math.round(amount),
+    minutes: Math.round(minutes),
+    sessions: sessionLabel === 'NS'
+      ? null
+      : Number(sessionLabel.replace(/S$/i, '')),
+    sessionLabel
+  }
+}
+
+function getConfirmedExactPlanRegex018257() {
+  return /(^|[\s,，;；])((?:\d{4,6}|[0-9]+(?:\.[0-9]+)?\s*(?:K|k|千)))\s*[\/／]\s*(\d{1,3})\s*[\/／]\s*(NS|[0-9]+(?:\.[0-9]+)?S)(?=$|[\s,，;；])/gi
+}
+
+function extractConfirmedExactPlans018257(value = '') {
+  const source = normalizeImportedLineBreaks018192(String(value || ''))
+  const plans = []
+  const regex = getConfirmedExactPlanRegex018257()
+  let match = null
+
+  while ((match = regex.exec(source)) !== null) {
+    const plan = normalizeConfirmedPlanText018257(match[2], match[3], match[4])
+    if (plan) plans.push(plan)
+    if (match.index === regex.lastIndex) regex.lastIndex += 1
+  }
+
+  return plans
+}
+
+function removeConfirmedExactPlans018257(value = '') {
+  return normalizeImportedLineBreaks018192(String(value || ''))
+    .replace(
+      getConfirmedExactPlanRegex018257(),
+      (_matched, prefix) => prefix || ''
+    )
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim()
+}
+
+function splitConfirmedVisibleLadyBlocks018257(value = '') {
+  const lines = normalizeImportedLineBreaks018192(String(value || '')).split('\n')
+  const blocks = []
+  let current = []
+
+  const pushCurrent = () => {
+    const block = current.join('\n').replace(/^\n+|\n+$/g, '')
+    if (block.trim()) blocks.push(block)
+    current = []
+  }
+
+  lines.forEach(line => {
+    const normalizedLine = String(line || '')
+    if (/^\s*【[^】]+】/.test(normalizedLine)) {
+      pushCurrent()
+      current.push(normalizedLine)
+      return
+    }
+
+    if (current.length) current.push(normalizedLine)
+  })
+
+  pushCurrent()
+  return blocks
+}
+
+function parseConfirmedVisibleHeader018257(titleText = '') {
+  const rawTitle = String(titleText || '').trim()
+  const recognized = parseStructuredHeaderSameLine(rawTitle)
+
+  if (recognized?.country && recognized?.name) {
+    return {
+      country: normalizeCountry(recognized.country),
+      name: cleanName(recognized.name)
+    }
+  }
+
+  const spacedParts = rawTitle.split(/\s+/).filter(Boolean)
+  if (spacedParts.length >= 2) {
+    const possibleCountry = normalizeCountry(spacedParts[0])
+    const possibleName = cleanName(spacedParts.slice(1).join(''))
+    if (possibleCountry && isValidName(possibleName)) {
+      return { country: possibleCountry, name: possibleName }
+    }
+  }
+
+  const compact = rawTitle.replace(/\s+/g, '')
+  const aliases = getCountryKeys().sort((left, right) => right.length - left.length)
+
+  for (const alias of aliases) {
+    if (!compact.startsWith(alias)) continue
+    const country = normalizeCountry(alias)
+    const name = cleanName(compact.slice(alias.length))
+    if (country && isValidName(name)) return { country, name }
+  }
+
+  return { country: '', name: cleanName(rawTitle) }
+}
+
+function parseConfirmedVisibleBody018257(value = '') {
+  const source = String(value || '').trim()
+  const match = source.match(
+    /^(\d{3})\s*(?:[\/／]\s*|\s+)(\d{2})\s*(?:[\/／]\s*|\s+)([A-Za-z])(?:\s*(?:[\/／]\s*)?(\d{1,2})\s*[Yy])?/
+  )
+
+  if (!match) {
+    return {
+      height: null,
+      weight: null,
+      cup: '',
+      age: null,
+      consumedLength: 0
+    }
+  }
+
+  return {
+    height: Number(match[1]),
+    weight: Number(match[2]),
+    cup: String(match[3] || '').toUpperCase(),
+    age: match[4] ? Number(match[4]) : null,
+    consumedLength: match[0].length
+  }
+}
+
+function parsePreservedConfirmedTextToJson018257(value = '') {
+  const location = getCurrentListingLocation()
+  const blocks = splitConfirmedVisibleLadyBlocks018257(value)
+
+  const items = blocks.map((block, index) => {
+    const lines = normalizeImportedLineBreaks018192(block)
+      .split('\n')
+      .map(line => String(line || '').trim())
+      .filter(Boolean)
+
+    const firstLine = lines[0] || ''
+    const titleMatch = firstLine.match(/^【([^】]+)】\s*(.*)$/)
+    if (!titleMatch) return null
+
+    const header = parseConfirmedVisibleHeader018257(titleMatch[1])
+    const bodySource = String(titleMatch[2] || '').trim()
+    const body = parseConfirmedVisibleBody018257(bodySource)
+
+    if (!header.country || !header.name || !body.height || !body.weight || !body.cup) {
+      return null
+    }
+
+    const firstLineAfterBody = body.consumedLength
+      ? bodySource.slice(body.consumedLength).trim()
+      : bodySource
+
+    const contentAfterBody = [
+      firstLineAfterBody,
+      ...lines.slice(1)
+    ].filter(Boolean).join('\n')
+
+    const pricePlans = extractConfirmedExactPlans018257(contentAfterBody)
+
+    const serviceText = removeConfirmedExactPlans018257(contentAfterBody)
+    const services = serviceText
+      ? serviceText
+          .split(/\s+/)
+          .map(item => item.trim())
+          .filter(Boolean)
+      : []
+
+    const sourceRoom = cleanScopeText(ruleScopeRoom.value)
+    const sourceIdentity = makeStableLadySourceIdentity({
+      country: header.country,
+      name: header.name,
+      city: location.city,
+      district: location.district,
+      mode: location.mode,
+      sourceRoom,
+      body: {
+        height: body.height,
+        weight: body.weight,
+        cup: body.cup,
+        age: body.age
+      }
+    })
+
+    return {
+      sourceIndex: index + 1,
+      sourceIdentity,
+      sourceRoom,
+      country: header.country,
+      name: header.name,
+      city: location.city,
+      district: location.district,
+      mode: location.mode,
+      room: location.room,
+      location: location.locationText,
+      locationInfo: location,
+      body: {
+        height: body.height,
+        weight: body.weight,
+        cup: body.cup,
+        age: body.age
+      },
+      pricePlans,
+      services,
+      rawText: block
+    }
+  }).filter(Boolean)
+
+  return {
+    generatedAt: new Date().toISOString(),
+    source: 'document3_confirmed_exact_018257',
+    location,
+    total: items.length,
+    items
+  }
+}
+
+function parseCurrentConfirmedDocumentToJson018257() {
+  if (confirmedPreserveLayout018256.value) {
+    const exactPayload = parsePreservedConfirmedTextToJson018257(
+      confirmedText.value
+    )
+
+    if (exactPayload.items.length) return exactPayload
+  }
+
+  return parseConfirmedTextToJson(getConfirmedStructuredText018256())
+}
+
 function parseConfirmedTextToJson(text) {
   const location = getCurrentListingLocation()
   const blocks = String(text || '')
@@ -11875,7 +12118,7 @@ function parseConfirmedTextToJson(text) {
 }
 
 function updateJsonPreview() {
-  jsonResultText.value = JSON.stringify(parseConfirmedTextToJson(getConfirmedStructuredText018256()), null, 2)
+  jsonResultText.value = JSON.stringify(parseCurrentConfirmedDocumentToJson018257(), null, 2)
 }
 
 function ensureSourceTextBottomBlankLines(text = '') {
@@ -19300,6 +19543,11 @@ function getConfirmedStructuredText018256() {
 
 function handleConfirmedTextBlur018256() {
   normalizeDocument3Text()
+
+  if (confirmedPreserveLayout018256.value) {
+    confirmedFormalText018256.value = ''
+  }
+
   cacheConfirmedDocumentDraft018216()
   updateJsonPreview()
 }
@@ -19347,7 +19595,7 @@ function appendResultToConfirmed() {
   updateJsonPreview()
 
   statusMessage.value = isDocument2PreserveLayoutMode018255.value
-    ? '文件2已原封不動加入文件3；文件1、文件2、文件3的換行、順序與文字位置保持一致，文件4使用隱藏正式結構。'
+    ? '文件2已原封不動加入文件3；文件3現在是卡片、文件4、資料庫與中央同步的唯一正式來源。'
     : '已把文件2加入文件3草稿，文件4 JSON 已同步更新；尚未按儲存文件3到線上。'
 }
 
@@ -19426,7 +19674,7 @@ async function saveConfirmedText(options = {}) {
 async function retryCentralWebsiteSync() {
   if (isDatabaseSubmitting.value) return false
 
-  const payload = parseConfirmedTextToJson(getConfirmedStructuredText018256())
+  const payload = parseCurrentConfirmedDocumentToJson018257()
   if (!payload.items.length) {
     const message = '文件3目前沒有可重新同步中央站的資料。'
     setDatabaseSubmitFeedback(message, 'warning', { toast: true })
