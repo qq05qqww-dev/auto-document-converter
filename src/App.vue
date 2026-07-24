@@ -1,4 +1,6 @@
-﻿<!-- batch018-254-inline-k-price-tokens-to-full-amount-document2 -->
+﻿<!-- batch018-255-document2-preserve-source-layout-and-editable-room-combobox -->
+<!-- 第 018-255 批：文件2原文排版模式＋機房可輸入貼上與下拉選擇版 -->
+<!-- batch018-254-inline-k-price-tokens-to-full-amount-document2 -->
 <!-- 第 018-254 批：文件1小姐資料同行多組 K 價格辨識＋文件2完整金額輸出版 -->
 <!-- batch018-253-document2-full-amount-output -->
 <!-- 第 018-253 批：文件2正式方案由 K 格式統一輸出完整金額版 -->
@@ -616,17 +618,21 @@
                 :class="{ 'is-open': isRoomStatusDropdownOpen018222, 'is-disabled': !isManagerScopeBaseReady }"
                 data-room-status-dropdown018222
               >
-                <button
-                  class="room-status-trigger018222"
-                  type="button"
-                  :disabled="!isManagerScopeBaseReady"
-                  :aria-expanded="isRoomStatusDropdownOpen018222 ? 'true' : 'false'"
-                  aria-haspopup="listbox"
-                  @click.stop="toggleRoomStatusDropdown018222"
-                >
-                  <span class="room-status-trigger-name018222" :title="ruleScopeRoom || '請選機房'">
-                    {{ ruleScopeRoom || '請選機房' }}
-                  </span>
+                <!-- 第 018-255 批：機房可直接輸入／貼上，也保留既有下拉清單。 -->
+                <div class="room-status-trigger018222 room-status-combobox-shell018255">
+                  <input
+                    v-model="roomStatusInput018255"
+                    class="room-status-input018255"
+                    type="text"
+                    :disabled="!isManagerScopeBaseReady || isCommittingRoomStatusInput018255"
+                    placeholder="可輸入、貼上或選擇機房"
+                    autocomplete="off"
+                    @focus="openRoomStatusDropdown018255"
+                    @change="commitRoomStatusManualInput018255"
+                    @keydown.enter.prevent="commitRoomStatusManualInput018255"
+                    @paste="scheduleRoomStatusPasteCommit018255"
+                  />
+
                   <template v-if="ruleScopeRoom">
                     <span
                       class="room-status-trigger-state018222"
@@ -638,9 +644,19 @@
                       媒體 {{ currentRoomDailyStatus.mediaReadyCount }}/{{ currentRoomDailyStatus.mediaTotalCount }}
                     </span>
                   </template>
-                  <span v-else class="room-status-trigger-placeholder018222">選擇</span>
-                  <span class="room-status-trigger-chevron018222" aria-hidden="true">⌄</span>
-                </button>
+
+                  <button
+                    class="room-status-chevron-button018255"
+                    type="button"
+                    :disabled="!isManagerScopeBaseReady || isCommittingRoomStatusInput018255"
+                    :aria-expanded="isRoomStatusDropdownOpen018222 ? 'true' : 'false'"
+                    aria-haspopup="listbox"
+                    title="開啟機房清單"
+                    @click.stop="toggleRoomStatusDropdown018222"
+                  >
+                    <span class="room-status-trigger-chevron018222" aria-hidden="true">⌄</span>
+                  </button>
+                </div>
 
                 <div
                   v-if="isRoomStatusDropdownOpen018222"
@@ -704,6 +720,9 @@
             </button>
           </div>
 
+          <small class="room-input-mode-hint018255">
+            可直接輸入或貼上機房名稱後按 Enter；也可按右側箭頭從既有清單選擇。新名稱會儲存到目前範圍。
+          </small>
           <small v-if="ruleScopeRoom" class="room-daily-current-status" :class="`is-${currentRoomDailyStatus.state}`">
             {{ currentRoomDailyStatus.detail }}
           </small>
@@ -1919,11 +1938,19 @@
       <article class="panel">
         <div class="panel-header">
           <h2>文件2：本批固定格式結果</h2>
-          <div class="panel-header-actions018219">
+          <div class="panel-header-actions018219 document2-header-actions018255">
+            <label class="document2-output-mode-field018255">
+              <span>產生方式</span>
+              <select v-model="document2OutputMode018255">
+                <option value="preserve">原文排版</option>
+                <option value="standard">固定格式</option>
+              </select>
+            </label>
             <button
               class="ghost-btn batch-order-open-btn018219"
               type="button"
-              :disabled="!String(resultText || '').trim()"
+              :disabled="!String(resultText || '').trim() || isDocument2PreserveLayoutMode018255"
+              :title="isDocument2PreserveLayoutMode018255 ? '原文排版模式會保留文件1順序，不提供重新排列' : '排列本批項目'"
               @click="openBatchServiceOrderModal018219"
             >排列本批項目</button>
             <button class="ghost-btn" type="button" @click="copyText(resultText, '文件2')">複製文件2</button>
@@ -1936,6 +1963,15 @@
           readonly
           placeholder="產生後會顯示在這裡，確認可以後按下方加入文件3..."
         ></textarea>
+
+        <p class="document2-output-mode-hint018255">
+          <template v-if="isDocument2PreserveLayoutMode018255">
+            原文排版會保留文件1的換行、順序與文字位置，只把 K 價格換成完整金額；加入文件3時仍使用正式固定格式，避免文件4 JSON 與中央同步失效。
+          </template>
+          <template v-else>
+            固定格式會依目前老闆公版與員工機房規則重新整理標題、身材、價格與服務。
+          </template>
+        </p>
 
         <div class="button-row">
           <button
@@ -3160,6 +3196,40 @@ const LEGACY_CONFIRMED_STORAGE_KEYS = [
 
 const sourceText = ref('')
 const resultText = ref('')
+
+// 第 018-255 批：文件2可切換「原文排版」與既有「固定格式」。
+// 預設使用原文排版；只影響文件2顯示與複製，文件3仍使用正式固定格式。
+const DOCUMENT2_OUTPUT_MODE_STORAGE_KEY018255 = 'auto-document-converter-document2-output-mode-018255'
+function readDocument2OutputMode018255() {
+  try {
+    return localStorage.getItem(DOCUMENT2_OUTPUT_MODE_STORAGE_KEY018255) === 'standard'
+      ? 'standard'
+      : 'preserve'
+  } catch {
+    return 'preserve'
+  }
+}
+const document2OutputMode018255 = ref(readDocument2OutputMode018255())
+const isDocument2PreserveLayoutMode018255 = computed(() => document2OutputMode018255.value === 'preserve')
+const currentDocument2FormalText018255 = ref('')
+const currentDocument2PreservedText018255 = ref('')
+
+watch(document2OutputMode018255, value => {
+  try {
+    localStorage.setItem(
+      DOCUMENT2_OUTPUT_MODE_STORAGE_KEY018255,
+      value === 'standard' ? 'standard' : 'preserve'
+    )
+  } catch {
+    // 本機儲存不可用時仍維持目前畫面模式。
+  }
+
+  if (!currentDocument2FormalText018255.value && !currentDocument2PreservedText018255.value) return
+  resultText.value = value === 'standard'
+    ? currentDocument2FormalText018255.value
+    : currentDocument2PreservedText018255.value
+})
+
 const resultCompleteCount = ref(0)
 const resultIncompleteCount = ref(0)
 const resultHasIncompleteRecords = computed(() => resultIncompleteCount.value > 0)
@@ -4696,6 +4766,11 @@ const ruleScopeType = ref(DEFAULT_MANAGER_SCOPE_TYPE)
 const ruleScopeRoom = ref('')
 // 第 018-222 批：機房選單改為單行三欄固定對齊，清單固定高度並在 20～30 間機房時內部捲動。
 const isRoomStatusDropdownOpen018222 = ref(false)
+
+// 第 018-255 批：機房欄位改成可輸入／貼上／下拉選擇的 combobox。
+const roomStatusInput018255 = ref('')
+const isCommittingRoomStatusInput018255 = ref(false)
+let roomStatusPasteCommitTimer018255 = 0
 const showScopeManager = ref(true)
 const showEmployeeManager = ref(false)
 // 第 018-202 批：今日班表進度中央彈窗，只統計目前登入帳號已建立的機房。
@@ -6553,6 +6628,10 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleMediaViewerKeydown)
   window.removeEventListener('beforeunload', handleBatchMediaBeforeUnload018223)
   window.removeEventListener('keydown', handleRoomStatusDropdownKeydown018222)
+  if (roomStatusPasteCommitTimer018255 && typeof window !== 'undefined') {
+    window.clearTimeout(roomStatusPasteCommitTimer018255)
+    roomStatusPasteCommitTimer018255 = 0
+  }
   Object.values(batchMediaQueueByLadyKey018223.value || {}).forEach(entry => {
     ;(entry?.files || []).forEach(revokeBatchMediaItemPreview018223)
   })
@@ -11268,6 +11347,14 @@ function closeRoomStatusDropdown018222() {
   isRoomStatusDropdownOpen018222.value = false
 }
 
+async function openRoomStatusDropdown018255() {
+  if (!isManagerScopeBaseReady.value) return
+  isRoomStatusDropdownOpen018222.value = true
+  await nextTick()
+  const activeOption = document.querySelector('.room-status-option018222.is-active')
+  activeOption?.scrollIntoView({ block: 'nearest' })
+}
+
 async function toggleRoomStatusDropdown018222() {
   if (!isManagerScopeBaseReady.value) return
   isRoomStatusDropdownOpen018222.value = !isRoomStatusDropdownOpen018222.value
@@ -11280,12 +11367,94 @@ async function toggleRoomStatusDropdown018222() {
 
 function selectRoomStatusOption018222(room = '') {
   ruleScopeRoom.value = cleanScopeText(room)
+  roomStatusInput018255.value = ruleScopeRoom.value
 
   // 第 018-240 批：紅框機房選定後立刻記住完整縣市／地區／類型／機房。
   // 先同步寫入目前帳號的本機快取，再沿用既有管理清單列同步到線上，重新登入即可復原。
   if (ruleScopeRoom.value) rememberCurrentScopeSelection({ syncOnline: true })
 
   closeRoomStatusDropdown018222()
+}
+
+async function commitRoomStatusManualInput018255() {
+  if (isCommittingRoomStatusInput018255.value) return false
+
+  const room = cleanScopeText(roomStatusInput018255.value)
+  if (!room) {
+    selectRoomStatusOption018222('')
+    statusMessage.value = '已清除目前機房選擇。'
+    return true
+  }
+
+  if (!isManagerScopeBaseReady.value) {
+    const message = '請先選完整縣市、地區與定點／外送，再輸入或貼上機房名稱。'
+    statusMessage.value = message
+    roomRuleStatusText.value = message
+    roomRuleStatusType.value = 'error'
+    return false
+  }
+
+  if (managerRooms.value.includes(room)) {
+    selectRoomStatusOption018222(room)
+    statusMessage.value = `已選取既有機房：${room}`
+    return true
+  }
+
+  const city = cleanScopeText(managerSelectedCity.value)
+  const district = cleanScopeText(managerEffectiveDistrict.value)
+  const type = cleanScopeText(managerSelectedType.value)
+  const key = `${city}__${district}__${type}`
+  const previousOptions = normalizeLocationOptions(
+    JSON.parse(JSON.stringify(locationOptions.value || {}))
+  )
+
+  isCommittingRoomStatusInput018255.value = true
+  try {
+    if (!locationOptions.value.hiddenRooms || typeof locationOptions.value.hiddenRooms !== 'object') {
+      locationOptions.value.hiddenRooms = {}
+    }
+    locationOptions.value.hiddenRooms[key] = removeHiddenValue(
+      locationOptions.value.hiddenRooms[key],
+      room
+    )
+    if (!locationOptions.value.hiddenRooms[key].length) {
+      delete locationOptions.value.hiddenRooms[key]
+    }
+
+    locationOptions.value.rooms[key] = addUniqueToList(
+      locationOptions.value.rooms[key],
+      room
+    )
+
+    const saved = await saveLocationOptions()
+    if (!saved) {
+      locationOptions.value = previousOptions
+      roomStatusInput018255.value = cleanScopeText(ruleScopeRoom.value)
+      return false
+    }
+
+    selectRoomStatusOption018222(room)
+    statusMessage.value = `已新增並選取機房：${city} / ${getScopeDistrictDisplay(district, type)} / ${type} / ${room}`
+    return true
+  } catch (error) {
+    locationOptions.value = previousOptions
+    roomStatusInput018255.value = cleanScopeText(ruleScopeRoom.value)
+    statusMessage.value = `新增機房失敗：${error.message || error}`
+    return false
+  } finally {
+    isCommittingRoomStatusInput018255.value = false
+  }
+}
+
+function scheduleRoomStatusPasteCommit018255() {
+  if (typeof window === 'undefined') return
+  if (roomStatusPasteCommitTimer018255) {
+    window.clearTimeout(roomStatusPasteCommitTimer018255)
+  }
+  roomStatusPasteCommitTimer018255 = window.setTimeout(() => {
+    roomStatusPasteCommitTimer018255 = 0
+    commitRoomStatusManualInput018255()
+  }, 80)
 }
 
 function handleRoomStatusDropdownOutsideClick018222(event) {
@@ -11641,8 +11810,30 @@ function resetResultValidationState() {
   resultIncompleteCount.value = 0
 }
 
+// 第 018-255 批：原文排版只把 K／千價格換算成完整金額，
+// 其餘文字、換行、空白段落與前後順序完全照文件1。
+function convertSourceKPricesToFullAmountPreserveLayout018255(value = '') {
+  return normalizeImportedLineBreaks018192(String(value || ''))
+    .replace(
+      /(^|[^0-9A-Za-z.])([0-9]+(?:\.[0-9]+)?)\s*(?:K|k|千)(?=\s*[\/／])/g,
+      (matched, prefix, rawAmount) => {
+        const amount = Math.round(Number(rawAmount) * 1000)
+        if (!Number.isFinite(amount) || amount < 1000 || amount > 1000000) return matched
+        return `${prefix}${amount}`
+      }
+    )
+}
+
+function syncDocument2VisibleTextByMode018255() {
+  resultText.value = isDocument2PreserveLayoutMode018255.value
+    ? currentDocument2PreservedText018255.value
+    : currentDocument2FormalText018255.value
+}
+
 function clearResultText(options = {}) {
   resultText.value = ''
+  currentDocument2FormalText018255.value = ''
+  currentDocument2PreservedText018255.value = ''
   resetResultValidationState()
   currentDocument2Records018219.value = []
   currentDocument2EffectiveServiceOrder018219.value = []
@@ -11655,7 +11846,9 @@ function clearResultText(options = {}) {
 }
 
 function convertText() {
-  const originalText = sourceText.value.trim()
+  const sourceLayoutText018255 = normalizeImportedLineBreaks018192(String(sourceText.value || ''))
+    .replace(/^\n+|\n+$/g, '')
+  const originalText = sourceLayoutText018255.trim()
   if (!originalText) {
     clearResultText({ silent: true })
     statusMessage.value = '請先貼上文件1原始資料。'
@@ -11663,7 +11856,10 @@ function convertText() {
   }
 
   const cleanedText = cleanupSourceText(originalText)
-  sourceText.value = ensureSourceTextBottomBlankLines(cleanedText)
+  // 原文排版模式不回寫文件1，避免任何清理或重新排列改動使用者原始文字。
+  if (!isDocument2PreserveLayoutMode018255.value) {
+    sourceText.value = ensureSourceTextBottomBlankLines(cleanedText)
+  }
 
   const blocks = splitBlocks(cleanedText)
   // 第 018-191 批：先建立目前文件1本批小姐名單，再解析每位小姐的雙飛對象。
@@ -11685,7 +11881,13 @@ function convertText() {
   )
   currentDocument2OriginalBatchOrder018219.value = [...originalBatchOrder018219]
   currentDocument2BatchOrder018219.value = [...originalBatchOrder018219]
-  resultText.value = renderDocument2Records018219(currentDocument2Records018219.value)
+  currentDocument2FormalText018255.value = renderDocument2Records018219(
+    currentDocument2Records018219.value
+  )
+  currentDocument2PreservedText018255.value = convertSourceKPricesToFullAmountPreserveLayout018255(
+    sourceLayoutText018255
+  )
+  syncDocument2VisibleTextByMode018255()
 
   if (!visibleRecords.length) {
     statusMessage.value = `沒有抓到可預覽資料。請確認文件1至少有可辨識的小姐名或國籍；目前已切出 ${blocks.length} 筆。`
@@ -11704,7 +11906,9 @@ function convertText() {
     return
   }
 
-  statusMessage.value = `已產生 ${completeRecords.length} 筆固定格式；文件1符號已清理。`
+  statusMessage.value = isDocument2PreserveLayoutMode018255.value
+    ? `已產生 ${completeRecords.length} 筆原文排版文件2；換行與順序保持不變，K 價格已換成完整金額。`
+    : `已產生 ${completeRecords.length} 筆固定格式；文件1符號已清理。`
 }
 
 function shouldKeepExplicitPaidServiceWhenCleaning(word = '') {
@@ -17550,6 +17754,7 @@ watch(managerSelectedType, value => {
 })
 
 watch(ruleScopeRoom, async value => {
+  roomStatusInput018255.value = cleanScopeText(value)
   syncRuleScopeLevelFromSelection()
   if (suppressScopeRuleAutoLoad018231) return
 
@@ -18957,8 +19162,12 @@ function normalizeDocument3Text() {
 }
 
 function appendResultToConfirmed() {
-  const text = resultText.value.trim()
-  if (!text) {
+  const visibleText018255 = String(resultText.value || '').trim()
+  const text = isDocument2PreserveLayoutMode018255.value
+    ? String(currentDocument2FormalText018255.value || '').trim()
+    : visibleText018255
+
+  if (!visibleText018255 || !text) {
     statusMessage.value = '文件2目前沒有內容，不能加入文件3。'
     return
   }
@@ -18973,7 +19182,9 @@ function appendResultToConfirmed() {
   saveConfirmedText({ silent: true })
   clearResultText({ silent: true })
   updateJsonPreview()
-  statusMessage.value = '已把文件2加入文件3草稿，文件4 JSON 已同步更新；尚未按儲存文件3到線上。'
+  statusMessage.value = isDocument2PreserveLayoutMode018255.value
+    ? '文件2目前保留原文排版；加入文件3時已自動使用正式固定格式，文件4 JSON 已同步更新。'
+    : '已把文件2加入文件3草稿，文件4 JSON 已同步更新；尚未按儲存文件3到線上。'
 }
 
 
@@ -28975,6 +29186,119 @@ button:disabled {
 
 .price-field-tab018252 {
   min-width: 0;
+}
+
+
+/* 第 018-255 批：機房輸入／貼上／選擇 combobox。 */
+.room-status-combobox-shell018255 {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) auto auto auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 48px;
+  padding: 5px 7px 5px 10px;
+}
+
+.room-status-input018255 {
+  min-width: 0;
+  width: 100%;
+  height: 36px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 800;
+}
+
+.room-status-input018255::placeholder {
+  color: #7a8a98;
+  font-weight: 600;
+}
+
+.room-status-chevron-button018255 {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 10px;
+  background: rgba(215, 231, 244, 0.7);
+  color: inherit;
+  cursor: pointer;
+}
+
+.room-status-chevron-button018255:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.room-input-mode-hint018255 {
+  display: block;
+  margin-top: 7px;
+  color: #678093;
+  font-size: 12px;
+}
+
+/* 第 018-255 批：文件2產生模式。 */
+.document2-header-actions018255 {
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.document2-output-mode-field018255 {
+  display: grid;
+  gap: 4px;
+  min-width: 148px;
+  color: #587184;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.document2-output-mode-field018255 select {
+  min-height: 38px;
+  border: 1px solid #cddae5;
+  border-radius: 14px;
+  padding: 0 12px;
+  background: #fff;
+  color: #233847;
+  font-weight: 800;
+}
+
+.document2-output-mode-hint018255 {
+  min-height: 38px;
+  margin: 8px 0 0;
+  padding: 9px 12px;
+  border: 1px solid #d5e3ed;
+  border-radius: 12px;
+  background: #f3f9fc;
+  color: #537086;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+@media (max-width: 980px) {
+  .room-status-combobox-shell018255 {
+    grid-template-columns: minmax(130px, 1fr) auto auto auto;
+  }
+
+  .document2-output-mode-field018255 {
+    width: 100%;
+  }
+}
+
+@media (max-width: 720px) {
+  .room-status-combobox-shell018255 {
+    grid-template-columns: 1fr auto;
+  }
+
+  .room-status-combobox-shell018255 .room-status-trigger-state018222,
+  .room-status-combobox-shell018255 .room-status-trigger-media018222 {
+    grid-row: 2;
+  }
+
+  .document2-header-actions018255 {
+    width: 100%;
+  }
 }
 
 </style>
