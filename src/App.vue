@@ -1,4 +1,6 @@
-﻿<!-- batch018-253-document2-full-amount-output -->
+﻿<!-- batch018-254-inline-k-price-tokens-to-full-amount-document2 -->
+<!-- 第 018-254 批：文件1小姐資料同行多組 K 價格辨識＋文件2完整金額輸出版 -->
+<!-- batch018-253-document2-full-amount-output -->
 <!-- 第 018-253 批：文件2正式方案由 K 格式統一輸出完整金額版 -->
 <!-- batch018-252-owner-base-employee-room-final-override -->
 <!-- 第 018-252 批：老闆公版作為基礎＋員工目前機房規則最後覆蓋版 -->
@@ -12213,7 +12215,9 @@ function splitBlocks(text) {
 
         // 若這位小姐區塊已有自己的正式價格，就以區塊內價格為準；
         // 只有區塊內沒有正式價格時，才補上文件開頭的共用價格表。
-        const recordHasOwnPrice018243 = recordLines.some(line => isPriceLine(line))
+        const recordHasOwnPrice018243 = recordLines.some(line => (
+          isPriceLine(line) || extractEmbeddedSlashPriceTokens018254(line).length > 0
+        ))
           || Boolean(extractHeaderStandaloneAmount018207(recordText, findHeaderInBlock(recordText)))
         const effectiveLines = leadingSharedPriceLines018243.length && !recordHasOwnPrice018243
           ? [...leadingSharedPriceLines018243, ...recordLines]
@@ -13590,6 +13594,44 @@ function extractPriceSessionLabel(line) {
   return '1S'
 }
 
+
+// 第 018-254 批：支援小姐標題／身材同一行後方直接接多組 K 價格。
+// 例：馬來 許小葉 156 38 D 2.2K/20/1S 2.7K/40/1S 3K/60/1S。
+// 舊版 parsePrices() 以「整行」匹配正式價格，這種同行資料前方含姓名與身材，
+// 因此三組價格全部無法命中，文件2會顯示「缺少正式價格方案」。
+// 本函式只擷取具有明確「金額K或完整金額／分鐘／節數S」的 token，
+// 需有 K／千或四位以上完整金額，且節數必須帶 S／NS，避免身材 156/38/D 被誤判。
+function extractEmbeddedSlashPriceTokens018254(line) {
+  const normalized = normalizeDigits(String(line || ''))
+    .normalize('NFKC')
+    .replace(/[／]/g, '/')
+    .replace(/　/g, ' ')
+    .trim()
+
+  if (!normalized) return []
+
+  const pattern = /(?:[0-9]+(?:\.[0-9]+)?\s*(?:K|千)|[1-9][0-9]{3,5})\s*\/\s*\d{2,3}\s*\/\s*(?:NS|N\s*\/?\s*S|\d+(?:\.\d+)?\s*S)/gi
+  const matches = []
+  let matched
+
+  while ((matched = pattern.exec(normalized)) !== null) {
+    const token = String(matched[0] || '').trim()
+    const parsed = parseSlashPriceLine018234(token)
+    if (parsed.valid) {
+      matches.push({
+        token,
+        minutes: parsed.minutes,
+        amount: parsed.amount,
+        sessionLabel: parsed.sessionLabel
+      })
+    }
+
+    if (pattern.lastIndex === matched.index) pattern.lastIndex += 1
+  }
+
+  return matches
+}
+
 function parsePrices(text, increase, priceContext = {}) {
   const results = []
   const seen = new Set()
@@ -13656,6 +13698,21 @@ function parsePrices(text, increase, priceContext = {}) {
       .replace(/[／]/g, '/')
       .replace(/　/g, ' ')
       .trim()
+
+    // 第 018-254 批：小姐姓名／身材與多組 K 價格在同一行時，
+    // 先逐組擷取 2.2K/20/1S、2.7K/40/1S、3K/60/1S。
+    // 單獨一行只有一組正式價格時仍交給既有自訂規則，保留機房輸出順序設定。
+    const embeddedSlashPrices018254 = extractEmbeddedSlashPriceTokens018254(normalized)
+    const hasEmbeddedContext018254 = embeddedSlashPrices018254.length > 1
+      || (embeddedSlashPrices018254.length === 1
+        && embeddedSlashPrices018254[0].token.replace(/\s+/g, '') !== normalized.replace(/\s+/g, ''))
+
+    if (hasEmbeddedContext018254) {
+      embeddedSlashPrices018254.forEach(price => {
+        pushPrice(price.minutes, price.sessionLabel, price.amount)
+      })
+      return
+    }
 
     // 第 018-252 批：老闆公版先作為基礎，實際辨識時由員工目前機房規則最後覆蓋並優先命中。
     const configuredPrice018247 = parsePriceFieldRuleLine018247(normalized)
