@@ -1,5 +1,6 @@
 ﻿<!-- batch018-258-1-document3-two-trailing-blank-lines -->
 <!-- 第 018-258-1 批：文件3最後文字下方固定兩空行修正版 -->
+<!-- batch018-261-daily-schedule-toolbar-position-compact-card -->
 <!-- batch018-260-daily-schedule-one-click-document3-online-save -->
 <!-- batch018-259-daily-schedule-workspace -->
 <!-- batch018-258-rebuilt-keep-area-heading-not-lady-document3-two-leading-blank-lines -->
@@ -2104,21 +2105,22 @@
             <h2>當日班表小姐卡片</h2>
             <p>文件1自動轉成文件3並完成線上儲存後，只顯示媒體操作區與小姐國籍、姓名。</p>
           </div>
+          <!-- 第 018-261 批：媒體總操作列移入標題列中間，不再另外佔用卡片上方一整列。 -->
+          <div v-if="dailyScheduleApplied018259" class="daily-schedule-batch-toolbar018259">
+            <span>{{ batchMediaToolbarSummary018223 }}</span>
+            <button
+              type="button"
+              class="primary-btn"
+              :disabled="!batchMediaCanOpenOrUpload018223"
+              @click="handleBatchMediaToolbarAction018223"
+            >{{ batchMediaToolbarButtonText018223 }}</button>
+          </div>
+
           <div v-if="dailyScheduleApplied018259" class="daily-schedule-applied-scope018259">
             <strong>已套用</strong>
             <span>{{ managerSelectedCity }} / {{ managerSelectedDistrictDisplay }} / {{ managerSelectedType }} / {{ ruleScopeRoom }}</span>
           </div>
         </header>
-
-        <div v-if="dailyScheduleApplied018259" class="daily-schedule-batch-toolbar018259">
-          <span>{{ batchMediaToolbarSummary018223 }}</span>
-          <button
-            type="button"
-            class="primary-btn"
-            :disabled="!batchMediaCanOpenOrUpload018223"
-            @click="handleBatchMediaToolbarAction018223"
-          >{{ batchMediaToolbarButtonText018223 }}</button>
-        </div>
 
         <div v-if="!dailyScheduleApplied018259" class="daily-schedule-empty018259">
           <strong>請先貼上文件1、完成左側條件並按「套用條件」</strong>
@@ -30541,10 +30543,11 @@ button:disabled {
   overflow: hidden;
 }
 
+/* 第 018-261 批：標題、媒體總操作列、已套用範圍固定同一列。 */
 .daily-schedule-card-board-head018259 {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(250px, auto) minmax(180px, 300px);
   align-items: center;
-  justify-content: space-between;
   gap: 16px;
   padding: 2px 2px 14px;
   border-bottom: 1px solid #e4edf3;
@@ -30597,17 +30600,26 @@ button:disabled {
 }
 
 .daily-schedule-batch-toolbar018259 {
+  min-width: 0;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: center;
   gap: 12px;
-  padding: 12px 0 4px;
+  padding: 0;
   color: #587184;
   font-size: 12px;
   font-weight: 800;
+  white-space: nowrap;
+}
+
+.daily-schedule-batch-toolbar018259 > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .daily-schedule-batch-toolbar018259 .primary-btn {
+  flex: 0 0 auto;
   min-height: 36px;
   padding: 8px 14px;
   border-radius: 12px;
@@ -30618,14 +30630,19 @@ button:disabled {
   grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
   gap: 12px;
   align-content: start;
+  align-items: start !important;
   margin-top: 12px;
   overflow: auto;
   padding: 2px 3px 10px 2px;
 }
 
+/* 第 018-261 批：覆蓋舊版全域 lady-card 720px 高度，班表卡片只保留實際內容高度。 */
 .daily-schedule-lady-card018259 {
   min-width: 0;
-  min-height: 290px;
+  min-height: 0 !important;
+  height: auto !important;
+  max-height: none !important;
+  align-self: start !important;
   padding: 12px;
   border-radius: 18px;
 }
@@ -30704,6 +30721,15 @@ button:disabled {
     grid-template-columns: 220px 330px minmax(0, 1fr);
   }
 
+  .daily-schedule-card-board-head018259 {
+    grid-template-columns: minmax(220px, 1fr) minmax(220px, auto);
+  }
+
+  .daily-schedule-applied-scope018259 {
+    grid-column: 1 / -1;
+    justify-self: end;
+  }
+
   .daily-schedule-lady-grid018259 {
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   }
@@ -30742,11 +30768,19 @@ button:disabled {
   }
 
   .daily-schedule-card-board-head018259 {
+    grid-template-columns: 1fr;
     align-items: flex-start;
-    flex-direction: column;
+  }
+
+  .daily-schedule-batch-toolbar018259 {
+    width: 100%;
+    justify-content: space-between;
+    white-space: normal;
   }
 
   .daily-schedule-applied-scope018259 {
+    grid-column: auto;
+    justify-self: stretch;
     width: 100%;
     max-width: none;
     text-align: left;
