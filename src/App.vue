@@ -1,5 +1,6 @@
 ﻿<!-- batch018-258-1-document3-two-trailing-blank-lines -->
 <!-- 第 018-258-1 批：文件3最後文字下方固定兩空行修正版 -->
+<!-- batch018-260-daily-schedule-one-click-document3-online-save -->
 <!-- batch018-259-daily-schedule-workspace -->
 <!-- batch018-258-rebuilt-keep-area-heading-not-lady-document3-two-leading-blank-lines -->
 <!-- 第 018-258 重新版：地區區域標題完整保留但不算小姐；前置兩空行已由第 018-258-1 修正為尾端兩空行 -->
@@ -1950,7 +1951,7 @@
         <div class="daily-schedule-filter-stack018259">
           <label>
             <span>縣市 / 國籍</span>
-            <select v-model="managerSelectedCity">
+            <select v-model="managerSelectedCity" :disabled="dailyScheduleSubmitting018260 || isDatabaseSubmitting">
               <option value="">請選縣市</option>
               <option v-for="city in accountWorkingCities018201" :key="`daily-city018259-${city}`" :value="city">{{ city }}</option>
             </select>
@@ -1958,7 +1959,7 @@
 
           <label>
             <span>地區</span>
-            <select v-model="managerSelectedDistrict" :disabled="!managerSelectedCity || isManagerOutsideDelivery">
+            <select v-model="managerSelectedDistrict" :disabled="dailyScheduleSubmitting018260 || isDatabaseSubmitting || !managerSelectedCity || isManagerOutsideDelivery">
               <option v-if="isManagerOutsideDelivery" :value="OUTSIDE_DELIVERY_SCOPE_DISTRICT">外送免選地區</option>
               <option v-else value="">請選擇地區</option>
               <template v-if="!isManagerOutsideDelivery">
@@ -1969,7 +1970,7 @@
 
           <label>
             <span>定點 / 外送</span>
-            <select v-model="managerSelectedType">
+            <select v-model="managerSelectedType" :disabled="dailyScheduleSubmitting018260 || isDatabaseSubmitting">
               <option value="">請選定點 / 外送</option>
               <option v-for="type in locationTypes" :key="`daily-type018259-${type}`" :value="type">{{ type }}</option>
             </select>
@@ -1987,7 +1988,7 @@
                   v-model="roomStatusInput018255"
                   class="room-status-input018255"
                   type="text"
-                  :disabled="!isManagerScopeBaseReady || isCommittingRoomStatusInput018255"
+                  :disabled="dailyScheduleSubmitting018260 || isDatabaseSubmitting || !isManagerScopeBaseReady || isCommittingRoomStatusInput018255"
                   placeholder="可輸入、貼上或選擇機房"
                   autocomplete="off"
                   @focus="openRoomStatusDropdown018255"
@@ -1998,7 +1999,7 @@
                 <button
                   class="room-status-chevron-button018255"
                   type="button"
-                  :disabled="!isManagerScopeBaseReady || isCommittingRoomStatusInput018255"
+                  :disabled="dailyScheduleSubmitting018260 || isDatabaseSubmitting || !isManagerScopeBaseReady || isCommittingRoomStatusInput018255"
                   :aria-expanded="isRoomStatusDropdownOpen018222 ? 'true' : 'false'"
                   aria-haspopup="listbox"
                   title="開啟機房清單"
@@ -2054,10 +2055,20 @@
             </div>
           </div>
 
-          <button class="primary-btn daily-schedule-apply018259" type="button" @click="applyDailyScheduleConditions018259">
-            套用條件
+          <button
+            class="primary-btn daily-schedule-apply018259"
+            type="button"
+            :disabled="dailyScheduleSubmitting018260 || isDatabaseSubmitting"
+            @click="applyDailyScheduleConditions018259"
+          >
+            {{ dailyScheduleSubmitting018260 || isDatabaseSubmitting ? '正在轉換並上傳...' : '套用條件' }}
           </button>
-          <button class="ghost-btn daily-schedule-clear018259" type="button" @click="clearDailyScheduleConditions018259">
+          <button
+            class="ghost-btn daily-schedule-clear018259"
+            type="button"
+            :disabled="dailyScheduleSubmitting018260 || isDatabaseSubmitting"
+            @click="clearDailyScheduleConditions018259"
+          >
             清除條件
           </button>
         </div>
@@ -2071,7 +2082,7 @@
         <div class="panel-header daily-schedule-source-head018259">
           <div>
             <h2>文件1：店家最新資訊</h2>
-            <small>保留原始內容供核對；右側班表卡片直接讀取目前文件3。</small>
+            <small>貼上文件1後，按套用會自動轉成文件3、儲存線上資料庫，再顯示右側卡片。</small>
           </div>
           <button class="ghost-btn" type="button" @click="sourceText = sampleText">放入測試資料</button>
         </div>
@@ -2091,7 +2102,7 @@
           <div>
             <span>文件3正式來源</span>
             <h2>當日班表小姐卡片</h2>
-            <p>套用條件後，只顯示媒體操作區與小姐國籍、姓名；不顯示文件3原始文字。</p>
+            <p>文件1自動轉成文件3並完成線上儲存後，只顯示媒體操作區與小姐國籍、姓名。</p>
           </div>
           <div v-if="dailyScheduleApplied018259" class="daily-schedule-applied-scope018259">
             <strong>已套用</strong>
@@ -2110,8 +2121,8 @@
         </div>
 
         <div v-if="!dailyScheduleApplied018259" class="daily-schedule-empty018259">
-          <strong>請先完成左側條件並按「套用條件」</strong>
-          <span>套用後會直接從目前文件3產生右側班表卡片，不會顯示文件3文字內容。</span>
+          <strong>請先貼上文件1、完成左側條件並按「套用條件」</strong>
+          <span>系統會自動完成文件1 → 文件2 → 文件3 → 線上資料庫，再顯示右側班表卡片。</span>
         </div>
 
         <div v-else-if="dailyScheduleLadies018259.length" class="daily-schedule-lady-grid018259">
@@ -2227,8 +2238,8 @@
         </div>
 
         <div v-else class="daily-schedule-empty018259 is-warning">
-          <strong>目前文件3沒有可產生的小姐資料</strong>
-          <span>請先回到原本工作區完成文件3，再重新進入製作當日班表。</span>
+          <strong>本次文件尚未成功建立班表卡片</strong>
+          <span>請確認文件1資料完整，並重新按「套用條件」。</span>
         </div>
       </section>
     </section>
@@ -5095,7 +5106,9 @@ const activeTopPanel = ref('')
 // 第 018-259 批：獨立的「製作當日班表」工作區，不改動原本文件1～4流程。
 const activeWorkspace018259 = ref('converter')
 const dailyScheduleApplied018259 = ref(false)
-const dailyScheduleStatusText018259 = ref('請先選擇縣市、地區、定點／外送與機房。')
+// 第 018-260 批：套用條件改為一鍵完成文件1→文件3→線上資料庫，避免重複點擊。
+const dailyScheduleSubmitting018260 = ref(false)
+const dailyScheduleStatusText018259 = ref('請先貼上文件1，並選擇縣市、地區、定點／外送與機房。')
 const dailyScheduleStatusType018259 = ref('info')
 const activeAdvancedPanel = ref('country-map')
 const ruleScopeLevel = ref('global')
@@ -5148,11 +5161,45 @@ function openDailyScheduleWorkspace018259() {
   showEmployeeManager.value = false
   activeWorkspace018259.value = 'daily-schedule'
   dailyScheduleApplied018259.value = false
-  dailyScheduleStatusText018259.value = '請先選擇縣市、地區、定點／外送與機房，再按「套用條件」。'
+  dailyScheduleSubmitting018260.value = false
+  dailyScheduleStatusText018259.value = '請先貼上文件1，並選擇縣市、地區、定點／外送與機房，再按「套用條件」。'
   dailyScheduleStatusType018259.value = 'info'
 }
 
+// 第 018-260 批：把本次文件2直接「取代」成目前文件3，不與上一批文件3累加，
+// 確保右側班表卡片只顯示本次文件1的小姐。
+function replaceConfirmedDocumentFromCurrentResult018260() {
+  const visibleText = normalizeImportedLineBreaks018192(
+    String(resultText.value || '')
+  ).replace(/^\n+|\n+$/g, '')
+  const formalText = String(
+    currentDocument2FormalText018255.value || visibleText
+  ).replace(/^\n+|\n+$/g, '')
+
+  if (!visibleText || !formalText) {
+    throw new Error(statusMessage.value || '文件1尚未產生可用的文件2內容。')
+  }
+
+  if (resultHasIncompleteRecords.value) {
+    throw new Error(`文件1仍有 ${resultIncompleteCount.value} 筆不完整資料，請先補齊身材與正式價格方案。`)
+  }
+
+  confirmedPreserveLayout018256.value = isDocument2PreserveLayoutMode018255.value
+  confirmedText.value = ensureDocument3TwoTrailingBlankLines018258_1(visibleText)
+  confirmedFormalText018256.value = formalText
+  cacheConfirmedDocumentDraft018216()
+  updateJsonPreview()
+
+  if (!currentDocumentPreviewLadies.value.length) {
+    throw new Error('文件3已建立，但沒有解析出可顯示的小姐卡片。')
+  }
+
+  return currentDocumentPreviewLadies.value.length
+}
+
 async function applyDailyScheduleConditions018259() {
+  if (dailyScheduleSubmitting018260.value || isDatabaseSubmitting.value) return false
+
   const missing = getMissingManagerScopePartsForConvert()
   if (missing.length) {
     const message = `請先完成左側條件：${missing.join('、')}。`
@@ -5160,27 +5207,92 @@ async function applyDailyScheduleConditions018259() {
     dailyScheduleStatusText018259.value = message
     dailyScheduleStatusType018259.value = 'error'
     setRoomRuleFeedback(message, 'error', { toast: true })
-    return
+    return false
   }
 
-  updateJsonPreview()
-  if (!currentDocumentPreviewLadies.value.length) {
-    const message = '目前文件3沒有可產生班表卡片的小姐資料。'
+  if (!String(sourceText.value || '').trim()) {
+    const message = '請先在文件1貼上店家最新資訊。'
     dailyScheduleApplied018259.value = false
     dailyScheduleStatusText018259.value = message
     dailyScheduleStatusType018259.value = 'error'
     setRoomRuleFeedback(message, 'error', { toast: true })
-    return
+    return false
   }
 
-  dailyScheduleApplied018259.value = true
-  dailyScheduleStatusText018259.value = `已套用文件3：${currentDocumentPreviewLadies.value.length} 位小姐。`
-  dailyScheduleStatusType018259.value = 'success'
-  await nextTick()
-  scrollSelectedMediaUploadLadyIntoView()
+  if (!isOnlineWorkspaceReady()) {
+    const message = '請先登入並確認線上連線，才能直接建立文件3並上傳資料庫。'
+    dailyScheduleApplied018259.value = false
+    dailyScheduleStatusText018259.value = message
+    dailyScheduleStatusType018259.value = 'error'
+    setDatabaseSubmitFeedback(message, 'error', { toast: true })
+    return false
+  }
+
+  const previousDocumentSnapshot = {
+    confirmedText: confirmedText.value,
+    confirmedFormalText: confirmedFormalText018256.value,
+    confirmedPreserveLayout: confirmedPreserveLayout018256.value,
+    jsonResultText: jsonResultText.value
+  }
+
+  dailyScheduleSubmitting018260.value = true
+  dailyScheduleApplied018259.value = false
+  dailyScheduleStatusText018259.value = '正在套用目前機房規則，建立文件3並上傳線上資料庫...'
+  dailyScheduleStatusType018259.value = 'info'
+
+  try {
+    // 直接沿用既有正式規則載入與文件1→文件2解析，不另寫第二套解析器。
+    await withEffectiveRulesForEmployee(async () => convertText())
+
+    if (!String(resultText.value || '').trim()) {
+      throw new Error(statusMessage.value || '文件1沒有產生可用的文件2內容。')
+    }
+
+    const ladyCount = replaceConfirmedDocumentFromCurrentResult018260()
+
+    // 直接沿用既有「儲存文件3到線上」正式流程：防重比對、Supabase、中央網站同步與正式 ID 回填。
+    const savedOnline = await saveConfirmedText()
+    if (!savedOnline) {
+      throw new Error(statusMessage.value || apiStatusText.value || '文件3上傳線上資料庫失敗。')
+    }
+
+    updateJsonPreview()
+    await nextTick()
+
+    if (!currentDocumentPreviewLadies.value.length) {
+      throw new Error('文件3已線上儲存，但右側小姐卡片尚未建立。')
+    }
+
+    dailyScheduleApplied018259.value = true
+    dailyScheduleStatusText018259.value = centralWebsiteSyncNeedsRetry.value
+      ? `文件3已上傳資料庫，共 ${ladyCount} 位小姐；中央網站尚待重新同步，卡片已先顯示。`
+      : `文件3已上傳線上資料庫並完成同步，共 ${ladyCount} 位小姐。`
+    dailyScheduleStatusType018259.value = centralWebsiteSyncNeedsRetry.value ? 'warning' : 'success'
+
+    await nextTick()
+    scrollSelectedMediaUploadLadyIntoView()
+    return true
+  } catch (error) {
+    // 線上儲存未成功時恢復套用前文件3，避免未儲存草稿被誤當正式資料。
+    confirmedText.value = previousDocumentSnapshot.confirmedText
+    confirmedFormalText018256.value = previousDocumentSnapshot.confirmedFormalText
+    confirmedPreserveLayout018256.value = previousDocumentSnapshot.confirmedPreserveLayout
+    jsonResultText.value = previousDocumentSnapshot.jsonResultText
+    cacheConfirmedDocumentDraft018216()
+
+    const message = `當日班表建立失敗：${error.message || error}`
+    dailyScheduleApplied018259.value = false
+    dailyScheduleStatusText018259.value = message
+    dailyScheduleStatusType018259.value = 'error'
+    setDatabaseSubmitFeedback(message, 'error', { toast: true })
+    return false
+  } finally {
+    dailyScheduleSubmitting018260.value = false
+  }
 }
 
 function clearDailyScheduleConditions018259() {
+  if (dailyScheduleSubmitting018260.value || isDatabaseSubmitting.value) return
   managerSelectedCity.value = ''
   managerSelectedDistrict.value = ''
   managerSelectedType.value = DEFAULT_MANAGER_SCOPE_TYPE
@@ -5188,7 +5300,7 @@ function clearDailyScheduleConditions018259() {
   roomStatusInput018255.value = ''
   isRoomStatusDropdownOpen018222.value = false
   dailyScheduleApplied018259.value = false
-  dailyScheduleStatusText018259.value = '條件已清除，請重新選擇。'
+  dailyScheduleStatusText018259.value = '條件已清除，請重新選擇並貼上文件1。'
   dailyScheduleStatusType018259.value = 'info'
 }
 
@@ -30275,6 +30387,13 @@ button:disabled {
   box-shadow: none !important;
 }
 
+/* 第 018-260 批：舊前台預覽區有 display: block !important，會蓋過 v-show 的 display:none。
+   在製作當日班表頁強制隱藏舊預覽實體內容，只保留其 teleport 媒體彈窗。 */
+.frontend-preview-panel.is-teleport-only018259 > .preview-header,
+.frontend-preview-panel.is-teleport-only018259 > .frontend-media-preview-layout {
+  display: none !important;
+}
+
 /* 第 018-259 批：製作當日班表獨立工作區。 */
 .daily-schedule-workspace-toggle018259 {
   min-width: 136px;
@@ -30381,6 +30500,10 @@ button:disabled {
 
 .daily-schedule-filter-status018259.is-error {
   color: #b42318;
+}
+
+.daily-schedule-filter-status018259.is-warning {
+  color: #a15b18;
 }
 
 .daily-schedule-source-panel018259 {
