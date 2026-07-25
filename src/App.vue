@@ -1,5 +1,6 @@
 ﻿<!-- batch018-258-1-document3-two-trailing-blank-lines -->
 <!-- 第 018-258-1 批：文件3最後文字下方固定兩空行修正版 -->
+<!-- batch018-259-daily-schedule-workspace -->
 <!-- batch018-258-rebuilt-keep-area-heading-not-lady-document3-two-leading-blank-lines -->
 <!-- 第 018-258 重新版：地區區域標題完整保留但不算小姐；前置兩空行已由第 018-258-1 修正為尾端兩空行 -->
 <!-- batch018-257-document3-single-source-exact-card-json-sync -->
@@ -270,6 +271,14 @@
         </section>
 
         <div class="top-setting-buttons compact-main-buttons">
+          <button
+            class="summary-pill daily-schedule-workspace-toggle018259"
+            :class="{ active: activeWorkspace018259 === 'daily-schedule' }"
+            type="button"
+            @click="openDailyScheduleWorkspace018259"
+          >
+            製作當日班表
+          </button>
           <button
             class="summary-pill schedule-progress-toggle-pill018202"
             :class="{ active: showScheduleProgressModal018202 }"
@@ -1931,7 +1940,301 @@
 
 
 
-    <section class="work-grid">
+    <!-- 第 018-259 批：製作當日班表獨立工作區。左側條件、文件1核對、右側文件3精簡媒體卡片。 -->
+    <section
+      v-if="activeWorkspace018259 === 'daily-schedule'"
+      class="daily-schedule-workspace018259"
+      aria-label="製作當日班表"
+    >
+      <aside class="daily-schedule-filter-panel018259">
+        <div class="daily-schedule-filter-stack018259">
+          <label>
+            <span>縣市 / 國籍</span>
+            <select v-model="managerSelectedCity">
+              <option value="">請選縣市</option>
+              <option v-for="city in accountWorkingCities018201" :key="`daily-city018259-${city}`" :value="city">{{ city }}</option>
+            </select>
+          </label>
+
+          <label>
+            <span>地區</span>
+            <select v-model="managerSelectedDistrict" :disabled="!managerSelectedCity || isManagerOutsideDelivery">
+              <option v-if="isManagerOutsideDelivery" :value="OUTSIDE_DELIVERY_SCOPE_DISTRICT">外送免選地區</option>
+              <option v-else value="">請選擇地區</option>
+              <template v-if="!isManagerOutsideDelivery">
+                <option v-for="district in accountWorkingDistricts018201" :key="`daily-district018259-${district}`" :value="district">{{ district }}</option>
+              </template>
+            </select>
+          </label>
+
+          <label>
+            <span>定點 / 外送</span>
+            <select v-model="managerSelectedType">
+              <option value="">請選定點 / 外送</option>
+              <option v-for="type in locationTypes" :key="`daily-type018259-${type}`" :value="type">{{ type }}</option>
+            </select>
+          </label>
+
+          <div class="daily-schedule-room-field018259">
+            <span>機房</span>
+            <div
+              class="room-status-dropdown018222 daily-schedule-room-dropdown018259"
+              :class="{ 'is-open': isRoomStatusDropdownOpen018222, 'is-disabled': !isManagerScopeBaseReady }"
+              data-room-status-dropdown018222
+            >
+              <div class="room-status-trigger018222 room-status-combobox-shell018255 daily-schedule-room-trigger018259">
+                <input
+                  v-model="roomStatusInput018255"
+                  class="room-status-input018255"
+                  type="text"
+                  :disabled="!isManagerScopeBaseReady || isCommittingRoomStatusInput018255"
+                  placeholder="可輸入、貼上或選擇機房"
+                  autocomplete="off"
+                  @focus="openRoomStatusDropdown018255"
+                  @change="commitRoomStatusManualInput018255"
+                  @keydown.enter.prevent="commitRoomStatusManualInput018255"
+                  @paste="scheduleRoomStatusPasteCommit018255"
+                />
+                <button
+                  class="room-status-chevron-button018255"
+                  type="button"
+                  :disabled="!isManagerScopeBaseReady || isCommittingRoomStatusInput018255"
+                  :aria-expanded="isRoomStatusDropdownOpen018222 ? 'true' : 'false'"
+                  aria-haspopup="listbox"
+                  title="開啟機房清單"
+                  @click.stop="toggleRoomStatusDropdown018222"
+                >
+                  <span class="room-status-trigger-chevron018222" aria-hidden="true">⌄</span>
+                </button>
+              </div>
+
+              <div
+                v-if="isRoomStatusDropdownOpen018222"
+                class="room-status-menu018222 daily-schedule-room-menu018259"
+                role="listbox"
+                aria-label="製作當日班表機房清單"
+              >
+                <div class="room-status-menu-list018222">
+                  <button
+                    class="room-status-option018222 is-clear"
+                    type="button"
+                    role="option"
+                    :aria-selected="!ruleScopeRoom"
+                    :class="{ 'is-active': !ruleScopeRoom }"
+                    @click="selectRoomStatusOption018222('')"
+                  >
+                    <span class="room-status-option-name018222">請選機房</span>
+                    <span class="room-status-option-state018222">—</span>
+                    <span class="room-status-option-media018222">—</span>
+                  </button>
+
+                  <button
+                    v-for="room in managerRooms"
+                    :key="`daily-room018259-${room}`"
+                    class="room-status-option018222"
+                    type="button"
+                    role="option"
+                    :aria-selected="ruleScopeRoom === room"
+                    :class="{ 'is-active': ruleScopeRoom === room }"
+                    @click="selectRoomStatusOption018222(room)"
+                  >
+                    <span class="room-status-option-name018222" :title="room">{{ room }}</span>
+                    <span class="room-status-option-state018222" :class="`is-${getRoomDailyStatus(room).state}`">
+                      <i aria-hidden="true">{{ getRoomDailyStatus(room).documentSaved ? '●' : '○' }}</i>
+                      {{ getRoomDailyStatus(room).documentSaved ? '已更新' : '未更新' }}
+                    </span>
+                    <span class="room-status-option-media018222">
+                      {{ getRoomDailyStatus(room).mediaReadyCount }}/{{ getRoomDailyStatus(room).mediaTotalCount }}
+                    </span>
+                  </button>
+
+                  <div v-if="!managerRooms.length" class="room-status-empty018222">目前範圍尚未建立機房</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <button class="primary-btn daily-schedule-apply018259" type="button" @click="applyDailyScheduleConditions018259">
+            套用條件
+          </button>
+          <button class="ghost-btn daily-schedule-clear018259" type="button" @click="clearDailyScheduleConditions018259">
+            清除條件
+          </button>
+        </div>
+
+        <p class="daily-schedule-filter-status018259" :class="`is-${dailyScheduleStatusType018259}`">
+          {{ dailyScheduleStatusText018259 }}
+        </p>
+      </aside>
+
+      <article class="daily-schedule-source-panel018259">
+        <div class="panel-header daily-schedule-source-head018259">
+          <div>
+            <h2>文件1：店家最新資訊</h2>
+            <small>保留原始內容供核對；右側班表卡片直接讀取目前文件3。</small>
+          </div>
+          <button class="ghost-btn" type="button" @click="sourceText = sampleText">放入測試資料</button>
+        </div>
+
+        <textarea
+          ref="sourceTextareaRef018245"
+          v-model="sourceText"
+          class="work-textarea daily-schedule-source-textarea018259"
+          placeholder="請貼上店家最新資訊。"
+          @paste="handleSourceTextPaste018245"
+          @input="handleSourceTextInput018245"
+        ></textarea>
+      </article>
+
+      <section class="daily-schedule-card-board018259">
+        <header class="daily-schedule-card-board-head018259">
+          <div>
+            <span>文件3正式來源</span>
+            <h2>當日班表小姐卡片</h2>
+            <p>套用條件後，只顯示媒體操作區與小姐國籍、姓名；不顯示文件3原始文字。</p>
+          </div>
+          <div v-if="dailyScheduleApplied018259" class="daily-schedule-applied-scope018259">
+            <strong>已套用</strong>
+            <span>{{ managerSelectedCity }} / {{ managerSelectedDistrictDisplay }} / {{ managerSelectedType }} / {{ ruleScopeRoom }}</span>
+          </div>
+        </header>
+
+        <div v-if="dailyScheduleApplied018259" class="daily-schedule-batch-toolbar018259">
+          <span>{{ batchMediaToolbarSummary018223 }}</span>
+          <button
+            type="button"
+            class="primary-btn"
+            :disabled="!batchMediaCanOpenOrUpload018223"
+            @click="handleBatchMediaToolbarAction018223"
+          >{{ batchMediaToolbarButtonText018223 }}</button>
+        </div>
+
+        <div v-if="!dailyScheduleApplied018259" class="daily-schedule-empty018259">
+          <strong>請先完成左側條件並按「套用條件」</strong>
+          <span>套用後會直接從目前文件3產生右側班表卡片，不會顯示文件3文字內容。</span>
+        </div>
+
+        <div v-else-if="dailyScheduleLadies018259.length" class="daily-schedule-lady-grid018259">
+          <article
+            v-for="lady in dailyScheduleLadies018259"
+            :key="`daily-schedule018259-${lady.id}`"
+            class="lady-card daily-schedule-lady-card018259"
+            :class="{
+              'is-selected-upload-lady': isSelectedUploadLady(lady),
+              'has-batch-media-pending018223': getBatchMediaPendingCountForLady018223(lady) > 0,
+              'has-batch-media-delete018224': getBatchMediaPendingDeleteCountForLady018224(lady) > 0
+            }"
+            :data-preview-lady-id="String(lady.id || '')"
+            role="button"
+            tabindex="0"
+            :aria-label="`開啟【${lady.country || ''} ${lady.name || ''}】媒體上傳視窗`"
+            @click="openMediaUploadModalForLady(lady)"
+            @keydown.enter.prevent="openMediaUploadModalForLady(lady)"
+            @keydown.space.prevent="openMediaUploadModalForLady(lady)"
+          >
+            <span v-if="isSelectedUploadLady(lady)" class="selected-upload-lady-badge">目前選擇</span>
+
+            <div
+              class="lady-cover-box batch-media-card-drop-zone018223 daily-schedule-cover-box018259"
+              :class="{ 'is-dragging018223': isBatchMediaDraggingForLady018223(lady) }"
+              @dragenter.stop.prevent="setBatchMediaDraggingLady018223(lady, true)"
+              @dragover.stop.prevent="setBatchMediaDraggingLady018223(lady, true)"
+              @dragleave.stop.prevent="setBatchMediaDraggingLady018223(lady, false)"
+              @drop.stop.prevent="handleBatchMediaCardDrop018223(lady, $event)"
+            >
+              <template v-if="getBatchMediaFirstQueuedItem018223(lady)">
+                <img
+                  v-if="String(getBatchMediaFirstQueuedItem018223(lady).file?.type || '').startsWith('image/')"
+                  :src="getBatchMediaFirstQueuedItem018223(lady).previewUrl"
+                  :alt="`${getBatchMediaLadyLabel018223(lady)} 待上傳預覽`"
+                  class="lady-cover-media batch-media-local-preview018223"
+                />
+                <video
+                  v-else
+                  :src="getBatchMediaFirstQueuedItem018223(lady).previewUrl"
+                  class="lady-cover-media batch-media-local-preview018223"
+                  muted
+                  playsinline
+                ></video>
+                <span class="batch-media-local-preview-label018223">待上傳預覽</span>
+              </template>
+
+              <template v-else-if="getLadyCoverMedia(lady)">
+                <button
+                  type="button"
+                  class="lady-media-open-btn lady-cover-trigger"
+                  :class="{ 'is-pending-delete018224': isBatchMediaMarkedForDelete018224(lady, getLadyCoverMedia(lady)) }"
+                  @click.stop="openMediaViewer(getLadyCoverMedia(lady), lady)"
+                >
+                  <img
+                    v-if="getLadyCoverMedia(lady).mediaType === 'image'"
+                    :src="getLadyCoverMedia(lady).url"
+                    :alt="getMediaDisplayName(getLadyCoverMedia(lady), lady)"
+                    class="lady-cover-media"
+                  />
+                  <video v-else :src="getLadyCoverMedia(lady).url" class="lady-cover-media" muted playsinline></video>
+                </button>
+                <span v-if="isBatchMediaMarkedForDelete018224(lady, getLadyCoverMedia(lady))" class="batch-media-pending-delete-overlay018224">待刪除</span>
+                <button
+                  type="button"
+                  class="lady-media-delete-btn"
+                  :class="{ 'is-undo018224': isBatchMediaMarkedForDelete018224(lady, getLadyCoverMedia(lady)) }"
+                  @click.stop="toggleBatchMediaDelete018224(lady, getLadyCoverMedia(lady))"
+                >{{ isBatchMediaMarkedForDelete018224(lady, getLadyCoverMedia(lady)) ? '取消' : '刪除' }}</button>
+              </template>
+
+              <div v-else class="lady-cover-empty batch-media-cover-empty018223">
+                <strong>拖曳圖片／影片到這裡</strong>
+                <span>或點下方選擇檔案</span>
+              </div>
+
+              <span v-if="getLadyMediaCount(lady)" class="media-count-badge">{{ getLadyMediaCount(lady) }} 個媒體</span>
+              <div v-if="getBatchMediaPendingCountForLady018223(lady)" class="batch-media-card-pending-badge018223">
+                待上傳 {{ getBatchMediaPendingCountForLady018223(lady) }}
+              </div>
+
+              <div class="batch-media-card-actions018223">
+                <label class="batch-media-card-file-label018223" @click.stop>
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/*,video/*"
+                    @click.stop
+                    @change="handleBatchMediaCardFileChange018223(lady, $event)"
+                  />
+                  {{ getBatchMediaPendingCountForLady018223(lady) ? '繼續加入' : '放入圖片影片' }}
+                </label>
+                <button
+                  v-if="getBatchMediaPendingCountForLady018223(lady)"
+                  type="button"
+                  class="batch-media-card-clear018223"
+                  @click.stop="clearBatchMediaLadyQueue018223(lady)"
+                >清除</button>
+              </div>
+            </div>
+
+            <div class="batch-media-card-summary018224 daily-schedule-card-summary018259" @click.stop>
+              <span>線上 {{ getLadyMediaCount(lady) }}</span>
+              <span>待上傳 {{ getBatchMediaPendingCountForLady018223(lady) }}</span>
+              <span v-if="getBatchMediaPendingDeleteCountForLady018224(lady)" class="is-delete018224">待刪除 {{ getBatchMediaPendingDeleteCountForLady018224(lady) }}</span>
+              <button type="button" @click.stop="openBatchMediaLadyManager018224(lady)">查看全部</button>
+            </div>
+
+            <div class="daily-schedule-lady-name018259">
+              <strong>【{{ lady.country }} {{ lady.name }}】</strong>
+            </div>
+          </article>
+        </div>
+
+        <div v-else class="daily-schedule-empty018259 is-warning">
+          <strong>目前文件3沒有可產生的小姐資料</strong>
+          <span>請先回到原本工作區完成文件3，再重新進入製作當日班表。</span>
+        </div>
+      </section>
+    </section>
+
+
+    <section v-if="activeWorkspace018259 !== 'daily-schedule'" class="work-grid">
       <article class="panel">
         <div class="panel-header">
           <h2>文件1：店家最新資訊</h2>
@@ -2142,8 +2445,8 @@
       </div>
     </teleport>
 
-<section class="frontend-preview-panel">
-      <div class="preview-header preview-header-with-actions">
+<section class="frontend-preview-panel" :class="{ 'is-teleport-only018259': activeWorkspace018259 === 'daily-schedule' }">
+      <div v-show="activeWorkspace018259 !== 'daily-schedule'" class="preview-header preview-header-with-actions">
         <div class="preview-title-block">
           <h2>前台網站預覽</h2>
           <p>這裡只預覽目前文件3 / 文件4 的最新小姐；資料庫與網站後台仍然累加保存。</p>
@@ -2178,7 +2481,7 @@
       </div>
 
 
-      <div class="frontend-media-preview-layout media-modal-card-only-layout">
+      <div v-show="activeWorkspace018259 !== 'daily-schedule'" class="frontend-media-preview-layout media-modal-card-only-layout">
         <div class="frontend-preview-side-panel is-full-width-preview">
           <div class="preview-side-topbar">
             <p class="hint frontend-inline-status">{{ previewStatusText }}</p>
@@ -4789,6 +5092,11 @@ const showFormatSettings = ref(false)
 const showQuickRules = ref(false)
 const showApiPanel = ref(false)
 const activeTopPanel = ref('')
+// 第 018-259 批：獨立的「製作當日班表」工作區，不改動原本文件1～4流程。
+const activeWorkspace018259 = ref('converter')
+const dailyScheduleApplied018259 = ref(false)
+const dailyScheduleStatusText018259 = ref('請先選擇縣市、地區、定點／外送與機房。')
+const dailyScheduleStatusType018259 = ref('info')
 const activeAdvancedPanel = ref('country-map')
 const ruleScopeLevel = ref('global')
 const ruleScopeCity = ref('')
@@ -4827,6 +5135,68 @@ const dragCityName = ref('')
 const dragDistrictName = ref('')
 let isRestoringLastScopeSelection = false
 
+function resetDailyScheduleApplyState018259(message = '條件已變更，請重新按「套用條件」。') {
+  if (!dailyScheduleApplied018259.value) return
+  dailyScheduleApplied018259.value = false
+  dailyScheduleStatusText018259.value = message
+  dailyScheduleStatusType018259.value = 'info'
+}
+
+function openDailyScheduleWorkspace018259() {
+  closeTopSettingModal()
+  showScopeManager.value = false
+  showEmployeeManager.value = false
+  activeWorkspace018259.value = 'daily-schedule'
+  dailyScheduleApplied018259.value = false
+  dailyScheduleStatusText018259.value = '請先選擇縣市、地區、定點／外送與機房，再按「套用條件」。'
+  dailyScheduleStatusType018259.value = 'info'
+}
+
+async function applyDailyScheduleConditions018259() {
+  const missing = getMissingManagerScopePartsForConvert()
+  if (missing.length) {
+    const message = `請先完成左側條件：${missing.join('、')}。`
+    dailyScheduleApplied018259.value = false
+    dailyScheduleStatusText018259.value = message
+    dailyScheduleStatusType018259.value = 'error'
+    setRoomRuleFeedback(message, 'error', { toast: true })
+    return
+  }
+
+  updateJsonPreview()
+  if (!currentDocumentPreviewLadies.value.length) {
+    const message = '目前文件3沒有可產生班表卡片的小姐資料。'
+    dailyScheduleApplied018259.value = false
+    dailyScheduleStatusText018259.value = message
+    dailyScheduleStatusType018259.value = 'error'
+    setRoomRuleFeedback(message, 'error', { toast: true })
+    return
+  }
+
+  dailyScheduleApplied018259.value = true
+  dailyScheduleStatusText018259.value = `已套用文件3：${currentDocumentPreviewLadies.value.length} 位小姐。`
+  dailyScheduleStatusType018259.value = 'success'
+  await nextTick()
+  scrollSelectedMediaUploadLadyIntoView()
+}
+
+function clearDailyScheduleConditions018259() {
+  managerSelectedCity.value = ''
+  managerSelectedDistrict.value = ''
+  managerSelectedType.value = DEFAULT_MANAGER_SCOPE_TYPE
+  ruleScopeRoom.value = ''
+  roomStatusInput018255.value = ''
+  isRoomStatusDropdownOpen018222.value = false
+  dailyScheduleApplied018259.value = false
+  dailyScheduleStatusText018259.value = '條件已清除，請重新選擇。'
+  dailyScheduleStatusType018259.value = 'info'
+}
+
+function leaveDailyScheduleWorkspace018259() {
+  activeWorkspace018259.value = 'converter'
+  dailyScheduleApplied018259.value = false
+}
+
 function toggleAdvancedPanel(panel) {
   activeAdvancedPanel.value = activeAdvancedPanel.value === panel ? '' : panel
 }
@@ -4845,6 +5215,7 @@ function closeTopSettingModal() {
 }
 
 function toggleTopPanel(panel) {
+  leaveDailyScheduleWorkspace018259()
   const nextPanel = activeTopPanel.value === panel ? '' : panel
   closeTopSettingModal()
   activeTopPanel.value = nextPanel
@@ -4867,12 +5238,14 @@ function toggleTopPanel(panel) {
 }
 
 function toggleScopeManager() {
+  leaveDailyScheduleWorkspace018259()
   // 第 018-116 批：此區塊固定顯示；按鈕只負責回到 / 保持顯示，不再切換成隱藏。
   closeTopSettingModal()
   showScopeManager.value = true
 }
 
 function toggleEmployeeManager() {
+  leaveDailyScheduleWorkspace018259()
   showEmployeeManager.value = !showEmployeeManager.value
   if (showEmployeeManager.value && isOwner.value) {
     loadEmployeeProfiles()
@@ -4880,6 +5253,7 @@ function toggleEmployeeManager() {
 }
 
 function openScheduleProgressModal018202() {
+  leaveDailyScheduleWorkspace018259()
   closeTopSettingModal()
   showEmployeeManager.value = false
   scheduleProgressFilter018202.value = 'all'
@@ -6625,6 +6999,8 @@ const sampleText = `💢超性感搖搖馬💢
 
 function closeAllTopPanelsForCleanStart() {
   restoreQuickRuleRoomFields018215()
+  activeWorkspace018259.value = 'converter'
+  dailyScheduleApplied018259.value = false
   // 第 018-107 批：登入後預設固定展開地區機房管理；選擇欄位由最後機房範圍 / 定點預設帶入。
   // 其他設定彈窗仍維持收合；若使用者手動按「關閉」，只會暫時收合目前畫面。
   activeTopPanel.value = ''
@@ -9083,6 +9459,11 @@ function formatMediaUploadLadyOptionLabel(lady) {
   const paddedLabel = padDisplayText(ladyLabel, 20)
   return `[${meta.statusText}] ${paddedLabel} 圖${meta.imageCount}｜影${meta.videoCount}`
 }
+
+// 第 018-259 批：班表卡片只取目前文件3／文件4的最新小姐，不讀資料庫累積清單。
+const dailyScheduleLadies018259 = computed(() => (
+  dailyScheduleApplied018259.value ? currentDocumentPreviewLadies.value : []
+))
 
 const mediaUploadLadyOptions = computed(() => {
   return currentDocumentPreviewLadies.value
@@ -18168,6 +18549,10 @@ watch(accountWorkingDistricts018201, districts => {
   ruleScopeRoom.value = ''
   syncRuleScopeLevelFromSelection()
 }, { deep: true })
+
+watch([managerSelectedCity, managerSelectedDistrict, managerSelectedType, ruleScopeRoom], () => {
+  if (activeWorkspace018259.value === 'daily-schedule') resetDailyScheduleApplyState018259()
+})
 
 watch(managerSelectedCity, value => {
   closeRoomStatusDropdown018222()
@@ -29877,6 +30262,382 @@ button:disabled {
 .room-status-option-delete018256:disabled {
   cursor: not-allowed;
   opacity: 0.45;
+}
+
+
+
+.frontend-preview-panel.is-teleport-only018259 {
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+/* 第 018-259 批：製作當日班表獨立工作區。 */
+.daily-schedule-workspace-toggle018259 {
+  min-width: 136px;
+}
+
+.daily-schedule-workspace018259 {
+  display: grid;
+  grid-template-columns: minmax(210px, 250px) minmax(300px, 390px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
+  margin-top: 18px;
+}
+
+.daily-schedule-filter-panel018259,
+.daily-schedule-source-panel018259,
+.daily-schedule-card-board018259 {
+  min-width: 0;
+  border: 1px solid #dbe7ef;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 18px 42px rgba(60, 79, 95, 0.12);
+}
+
+.daily-schedule-filter-panel018259 {
+  position: relative;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+}
+
+.daily-schedule-filter-stack018259 {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.daily-schedule-filter-stack018259 > label,
+.daily-schedule-room-field018259 {
+  display: grid;
+  gap: 6px;
+  color: #40576a;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.daily-schedule-filter-stack018259 select,
+.daily-schedule-room-trigger018259 {
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid #d5e1ea;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.daily-schedule-filter-stack018259 select {
+  padding: 0 14px;
+  color: #263c4d;
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.daily-schedule-room-trigger018259 {
+  grid-template-columns: minmax(0, 1fr) 42px;
+  overflow: hidden;
+}
+
+.daily-schedule-room-trigger018259 .room-status-input018255 {
+  min-width: 0;
+  padding-left: 13px;
+  font-size: 13px;
+}
+
+.daily-schedule-room-dropdown018259 {
+  position: relative;
+}
+
+.daily-schedule-room-menu018259 {
+  z-index: 40;
+  min-width: 320px;
+  left: 0;
+  right: auto;
+}
+
+.daily-schedule-apply018259,
+.daily-schedule-clear018259 {
+  width: 100%;
+  min-height: 46px;
+  border-radius: 14px;
+  font-weight: 900;
+}
+
+.daily-schedule-filter-status018259 {
+  margin: auto 0 0;
+  padding-top: 16px;
+  color: #647b8d;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.daily-schedule-filter-status018259.is-success {
+  color: #16794b;
+}
+
+.daily-schedule-filter-status018259.is-error {
+  color: #b42318;
+}
+
+.daily-schedule-source-panel018259 {
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+}
+
+.daily-schedule-source-head018259 {
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.daily-schedule-source-head018259 > div {
+  display: grid;
+  gap: 5px;
+}
+
+.daily-schedule-source-head018259 small {
+  color: #6b7f8f;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.daily-schedule-source-textarea018259 {
+  flex: 1;
+  min-height: 610px;
+  resize: none;
+}
+
+.daily-schedule-card-board018259 {
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  overflow: hidden;
+}
+
+.daily-schedule-card-board-head018259 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 2px 2px 14px;
+  border-bottom: 1px solid #e4edf3;
+}
+
+.daily-schedule-card-board-head018259 > div:first-child {
+  min-width: 0;
+}
+
+.daily-schedule-card-board-head018259 span {
+  color: #2e7895;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.daily-schedule-card-board-head018259 h2 {
+  margin: 4px 0 3px;
+  color: #1f3343;
+  font-size: 18px;
+}
+
+.daily-schedule-card-board-head018259 p {
+  margin: 0;
+  color: #687d8d;
+  font-size: 12px;
+}
+
+.daily-schedule-applied-scope018259 {
+  flex: 0 0 auto;
+  display: grid;
+  gap: 3px;
+  max-width: 300px;
+  padding: 9px 13px;
+  border: 1px solid #bfe6cf;
+  border-radius: 14px;
+  background: #f0fbf5;
+  color: #28744e;
+  text-align: right;
+}
+
+.daily-schedule-applied-scope018259 strong {
+  font-size: 12px;
+}
+
+.daily-schedule-applied-scope018259 span {
+  overflow: hidden;
+  color: #28744e;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.daily-schedule-batch-toolbar018259 {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 12px 0 4px;
+  color: #587184;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.daily-schedule-batch-toolbar018259 .primary-btn {
+  min-height: 36px;
+  padding: 8px 14px;
+  border-radius: 12px;
+}
+
+.daily-schedule-lady-grid018259 {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 12px;
+  align-content: start;
+  margin-top: 12px;
+  overflow: auto;
+  padding: 2px 3px 10px 2px;
+}
+
+.daily-schedule-lady-card018259 {
+  min-width: 0;
+  min-height: 290px;
+  padding: 12px;
+  border-radius: 18px;
+}
+
+.daily-schedule-cover-box018259 {
+  min-height: 166px;
+  height: 166px;
+  margin-top: 5px;
+  border-radius: 15px;
+}
+
+.daily-schedule-cover-box018259 .lady-cover-empty strong {
+  font-size: 13px;
+}
+
+.daily-schedule-cover-box018259 .lady-cover-empty span {
+  font-size: 11px;
+}
+
+.daily-schedule-cover-box018259 .batch-media-card-actions018223 {
+  padding: 8px;
+}
+
+.daily-schedule-cover-box018259 .batch-media-card-file-label018223 {
+  min-height: 34px;
+  padding: 7px 10px;
+  font-size: 11px;
+}
+
+.daily-schedule-card-summary018259 {
+  gap: 5px;
+  margin-top: 8px;
+  font-size: 10px;
+}
+
+.daily-schedule-card-summary018259 > span,
+.daily-schedule-card-summary018259 > button {
+  min-width: 0;
+  padding: 5px 7px;
+  white-space: nowrap;
+}
+
+.daily-schedule-lady-name018259 {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 54px;
+  padding-top: 12px;
+  color: #203848;
+  text-align: center;
+  font-size: 16px;
+}
+
+.daily-schedule-empty018259 {
+  display: grid;
+  place-content: center;
+  gap: 8px;
+  flex: 1;
+  min-height: 520px;
+  padding: 30px;
+  color: #728594;
+  text-align: center;
+}
+
+.daily-schedule-empty018259 strong {
+  color: #2f5068;
+  font-size: 17px;
+}
+
+.daily-schedule-empty018259.is-warning strong {
+  color: #a15b18;
+}
+
+@media (max-width: 1380px) {
+  .daily-schedule-workspace018259 {
+    grid-template-columns: 220px 330px minmax(0, 1fr);
+  }
+
+  .daily-schedule-lady-grid018259 {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  }
+}
+
+@media (max-width: 1080px) {
+  .daily-schedule-workspace018259 {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+
+  .daily-schedule-source-panel018259 {
+    grid-column: 2;
+  }
+
+  .daily-schedule-card-board018259 {
+    grid-column: 1 / -1;
+  }
+
+  .daily-schedule-source-textarea018259 {
+    min-height: 420px;
+  }
+}
+
+@media (max-width: 720px) {
+  .daily-schedule-workspace018259 {
+    grid-template-columns: 1fr;
+  }
+
+  .daily-schedule-source-panel018259,
+  .daily-schedule-card-board018259 {
+    grid-column: auto;
+  }
+
+  .daily-schedule-source-textarea018259 {
+    min-height: 360px;
+  }
+
+  .daily-schedule-card-board-head018259 {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .daily-schedule-applied-scope018259 {
+    width: 100%;
+    max-width: none;
+    text-align: left;
+  }
+
+  .daily-schedule-lady-grid018259 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 480px) {
+  .daily-schedule-lady-grid018259 {
+    grid-template-columns: 1fr;
+  }
 }
 
 </style>
